@@ -9,7 +9,7 @@ import { LoogLogo } from "@/components/ui/LoogMark";
 function LoginInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") || "/studio";
+  const explicitRedirect = searchParams.get("redirect");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,13 +20,26 @@ function LoginInner() {
     setLoading(true);
     setErr(null);
     const supabase = createSupabaseBrowser();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setErr(error.message === "Invalid login credentials" ? "E-mail ou senha inválidos." : error.message);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error || !data.user) {
+      setErr(error?.message === "Invalid login credentials" ? "E-mail ou senha inválidos." : error?.message ?? "Falha ao entrar.");
       setLoading(false);
       return;
     }
-    router.replace(redirect);
+    // Descobre destino: se admin aprovado → /admin; senão → /studio (ou o redirect explícito).
+    let dest = explicitRedirect ?? "/studio";
+    if (!explicitRedirect) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, status")
+        .eq("id", data.user.id)
+        .maybeSingle();
+      if (profile?.status === "approved" && profile.role === "admin") dest = "/admin";
+      else if (profile?.status === "rejected") dest = "/rejected";
+      else if (profile?.status !== "approved") dest = "/pending";
+      else dest = "/studio";
+    }
+    router.replace(dest);
     router.refresh();
   }
 
