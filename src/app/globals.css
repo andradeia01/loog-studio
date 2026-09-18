@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap");
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body {
+  background-color: #08090b;
+  color: #f5f7fa;
+  min-height: 100%;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: "Inter", system-ui, sans-serif;
+  background-image:
+    radial-gradient(1400px 560px at 50% -180px, rgba(0, 64, 240, 0.22), transparent 60%),
+    linear-gradient(180deg, #08090b 0%, #05070a 100%);
+}
+
+@layer components {
+  .container-loog {
+    @apply mx-auto w-full max-w-6xl px-4 sm:px-6;
+  }
+  .card {
+    @apply rounded-xl2 border border-loog-border bg-loog-card shadow-card;
+  }
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-semibold transition
+      active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-primary {
+    @apply btn bg-loog-brand text-white hover:bg-loog-brand2 shadow-glow;
+    background-image: linear-gradient(180deg, #1E5AFF 0%, #0040F0 100%);
+  }
+  .btn-primary:hover {
+    background-image: linear-gradient(180deg, #2E6BFF 0%, #1050FF 100%);
+  }
+  .btn-ghost {
+    @apply btn border border-loog-border bg-transparent text-loog-text hover:bg-white/[0.04];
+  }
+  .btn-dark {
+    @apply btn bg-black/60 text-loog-text hover:bg-black/80 border border-loog-border;
+  }
+  .input {
+    @apply w-full rounded-xl border border-loog-border bg-loog-panel px-4 py-3 text-sm text-loog-text
+      placeholder:text-loog-muted/70 outline-none transition
+      focus:border-loog-brand/70 focus:ring-2 focus:ring-loog-brand/30;
+  }
+  .label {
+    @apply block text-xs font-semibold uppercase tracking-wider text-loog-muted;
+  }
+  .chip {
+    @apply inline-flex h-8 items-center rounded-full border border-loog-border bg-loog-panel px-3 text-xs font-medium text-loog-text/90;
+  }
+  .chip-active {
+    @apply chip !border-loog-brand2/70 !bg-loog-brand/20 text-white;
+  }
+}
+
+/* Scrollbar dark */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1f242c;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2b3340;
+}

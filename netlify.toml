@@ -1,0 +1,35 @@
+# =============================================================================
+# LOOG Studio — configuração Netlify
+# =============================================================================
+# Runtime Next 15 gerenciado pelo plugin oficial (@netlify/plugin-nextjs v5).
+# Cada API route vira uma Netlify Function. Sharp compila pra Linux durante o
+# `npm install` no CI (Netlify roda em Ubuntu).
+# =============================================================================
+
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Assets estáticos com cache longo (o hash no filename já invalida quando muda)
+[[headers]]
+  for = "/brand/*"
+  [headers.values]
+    Cache-Control = "public, max-age=604800, immutable"
+
+[[headers]]
+  for = "/templates/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
