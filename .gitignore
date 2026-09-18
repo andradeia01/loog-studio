@@ -12,3 +12,4 @@ tsconfig.tsbuildinfo
 /public/generated
 /data/uploads
 .netlify
+.admin-credentials.txt
