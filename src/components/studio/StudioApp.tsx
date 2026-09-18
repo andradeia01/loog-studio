@@ -16,7 +16,7 @@ import { ConsultantForm } from "./ConsultantForm";
 import { PhotoUploader } from "./PhotoUploader";
 import { TemplateGallery } from "./TemplateGallery";
 import { TemplatePreview } from "./TemplatePreview";
-import { ReadyArtsGallery, type ReadyArt } from "./ReadyArtsGallery";
+import { ReadyArtsGallery, type ReadyArt, type ReadyFolder } from "./ReadyArtsGallery";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_CONSULTANT: Consultant = {
@@ -40,13 +40,14 @@ const CATEGORIES: { key: TemplateCategory | "todos"; label: string }[] = [
 interface Props {
   initialTemplates: Template[];
   readyArts: ReadyArt[];
+  readyFolders?: ReadyFolder[];
   consultantSeed: { fullName?: string; phone?: string; instagram?: string; city?: string } | null;
   authEnabled: boolean;
 }
 
 type Tab = "ready" | "custom";
 
-export function StudioApp({ initialTemplates, readyArts, consultantSeed, authEnabled }: Props) {
+export function StudioApp({ initialTemplates, readyArts, readyFolders = [], consultantSeed, authEnabled }: Props) {
   const [tab, setTab] = useState<Tab>(readyArts.length > 0 ? "ready" : "custom");
 
   const [consultant, setConsultant] = useState<Consultant>(DEFAULT_CONSULTANT);
@@ -167,7 +168,7 @@ export function StudioApp({ initialTemplates, readyArts, consultantSeed, authEna
                 Nenhuma arte pronta publicada ainda. Passe pra aba <b>Personalizar</b> e crie a sua.
               </div>
             ) : (
-              <ReadyArtsGallery arts={readyArts} />
+              <ReadyArtsGallery arts={readyArts} folders={readyFolders} />
             )}
           </div>
         </section>

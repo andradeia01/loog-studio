@@ -15,22 +15,29 @@ const MetaSchema = z.object({
   title: z.string().trim().min(2).max(80),
   category: z.enum(["institucional", "vendas", "protecao", "recrutamento", "stories", "feed"]),
   format: z.enum(["feed-1x1", "feed-4x5", "story-9x16"]),
+  folder_id: z.string().uuid().nullable().optional(),
 });
 
 /**
  * GET /api/ready-arts → consultores aprovados leem lista de artes prontas.
+ * Suporta ?folder=<id> pra filtrar por pasta e ?folder=none pra órfãs.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const auth = await requireApproved();
   if (!auth.ok) return auth.res;
 
+  const folderQ = req.nextUrl.searchParams.get("folder");
   const supabase = await createSupabaseServer();
-  const { data, error } = await supabase
+  let query = supabase
     .from("ready_arts")
-    .select("id, title, category, format, image_url, thumbnail_url, created_at")
+    .select("id, title, category, format, image_url, thumbnail_url, folder_id, created_at")
     .eq("active", true)
     .order("created_at", { ascending: false });
 
+  if (folderQ === "none") query = query.is("folder_id", null);
+  else if (folderQ) query = query.eq("folder_id", folderQ);
+
+  const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ readyArts: data ?? [] });
 }
@@ -47,10 +54,12 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData();
   const file = form.get("file");
+  const folderRaw = form.get("folder_id");
   const meta = MetaSchema.safeParse({
     title: form.get("title"),
     category: form.get("category"),
     format: form.get("format"),
+    folder_id: typeof folderRaw === "string" && folderRaw !== "" ? folderRaw : null,
   });
   if (!meta.success) {
     return NextResponse.json({ error: "metadados inválidos", details: meta.error.flatten() }, { status: 400 });
@@ -99,6 +108,7 @@ export async function POST(req: NextRequest) {
       title: meta.data.title,
       category: meta.data.category,
       format: meta.data.format,
+      folder_id: meta.data.folder_id ?? null,
       image_url: fullPub.publicUrl,
       thumbnail_url: thumbPub.publicUrl,
       created_by: auth.auth.userId,

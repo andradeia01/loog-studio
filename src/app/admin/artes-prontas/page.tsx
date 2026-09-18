@@ -16,7 +16,7 @@ export default async function ReadyArtsPage() {
     const [{ data: arts }, { count }] = await Promise.all([
       supabase
         .from("ready_arts")
-        .select("id, title, category, format, image_url, thumbnail_url, active, created_at")
+        .select("id, title, category, format, image_url, thumbnail_url, folder_id, active, created_at")
         .order("created_at", { ascending: false }),
       supabase.from("profiles").select("id", { count: "exact", head: true }).eq("status", "pending"),
     ]);

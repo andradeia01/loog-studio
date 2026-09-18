@@ -11,6 +11,7 @@ const PatchSchema = z.object({
   category: z.enum(["institucional", "vendas", "protecao", "recrutamento", "stories", "feed"]).optional(),
   format: z.enum(["feed-1x1", "feed-4x5", "story-9x16"]).optional(),
   active: z.boolean().optional(),
+  folder_id: z.string().uuid().nullable().optional(),
 });
 
 export async function PATCH(
