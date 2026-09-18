@@ -1,94 +1,167 @@
-import { promises as fs } from "node:fs";
-import path from "node:path";
 import { Template, TemplateSchema } from "./types";
+import { createSupabaseServer, createSupabaseAdmin, supabaseConfigured } from "./supabase/server";
 
 /**
- * Store de templates baseado em filesystem.
+ * Store de templates baseado em Supabase.
  *
- * Cada template vive em /public/templates/<slug>/ com:
- *   - config.json     → configuração completa (Template)
- *   - background.*    → arte de fundo
- *   - foreground.*    → overlay opcional
- *   - thumbnail.jpg   → miniatura para a galeria
+ * - Tabela `public.templates` armazena metadados + layers (jsonb).
+ * - Bucket `templates` armazena background/foreground/thumbnail.
+ * - RLS: consultores aprovados leem os ativos; admin faz tudo.
  *
- * Trocar essa camada por Supabase depois é local: ver src/lib/supabase.ts.
+ * Layers guardam URLs públicas (não paths de filesystem).
  */
 
-const TEMPLATES_DIR = path.join(process.cwd(), "public", "templates");
+const TEMPLATES_BUCKET = "templates";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Serialização row ⇄ Template
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface DbTemplate {
+  id: string;
+  slug: string;
+  name: string;
+  category: string;
+  format: string;
+  width: number;
+  height: number;
+  thumbnail_url: string;
+  active: boolean;
+  layers: unknown;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+function rowToTemplate(row: DbTemplate): Template | null {
+  const candidate = {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    category: row.category,
+    format: row.format,
+    width: row.width,
+    height: row.height,
+    thumbnail: row.thumbnail_url,
+    active: row.active,
+    layers: row.layers ?? [],
+    createdAt: row.created_at ?? undefined,
+    updatedAt: row.updated_at ?? undefined,
+  };
+  const parsed = TemplateSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
+}
+
+function templateToRow(t: Template): Omit<DbTemplate, "created_at" | "updated_at"> {
+  return {
+    id: t.id,
+    slug: t.slug,
+    name: t.name,
+    category: t.category,
+    format: t.format,
+    width: t.width,
+    height: t.height,
+    thumbnail_url: t.thumbnail,
+    active: t.active !== false,
+    layers: t.layers,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CRUD público
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function listTemplates(): Promise<Template[]> {
-  await ensureDir(TEMPLATES_DIR);
-  const dirs = await safeReadDir(TEMPLATES_DIR);
-  const out: Template[] = [];
-  for (const dir of dirs) {
-    try {
-      const t = await getTemplate(dir);
-      if (t) out.push(t);
-    } catch {
-      // ignora templates com config quebrado
-    }
+  if (!supabaseConfigured()) return [];
+  const supabase = await createSupabaseServer();
+  const { data, error } = await supabase
+    .from("templates")
+    .select("*")
+    .order("updated_at", { ascending: false });
+  if (error) {
+    console.error("[templates.list] erro", error);
+    return [];
   }
-  return out.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
+  return (data ?? [])
+    .map(rowToTemplate)
+    .filter((t): t is Template => t !== null);
 }
 
 export async function getTemplate(slug: string): Promise<Template | null> {
-  const cfgPath = path.join(TEMPLATES_DIR, slug, "config.json");
-  try {
-    const raw = await fs.readFile(cfgPath, "utf8");
-    const parsed = TemplateSchema.parse(JSON.parse(raw));
-    return parsed;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
-    throw err;
-  }
+  if (!supabaseConfigured()) return null;
+  // Usa admin client aqui pra o /api/generate poder ler sem depender de sessão SSR.
+  // O gate de autorização já é feito na rota (requireApproved).
+  const supabase = createSupabaseAdmin() ?? (await createSupabaseServer());
+  const { data, error } = await supabase
+    .from("templates")
+    .select("*")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error || !data) return null;
+  return rowToTemplate(data);
 }
 
 export async function saveTemplate(template: Template): Promise<Template> {
-  await ensureDir(path.join(TEMPLATES_DIR, template.slug));
-  const now = new Date().toISOString();
-  const stored: Template = {
-    ...template,
-    createdAt: template.createdAt ?? now,
-    updatedAt: now,
-  };
-  const cfgPath = path.join(TEMPLATES_DIR, template.slug, "config.json");
-  await fs.writeFile(cfgPath, JSON.stringify(stored, null, 2), "utf8");
-  return stored;
+  const supabase = createSupabaseAdmin();
+  if (!supabase) throw new Error("Supabase não configurado (service role missing)");
+  const row = templateToRow(template);
+  const { data, error } = await supabase
+    .from("templates")
+    .upsert(row, { onConflict: "slug" })
+    .select()
+    .single();
+  if (error || !data) throw new Error(`upsert falhou: ${error?.message}`);
+  const parsed = rowToTemplate(data);
+  if (!parsed) throw new Error("template salvo mas resposta inválida");
+  return parsed;
 }
 
 export async function deleteTemplate(slug: string): Promise<void> {
-  const dir = path.join(TEMPLATES_DIR, slug);
-  await fs.rm(dir, { recursive: true, force: true });
+  const supabase = createSupabaseAdmin();
+  if (!supabase) throw new Error("Supabase não configurado (service role missing)");
+  // apaga assets do storage (pasta com o slug)
+  const { data: files } = await supabase.storage.from(TEMPLATES_BUCKET).list(slug);
+  if (files && files.length > 0) {
+    const paths = files.map((f) => `${slug}/${f.name}`);
+    await supabase.storage.from(TEMPLATES_BUCKET).remove(paths);
+  }
+  const { error } = await supabase.from("templates").delete().eq("slug", slug);
+  if (error) throw new Error(`delete falhou: ${error.message}`);
 }
 
+/**
+ * Faz upload de um asset (background/foreground/thumbnail) para o bucket
+ * `templates` na pasta `<slug>/`. Retorna a URL pública.
+ */
 export async function writeTemplateAsset(
   slug: string,
   filename: string,
   buffer: Buffer,
 ): Promise<string> {
-  const dir = path.join(TEMPLATES_DIR, slug);
-  await ensureDir(dir);
-  const abs = path.join(dir, filename);
-  await fs.writeFile(abs, buffer);
-  return `/templates/${slug}/${filename}`;
+  const supabase = createSupabaseAdmin();
+  if (!supabase) throw new Error("Supabase não configurado (service role missing)");
+  const path = `${slug}/${filename}`;
+  const contentType = filename.endsWith(".jpg") || filename.endsWith(".jpeg")
+    ? "image/jpeg"
+    : "image/png";
+  const { error } = await supabase.storage
+    .from(TEMPLATES_BUCKET)
+    .upload(path, buffer, { contentType, upsert: true, cacheControl: "3600" });
+  if (error) throw new Error(`upload falhou: ${error.message}`);
+  const { data } = supabase.storage.from(TEMPLATES_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
 }
 
-/** Resolve `/templates/foo/bar.png` → caminho absoluto em disco. */
+/**
+ * Mantida para compat: se o `publicPath` for URL absoluta, devolve-a inalterada
+ * (o generator agora faz fetch). Se for path legado `/templates/...`, converte
+ * pra URL pública do bucket.
+ */
 export function resolvePublicPath(publicPath: string): string {
-  const clean = publicPath.startsWith("/") ? publicPath.slice(1) : publicPath;
-  return path.join(process.cwd(), "public", clean);
-}
-
-async function safeReadDir(dir: string): Promise<string[]> {
-  try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw err;
-  }
-}
-
-async function ensureDir(dir: string) {
-  await fs.mkdir(dir, { recursive: true });
+  if (/^https?:\/\//i.test(publicPath)) return publicPath;
+  // legado: /templates/<slug>/<file> → bucket
+  const clean = publicPath.replace(/^\/+/, "").replace(/^templates\//, "");
+  const supabase = createSupabaseAdmin();
+  if (!supabase) return publicPath;
+  const { data } = supabase.storage.from(TEMPLATES_BUCKET).getPublicUrl(clean);
+  return data.publicUrl;
 }

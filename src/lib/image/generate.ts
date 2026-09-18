@@ -1,5 +1,6 @@
 import sharp, { OverlayOptions } from "sharp";
 import { promises as fs } from "node:fs";
+import path from "node:path";
 import {
   Consultant,
   ConsultantPhotoLayer,
@@ -11,6 +12,31 @@ import {
 import { resolvePublicPath } from "../templates";
 import { renderText } from "./text";
 import { formatInstagram, formatPhoneBR } from "../utils";
+
+/** Baixa uma URL ou lê um path local e retorna o buffer. */
+async function fetchImage(src: string): Promise<Buffer | null> {
+  const resolved = resolvePublicPath(src);
+  if (/^https?:\/\//i.test(resolved)) {
+    try {
+      const r = await fetch(resolved);
+      if (!r.ok) return null;
+      const ab = await r.arrayBuffer();
+      return Buffer.from(ab);
+    } catch (err) {
+      console.warn(`[generate] falha ao baixar ${resolved}`, err);
+      return null;
+    }
+  }
+  // fallback local (dev)
+  const abs = path.isAbsolute(resolved)
+    ? resolved
+    : path.join(process.cwd(), "public", resolved.replace(/^\/+/, ""));
+  try {
+    return await fs.readFile(abs);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Renderiza a arte final para um template + dados do consultor.
@@ -73,16 +99,14 @@ async function buildOverlay(
 }
 
 async function buildImageOverlay(layer: ImageLayer, template: Template): Promise<OverlayOptions | null> {
-  const abs = resolvePublicPath(layer.src);
-  try {
-    await fs.access(abs);
-  } catch {
-    console.warn(`[generate] asset não encontrado: ${abs} (ignorando)`);
+  const raw = await fetchImage(layer.src);
+  if (!raw) {
+    console.warn(`[generate] asset não encontrado: ${layer.src} (ignorando)`);
     return null;
   }
   const w = layer.width ?? template.width;
   const h = layer.height ?? template.height;
-  const buf = await sharp(abs)
+  const buf = await sharp(raw)
     .resize({ width: Math.round(w), height: Math.round(h), fit: "fill" })
     .png()
     .toBuffer();
