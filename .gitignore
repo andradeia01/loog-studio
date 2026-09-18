@@ -13,3 +13,5 @@ tsconfig.tsbuildinfo
 /data/uploads
 .netlify
 .admin-credentials.txt
+admin-credentials.txt
+consultor-teste.txt
