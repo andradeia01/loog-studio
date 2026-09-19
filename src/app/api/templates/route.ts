@@ -20,12 +20,19 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const parsed = CreateSchema.safeParse(body);
   if (!parsed.success) {
+    console.error("[POST /api/templates] validação falhou", parsed.error.flatten());
     return NextResponse.json(
       { error: "config inválido", details: parsed.error.flatten() },
       { status: 400 },
     );
   }
   const template: Template = parsed.data;
-  const saved = await saveTemplate(template);
-  return NextResponse.json({ template: saved }, { status: 201 });
+  try {
+    const saved = await saveTemplate(template);
+    return NextResponse.json({ template: saved }, { status: 201 });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[POST /api/templates] saveTemplate falhou", msg);
+    return NextResponse.json({ error: "save_failed", message: msg }, { status: 500 });
+  }
 }
