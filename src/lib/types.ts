@@ -109,8 +109,8 @@ export const TemplateSchema = z.object({
   thumbnail: z.string(), // path public
   active: z.boolean().default(true),
   layers: z.array(LayerSchema),
-  createdAt: z.string().datetime().optional(),
-  updatedAt: z.string().datetime().optional(),
+  createdAt: z.string().datetime({ offset: true }).optional(),
+  updatedAt: z.string().datetime({ offset: true }).optional(),
 });
 export type Template = z.infer<typeof TemplateSchema>;
 
