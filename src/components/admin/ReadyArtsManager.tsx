@@ -221,6 +221,7 @@ export function ReadyArtsManager({ initial }: { initial: ReadyArtRow[] }) {
           <ul className="space-y-1 text-sm">
             <li>
               <button
+                type="button"
                 onClick={() => setView("all")}
                 className={cn(
                   "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition",
@@ -233,6 +234,7 @@ export function ReadyArtsManager({ initial }: { initial: ReadyArtRow[] }) {
             </li>
             <li>
               <button
+                type="button"
                 onClick={() => setView("none")}
                 onDragOver={(e) => { e.preventDefault(); setDragOverFolder("none"); }}
                 onDragLeave={() => setDragOverFolder(null)}
@@ -274,12 +276,13 @@ export function ReadyArtsManager({ initial }: { initial: ReadyArtRow[] }) {
                     dragOverFolder === f.id && "ring-2 ring-loog-brand2",
                   )}
                 >
-                  <button className="flex-1 truncate text-left" onClick={() => setView(f.id)}>
+                  <button type="button" className="flex-1 truncate text-left" onClick={() => setView(f.id)}>
                     <span className="mr-2">📁</span>{f.name}
                   </button>
                   <div className="flex items-center gap-1">
                     <span className="text-xs opacity-60">{f.count}</span>
                     <button
+                      type="button"
                       className="rounded p-1 opacity-0 hover:bg-white/10 group-hover:opacity-100"
                       onClick={() => renameFolder(f.id)}
                       title="Renomear"
@@ -287,6 +290,7 @@ export function ReadyArtsManager({ initial }: { initial: ReadyArtRow[] }) {
                       ✎
                     </button>
                     <button
+                      type="button"
                       className="rounded p-1 opacity-0 hover:bg-red-500/20 group-hover:opacity-100"
                       onClick={() => deleteFolder(f.id)}
                       title="Excluir pasta"
@@ -435,10 +439,10 @@ export function ReadyArtsManager({ initial }: { initial: ReadyArtRow[] }) {
                         {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                       </select>
                       <div className="flex gap-1">
-                        <button className="btn-ghost flex-1 !py-1 !text-[11px]" onClick={() => toggle(r.id, !r.active)}>
+                        <button type="button" className="btn-ghost flex-1 !py-1 !text-[11px]" onClick={() => toggle(r.id, !r.active)}>
                           {r.active ? "Despublicar" : "Publicar"}
                         </button>
-                        <button className="btn-ghost !py-1 !text-[11px] !text-red-400" onClick={() => remove(r.id)}>
+                        <button type="button" className="btn-ghost !py-1 !text-[11px] !text-red-400" onClick={() => remove(r.id)}>
                           Excluir
                         </button>
                       </div>

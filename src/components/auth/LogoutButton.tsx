@@ -13,7 +13,7 @@ export function LogoutButton({ className, label = "Sair" }: { className?: string
     router.refresh();
   }
   return (
-    <button onClick={onClick} className={cn("btn-ghost", className)}>
+    <button type="button" onClick={onClick} className={cn("btn-ghost", className)}>
       {label}
     </button>
   );
