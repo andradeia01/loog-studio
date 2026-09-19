@@ -100,13 +100,21 @@ export async function getTemplate(slug: string): Promise<Template | null> {
   return rowToTemplate(data);
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function saveTemplate(template: Template): Promise<Template> {
   const supabase = createSupabaseAdmin();
   if (!supabase) throw new Error("Supabase não configurado (service role missing)");
   const row = templateToRow(template);
+  // Se o id do cliente não é UUID válido (ex: 't-1234567890'), deixa o Postgres
+  // gerar via default gen_random_uuid(). O slug é o que identifica em upsert.
+  const rowForDb: Partial<typeof row> = { ...row };
+  if (!UUID_RE.test(row.id)) {
+    delete (rowForDb as Record<string, unknown>).id;
+  }
   const { data, error } = await supabase
     .from("templates")
-    .upsert(row, { onConflict: "slug" })
+    .upsert(rowForDb, { onConflict: "slug" })
     .select()
     .single();
   if (error || !data) throw new Error(`upsert falhou: ${error?.message}`);
