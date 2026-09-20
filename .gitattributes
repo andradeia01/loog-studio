@@ -1,0 +1,28 @@
+# Arquivos de fonte, imagens e outros binários — nunca converter EOL
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.pdf binary
+*.zip binary
+*.ico binary
+
+# Textos normalizam LF no repo, seguro pra crossplatform
+*.ts     text eol=lf
+*.tsx    text eol=lf
+*.js     text eol=lf
+*.mjs    text eol=lf
+*.json   text eol=lf
+*.md     text eol=lf
+*.sql    text eol=lf
+*.css    text eol=lf
+*.html   text eol=lf
+*.svg    text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.toml   text eol=lf
