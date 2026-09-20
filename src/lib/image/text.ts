@@ -1,11 +1,15 @@
 import sharp from "sharp";
+import path from "node:path";
 import { TextStyle } from "../types";
 import { escapeXml } from "../utils";
 
 /**
  * Renderiza um bloco de texto como PNG usando `sharp({ text: … })`, que
- * internamente aciona Pango + HarfBuzz — cobre fontes do sistema, kerning
- * e Unicode completo (Ã, Ç, á, etc.), diferente do renderer SVG do librsvg.
+ * internamente aciona Pango + HarfBuzz.
+ *
+ * IMPORTANTE: no ambiente serverless (Netlify Lambda) o sistema não tem
+ * a fonte Inter instalada, então o Pango caía em tofu (□□□). Passamos
+ * `fontfile` apontando para os TTFs empacotados em public/fonts/.
  *
  * Faz autofit: tenta o fontSize solicitado; se o resultado não couber em
  * (maxWidth × maxHeight), reduz progressivamente até `minFontSize`.
@@ -18,16 +22,28 @@ export interface RenderedText {
   fontSize: number;
 }
 
+const FONTS_DIR = path.join(process.cwd(), "public", "fonts");
+
+/** Escolhe o TTF do Inter pelo peso; cai no Regular se pedir peso não empacotado. */
+function fontFileFor(weight: number): string {
+  if (weight >= 900) return path.join(FONTS_DIR, "Inter-Black.ttf");
+  if (weight >= 700) return path.join(FONTS_DIR, "Inter-Bold.ttf");
+  if (weight >= 600) return path.join(FONTS_DIR, "Inter-SemiBold.ttf");
+  return path.join(FONTS_DIR, "Inter-Regular.ttf");
+}
+
+/** Nome da família como o Pango vai enxergar depois de carregar o arquivo. */
+function fontFamilyFor(weight: number): string {
+  if (weight >= 900) return "Inter Black";
+  if (weight >= 700) return "Inter Bold";
+  if (weight >= 600) return "Inter SemiBold";
+  return "Inter";
+}
+
 function fontString(style: TextStyle, size: number): string {
-  const weight =
-    style.fontWeight >= 800 ? "Heavy" :
-    style.fontWeight >= 700 ? "Bold" :
-    style.fontWeight >= 600 ? "Semibold" :
-    style.fontWeight >= 500 ? "Medium" :
-    "Regular";
-  // Pango espera "Family Style Size" em pontos. Ex.: "Inter Bold 42"
-  // Sharp aceita string única — usa em ordem os famílias separadas por vírgula.
-  return `${style.fontFamily}, Arial, sans-serif ${weight} ${size}`;
+  const family = fontFamilyFor(style.fontWeight);
+  // Sharp/Pango espera "Family Style Size" em pontos (não pixels).
+  return `${family} ${Math.round(size)}`;
 }
 
 function markup(text: string, style: TextStyle): string {
@@ -48,6 +64,7 @@ async function renderOnce(
       text: {
         text: markup(text, style),
         font: fontString(style, fontSize),
+        fontfile: fontFileFor(style.fontWeight),
         rgba: true,
         width: Math.max(1, Math.round(maxWidth)),
         align: style.align,
@@ -77,10 +94,9 @@ export async function renderText(
     const r = await renderOnce(text, style, fontSize, maxWidth);
     if (!r) return null;
     const heightOk = maxHeight ? r.height <= maxHeight : true;
-    // Sharp text dá quebra automática dentro de `width` — checamos só altura.
+    // Sharp text dá quebra automática dentro de `width`. Checamos só altura.
     if (heightOk) return r;
     fontSize -= 2;
   }
-  // último recurso: renderiza no mínimo, aceitando estouro visual.
   return renderOnce(text, style, minFont, maxWidth);
 }
