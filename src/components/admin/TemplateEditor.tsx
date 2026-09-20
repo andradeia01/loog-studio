@@ -516,7 +516,7 @@ export function TemplateEditor({ mode, initial }: Props) {
           {selected && (
             <div className="card p-5">
               <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-loog-muted">
-                Propriedades — {layerLabel(selected)}
+                Propriedades: {layerLabel(selected)}
               </h2>
               <LayerProps
                 layer={selected}

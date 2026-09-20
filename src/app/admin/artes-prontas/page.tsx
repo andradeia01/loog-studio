@@ -40,7 +40,7 @@ export default async function ReadyArtsPage() {
       <section className="container-loog pt-8">
         <h1 className="font-display text-3xl font-bold">Artes prontas</h1>
         <p className="mt-1 text-loog-muted">
-          Publique artes já finalizadas — os consultores baixam direto, sem editar nada.
+          Publique artes já finalizadas. Os consultores baixam direto, sem editar nada.
         </p>
         <AdminNav pendingCount={pendingCount} active="artes-prontas" />
       </section>

@@ -343,7 +343,7 @@ export function ReadyArtsManager({ initial }: { initial: ReadyArtRow[] }) {
               required
               value={form.title}
               onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="Ex.: Semana da Proteção — 03/set"
+              placeholder="Ex.: Semana da Proteção 03/set"
             />
           </div>
           <div className="grid grid-cols-3 gap-3">

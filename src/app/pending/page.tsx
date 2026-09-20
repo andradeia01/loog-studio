@@ -24,7 +24,7 @@ export default function PendingPage() {
             Normalmente a liberação sai em até 1 dia útil.
           </p>
           <div className="flex flex-col gap-2 pt-2">
-            <Link href="/login" className="btn-ghost">Já fui aprovado — entrar</Link>
+            <Link href="/login" className="btn-ghost">Já fui aprovado, entrar</Link>
             <LogoutButton className="btn-ghost !text-loog-muted" />
           </div>
         </div>

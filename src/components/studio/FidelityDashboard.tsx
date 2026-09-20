@@ -103,7 +103,7 @@ export function FidelityDashboard({ myId }: { myId: string | null }) {
       const j = await res.json();
       setFlash(
         j.already_today
-          ? `Registrado! Você já pontuou hoje — este post conta como atividade extra.`
+          ? `Registrado! Você já pontuou hoje. Este post conta como atividade extra.`
           : `+${j.points_awarded} pontos! Streak: ${j.stats?.current_streak} dia(s) 🔥`,
       );
       setForm({ post_url: "", post_type: "feed", caption: "" });
@@ -221,7 +221,7 @@ export function FidelityDashboard({ myId }: { myId: string | null }) {
           {heatmap.map((cell) => (
             <div
               key={cell.date}
-              title={`${cell.date} — ${cell.count} post(s)`}
+              title={`${cell.date}: ${cell.count} post(s)`}
               className={cn(
                 "aspect-square rounded",
                 cell.count === 0

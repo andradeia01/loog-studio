@@ -176,7 +176,7 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Artes prontas</h2>
-                <p className="text-xs text-loog-muted/80">Baixe direto — sem editar nada.</p>
+                <p className="text-xs text-loog-muted/80">Baixe direto, sem editar nada.</p>
               </div>
               <span className="text-xs text-loog-muted">{readyArts.length} disponíveis</span>
             </div>

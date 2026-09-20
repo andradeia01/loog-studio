@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LOOG Studio — crie suas artes",
+  title: "LOOG Studio",
   description:
     "Personalize, gere e publique artes exclusivas da LOOG Proteção Veicular em segundos.",
   metadataBase: new URL("http://localhost:3005"),
