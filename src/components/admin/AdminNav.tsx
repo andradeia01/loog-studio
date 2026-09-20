@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-type Key = "templates" | "consultores" | "artes-prontas";
+type Key = "templates" | "consultores" | "artes-prontas" | "fidelidade";
 
 const TABS: { key: Key; label: string; href: string }[] = [
   { key: "templates", label: "Templates", href: "/admin" },
   { key: "consultores", label: "Consultores", href: "/admin/consultores" },
   { key: "artes-prontas", label: "Artes prontas", href: "/admin/artes-prontas" },
+  { key: "fidelidade", label: "Fidelidade 🔥", href: "/admin/fidelidade" },
 ];
 
 export function AdminNav({ active, pendingCount }: { active: Key; pendingCount?: number }) {

@@ -71,6 +71,8 @@ export default async function StudioPage() {
     }
   }
 
+  const userAuth = supabaseConfigured() ? await currentUser() : null;
+
   return (
     <StudioApp
       initialTemplates={templates}
@@ -78,6 +80,7 @@ export default async function StudioPage() {
       readyFolders={folders}
       consultantSeed={consultantSeed}
       authEnabled={supabaseConfigured()}
+      userId={userAuth?.userId ?? null}
     />
   );
 }

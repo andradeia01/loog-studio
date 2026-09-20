@@ -17,6 +17,7 @@ import { PhotoUploader } from "./PhotoUploader";
 import { TemplateGallery } from "./TemplateGallery";
 import { TemplatePreview } from "./TemplatePreview";
 import { ReadyArtsGallery, type ReadyArt, type ReadyFolder } from "./ReadyArtsGallery";
+import { FidelityDashboard } from "./FidelityDashboard";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_CONSULTANT: Consultant = {
@@ -43,11 +44,12 @@ interface Props {
   readyFolders?: ReadyFolder[];
   consultantSeed: { fullName?: string; phone?: string; instagram?: string; city?: string } | null;
   authEnabled: boolean;
+  userId?: string | null;
 }
 
-type Tab = "ready" | "custom";
+type Tab = "ready" | "custom" | "fidelity";
 
-export function StudioApp({ initialTemplates, readyArts, readyFolders = [], consultantSeed, authEnabled }: Props) {
+export function StudioApp({ initialTemplates, readyArts, readyFolders = [], consultantSeed, authEnabled, userId = null }: Props) {
   const [tab, setTab] = useState<Tab>(readyArts.length > 0 ? "ready" : "custom");
 
   const [consultant, setConsultant] = useState<Consultant>(DEFAULT_CONSULTANT);
@@ -150,10 +152,25 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
           >
             Personalizar
           </button>
+          {authEnabled && (
+            <button
+              onClick={() => setTab("fidelity")}
+              className={cn(
+                "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                tab === "fidelity" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
+              )}
+            >
+              Fidelidade 🔥
+            </button>
+          )}
         </div>
       </section>
 
-      {tab === "ready" ? (
+      {tab === "fidelity" ? (
+        <section className="container-loog mt-6">
+          <FidelityDashboard myId={userId} />
+        </section>
+      ) : tab === "ready" ? (
         <section className="container-loog mt-6">
           <div className="card p-5">
             <div className="mb-4 flex items-center justify-between">
