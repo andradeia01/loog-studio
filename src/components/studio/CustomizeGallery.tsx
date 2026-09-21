@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Consultant, Template, TemplateCategory } from "@/lib/types";
 import { slugify, timestamp, cn } from "@/lib/utils";
 import { TemplatePreview } from "./TemplatePreview";
@@ -12,18 +12,18 @@ interface Props {
   category: TemplateCategory | "todos";
 }
 
-/**
- * Grid de todos os templates personalizáveis mostrando preview em tempo real
- * com os dados do consultor. Suporta:
- *  - Baixar 1 arte direto (share em mobile, download em desktop)
- *  - Selecionar N artes e baixar em ZIP via /api/generate-batch
- */
+const FORMAT_SHORT: Record<Template["format"], string> = {
+  "feed-1x1": "1:1",
+  "feed-4x5": "4:5",
+  "story-9x16": "9:16",
+};
+
 export function CustomizeGallery({ templates, consultant, dataOk, category }: Props) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [oneBusy, setOneBusy] = useState<string | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
   const [progress, setProgress] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null); // preview grande
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const visible = useMemo(() => {
     if (category === "todos") return templates;
@@ -35,21 +35,16 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
 
   function toggle(slug: string) {
     setSelected((s) => {
-      const next = new Set(s);
-      if (next.has(slug)) next.delete(slug);
-      else next.add(slug);
-      return next;
+      const n = new Set(s);
+      if (n.has(slug)) n.delete(slug); else n.add(slug);
+      return n;
     });
   }
-  function selectAll() {
-    setSelected(new Set(visible.map((t) => t.slug)));
-  }
-  function clearSelection() {
-    setSelected(new Set());
-  }
+  const selectAll = () => setSelected(new Set(visible.map((t) => t.slug)));
+  const clearSelection = () => setSelected(new Set());
 
   async function downloadOne(t: Template) {
-    if (!dataOk) return alertMissing();
+    if (!dataOk) return alert("Preencha nome e telefone antes de gerar.");
     setOneBusy(t.slug);
     try {
       const res = await fetch("/api/generate", {
@@ -72,7 +67,7 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
   }
 
   async function downloadBatch() {
-    if (!dataOk) return alertMissing();
+    if (!dataOk) return alert("Preencha nome e telefone antes de gerar.");
     const slugs = Array.from(selected);
     if (slugs.length === 0) return;
     if (slugs.length === 1) {
@@ -104,10 +99,6 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
     }
   }
 
-  function alertMissing() {
-    alert("Preencha seu nome e telefone antes de gerar as artes.");
-  }
-
   if (visible.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-loog-border p-10 text-center text-loog-muted">
@@ -118,8 +109,8 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
 
   return (
     <div className="space-y-4">
-      {/* Barra de seleção sticky */}
-      <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-loog-border bg-loog-panel/90 px-3 py-2 backdrop-blur">
+      {/* Barra sticky de seleção */}
+      <div className="sticky top-2 z-20 flex flex-wrap items-center gap-2 rounded-xl border border-loog-border bg-loog-panel/95 px-3 py-2 backdrop-blur">
         <button
           type="button"
           onClick={allSelected ? clearSelection : selectAll}
@@ -128,7 +119,7 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
           {allSelected ? "Desmarcar tudo" : "Selecionar tudo"}
         </button>
         <span className="text-xs text-loog-muted">
-          {someSelected ? `${selected.size} de ${visible.length} selecionadas` : "Toque nas artes que quer baixar"}
+          {someSelected ? `${selected.size} de ${visible.length}` : "Toque nas artes que quer baixar"}
         </span>
         <div className="ml-auto flex gap-2">
           {someSelected && (
@@ -154,7 +145,7 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
                 ? `Gerar e baixar ${selected.size} (ZIP)`
                 : selected.size === 1
                   ? "Gerar e baixar"
-                  : "Selecione artes"}
+                  : "Baixar selecionadas"}
           </button>
         </div>
       </div>
@@ -165,48 +156,36 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
         </div>
       )}
 
-      {/* Grid de templates com preview aplicado */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+      {/* Grid de cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {visible.map((t) => {
           const isSel = selected.has(t.slug);
           const busy = oneBusy === t.slug;
-          const aspect =
-            t.format === "story-9x16" ? "aspect-[9/16]"
-            : t.format === "feed-4x5" ? "aspect-[4/5]"
-            : "aspect-square";
           return (
             <div
               key={t.slug}
               className={cn(
-                "group flex flex-col overflow-hidden rounded-xl border bg-loog-panel transition",
-                isSel ? "border-loog-brand2 ring-2 ring-loog-brand2" : "border-loog-border hover:border-loog-brand/50",
+                "group relative flex flex-col overflow-hidden rounded-2xl border bg-loog-panel transition",
+                isSel ? "border-loog-brand2 ring-2 ring-loog-brand2 shadow-lg shadow-loog-brand/20" : "border-loog-border hover:border-loog-brand/50",
               )}
             >
-              <div
-                className={cn("relative w-full overflow-hidden bg-black", aspect, "cursor-pointer")}
+              <CardPreview
+                template={t}
+                consultant={consultant}
                 onClick={() => toggle(t.slug)}
-              >
-                <MiniPreview template={t} consultant={consultant} />
-                <span
-                  className={cn(
-                    "absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold transition",
-                    isSel
-                      ? "border-loog-brand2 bg-loog-brand2 text-white"
-                      : "border-white/70 bg-black/60 text-transparent group-hover:text-white/50",
-                  )}
-                >
-                  ✓
-                </span>
-                <span className="absolute right-2 top-2 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-white/90 backdrop-blur">
-                  {FORMAT_SHORT[t.format]}
-                </span>
-              </div>
-              <div className="flex flex-col gap-2 p-3">
+                selected={isSel}
+              />
+              {/* format badge */}
+              <span className="pointer-events-none absolute right-3 top-3 rounded-md bg-black/70 px-2 py-0.5 text-[10px] font-semibold text-white/90 backdrop-blur">
+                {FORMAT_SHORT[t.format]}
+              </span>
+              {/* Info + botões */}
+              <div className="flex flex-col gap-2 border-t border-loog-border/60 p-3">
                 <div className="truncate text-sm font-semibold" title={t.name}>{t.name}</div>
-                <div className="flex gap-1">
+                <div className="flex gap-2">
                   <button
                     type="button"
-                    className="btn-primary flex-1 !py-1.5 !text-[11px]"
+                    className="btn-primary flex-1 !py-2 !text-xs"
                     onClick={() => downloadOne(t)}
                     disabled={busy || batchBusy || !dataOk}
                   >
@@ -214,11 +193,11 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
                   </button>
                   <button
                     type="button"
-                    className="btn-ghost !py-1.5 !text-[11px]"
+                    className="rounded-lg border border-loog-border px-3 py-2 text-xs hover:border-white/40"
                     onClick={() => setExpanded(t.slug)}
-                    title="Ver em tamanho maior"
+                    title="Ver em tela cheia"
                   >
-                    👁
+                    Ver
                   </button>
                 </div>
               </div>
@@ -227,18 +206,21 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
         })}
       </div>
 
-      {/* Modal de preview grande */}
+      {/* Modal preview grande */}
       {expanded && (() => {
         const t = templates.find((x) => x.slug === expanded);
         if (!t) return null;
         return (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
             onClick={() => setExpanded(null)}
           >
-            <div className="relative max-h-[90vh] max-w-[90vw] overflow-auto" onClick={(e) => e.stopPropagation()}>
-              <TemplatePreview template={t} consultant={consultant} />
-              <div className="mt-3 flex justify-center gap-3">
+            <div
+              className="relative flex max-h-[92vh] flex-col items-center gap-4 overflow-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <TemplatePreview template={t} consultant={consultant} maxWidth={520} />
+              <div className="flex gap-3">
                 <button
                   type="button"
                   className="btn-primary !text-xs"
@@ -247,11 +229,7 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
                 >
                   Baixar essa
                 </button>
-                <button
-                  type="button"
-                  className="btn-ghost !text-xs"
-                  onClick={() => setExpanded(null)}
-                >
+                <button type="button" className="btn-ghost !text-xs" onClick={() => setExpanded(null)}>
                   Fechar
                 </button>
               </div>
@@ -263,27 +241,54 @@ export function CustomizeGallery({ templates, consultant, dataOk, category }: Pr
   );
 }
 
-const FORMAT_SHORT: Record<Template["format"], string> = {
-  "feed-1x1": "1:1",
-  "feed-4x5": "4:5",
-  "story-9x16": "9:16",
-};
+/**
+ * Wrapper responsivo do preview: mede a largura real do card via ResizeObserver
+ * e passa `maxWidth` pro TemplatePreview. Garante que a arte inteira caiba no
+ * card e faz overlay do checkbox.
+ */
+function CardPreview({
+  template,
+  consultant,
+  onClick,
+  selected,
+}: {
+  template: Template;
+  consultant: Consultant;
+  onClick: () => void;
+  selected: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(320);
 
-/** Preview miniatura: mesma composição do TemplatePreview mas em contêiner de tamanho fixo. */
-function MiniPreview({ template, consultant }: { template: Template; consultant: Consultant }) {
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) setW(e.contentRect.width);
+    });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+
   return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-      <div
-        className="origin-top-left"
-        style={{
-          width: template.width,
-          height: template.height,
-          transform: `scale(${Math.min(1, 480 / template.width)})`,
-          transformOrigin: "top left",
-        }}
-      >
-        <TemplatePreview template={template} consultant={consultant} />
+    <div
+      ref={ref}
+      onClick={onClick}
+      className="relative w-full cursor-pointer overflow-hidden bg-black"
+    >
+      {/* wrapper que centraliza o preview dentro do card */}
+      <div className="flex items-center justify-center">
+        <TemplatePreview template={template} consultant={consultant} maxWidth={w} bare />
       </div>
+      <span
+        className={cn(
+          "absolute left-3 top-3 flex h-7 w-7 items-center justify-center rounded-full border-2 text-xs font-bold transition",
+          selected
+            ? "border-loog-brand2 bg-loog-brand2 text-white"
+            : "border-white/70 bg-black/70 text-transparent group-hover:text-white/60",
+        )}
+      >
+        ✓
+      </span>
     </div>
   );
 }

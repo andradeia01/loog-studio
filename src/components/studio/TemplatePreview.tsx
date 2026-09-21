@@ -7,28 +7,33 @@ import { formatInstagram, formatPhoneBR } from "@/lib/utils";
 interface Props {
   template: Template;
   consultant: Consultant;
+  maxWidth?: number;
+  /** Remove borda/arredondado/margens externas. Usado quando o preview vive dentro de outro card. */
+  bare?: boolean;
 }
 
 /**
  * Preview client-side em HTML/CSS reproduzindo aproximadamente a composição.
- * Não chama a API — muda em tempo real conforme o consultor edita.
+ * Não chama a API. Muda em tempo real conforme o consultor edita.
  * A geração fiel em pixels acontece no server via Sharp.
+ *
+ * `maxWidth` (default 480) permite renderizar em tamanhos diferentes:
+ * cards de galeria usam ~260px; modal usa 480+.
  */
-export function TemplatePreview({ template, consultant }: Props) {
+export function TemplatePreview({ template, consultant, maxWidth = 480, bare = false }: Props) {
   const scale = useMemo(() => {
-    // renderiza no máximo 480px de largura (~cabe no viewport mobile)
-    const max = 480;
-    return Math.min(1, max / template.width);
-  }, [template.width]);
+    return Math.min(1, maxWidth / template.width);
+  }, [maxWidth, template.width]);
 
   const displayW = template.width * scale;
   const displayH = template.height * scale;
 
+  const wrapperClass = bare
+    ? "relative overflow-hidden bg-black"
+    : "relative mx-auto overflow-hidden rounded-xl border border-loog-border bg-black";
+
   return (
-    <div
-      className="relative mx-auto overflow-hidden rounded-xl border border-loog-border bg-black"
-      style={{ width: displayW, height: displayH }}
-    >
+    <div className={wrapperClass} style={{ width: displayW, height: displayH }}>
       {template.layers.map((layer) => (
         <LayerView key={layer.id} layer={layer} scale={scale} consultant={consultant} />
       ))}
