@@ -14,8 +14,7 @@ import { LoogLogo } from "@/components/ui/LoogMark";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import { ConsultantForm } from "./ConsultantForm";
 import { PhotoUploader } from "./PhotoUploader";
-import { TemplateGallery } from "./TemplateGallery";
-import { TemplatePreview } from "./TemplatePreview";
+import { CustomizeGallery } from "./CustomizeGallery";
 import { ReadyArtsGallery, type ReadyArt, type ReadyFolder } from "./ReadyArtsGallery";
 import { FidelityDashboard } from "./FidelityDashboard";
 import { cn } from "@/lib/utils";
@@ -55,8 +54,6 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
   const [consultant, setConsultant] = useState<Consultant>(DEFAULT_CONSULTANT);
   const [ready, setReady] = useState(false);
   const [category, setCategory] = useState<TemplateCategory | "todos">("todos");
-  const [selected, setSelected] = useState<Template | null>(null);
-  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     const stored = loadConsultant();
@@ -87,29 +84,6 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
   }, [category, initialTemplates]);
 
   const dataOk = ConsultantSchema.safeParse(consultant).success;
-
-  async function handleGenerate() {
-    if (!selected || !dataOk) return;
-    setLoading(true);
-    try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templateSlug: selected.slug, consultant }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const blob = await res.blob();
-      const filename =
-        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ??
-        `LOOG-${selected.slug}.png`;
-      await deliverBlob(blob, filename);
-    } catch (err) {
-      console.error(err);
-      alert("Não foi possível gerar sua arte. Tente novamente.");
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <main className="min-h-screen pb-24">
@@ -208,41 +182,26 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
           <div className="space-y-6">
             <div className="card p-5">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Escolha sua arte</h2>
-                <span className="text-xs text-loog-muted">{filtered.length} artes</span>
+                <div>
+                  <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Suas artes personalizadas</h2>
+                  <p className="text-xs text-loog-muted/80">Cada arte já mostra seus dados aplicados. Selecione várias e baixe tudo de uma vez.</p>
+                </div>
+                <span className="text-xs text-loog-muted">{filtered.length} disponíveis</span>
               </div>
               <div className="mb-4 flex flex-wrap gap-2">
                 {CATEGORIES.map((c) => (
-                  <button key={c.key} onClick={() => setCategory(c.key)} className={category === c.key ? "chip-active" : "chip"}>
+                  <button key={c.key} type="button" onClick={() => setCategory(c.key)} className={category === c.key ? "chip-active" : "chip"}>
                     {c.label}
                   </button>
                 ))}
               </div>
-              {filtered.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-loog-border p-8 text-center text-loog-muted">
-                  Nenhuma arte disponível ainda.
-                </div>
-              ) : (
-                <TemplateGallery templates={filtered} selectedSlug={selected?.slug} onSelect={setSelected} />
-              )}
+              <CustomizeGallery
+                templates={filtered}
+                consultant={consultant}
+                dataOk={dataOk}
+                category={category}
+              />
             </div>
-
-            {selected && (
-              <div className="card p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Prévia</h2>
-                  <button className="text-xs text-loog-muted hover:text-white" onClick={() => setSelected(null)}>fechar</button>
-                </div>
-                <TemplatePreview template={selected} consultant={consultant} />
-                <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                  <button onClick={handleGenerate} disabled={!dataOk || loading} className="btn-primary flex-1">
-                    {loading ? "Gerando…" : "Gerar minha arte"}
-                  </button>
-                  <button className="btn-ghost" onClick={() => setSelected(null)}>Escolher outra</button>
-                </div>
-                {!dataOk && <p className="mt-3 text-xs text-loog-muted">Preencha nome e telefone para liberar a geração.</p>}
-              </div>
-            )}
           </div>
         </section>
       )}
@@ -250,27 +209,3 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
   );
 }
 
-async function deliverBlob(blob: Blob, filename: string) {
-  const nav =
-    typeof navigator !== "undefined"
-      ? (navigator as Navigator & { canShare?: (d: ShareData) => boolean; share?: (d: ShareData) => Promise<void> })
-      : null;
-  const file = new File([blob], filename, { type: blob.type || "image/png" });
-  const canShare = !!nav?.canShare && nav.canShare({ files: [file] });
-  if (canShare && nav?.share) {
-    try {
-      await nav.share({ files: [file], title: "Minha arte LOOG" });
-      return;
-    } catch {
-      // fallback pro download
-    }
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-}
