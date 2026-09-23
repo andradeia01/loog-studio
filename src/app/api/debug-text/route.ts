@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 import { renderText } from "@/lib/image/text";
 
 export const runtime = "nodejs";
@@ -25,7 +26,14 @@ export async function GET() {
     if (!r) {
       return NextResponse.json({ error: "renderText retornou null" }, { status: 500 });
     }
-    return new NextResponse(new Uint8Array(r.buffer), {
+    // compõe texto sobre fundo azul-marinho pra visibilidade
+    const composed = await sharp({
+      create: { width: 800, height: r.height + 20, channels: 4, background: { r: 10, g: 25, b: 60, alpha: 1 } },
+    })
+      .composite([{ input: r.buffer, left: 0, top: 10 }])
+      .png()
+      .toBuffer();
+    return new NextResponse(new Uint8Array(composed), {
       status: 200,
       headers: {
         "Content-Type": "image/png",
