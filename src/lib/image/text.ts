@@ -98,7 +98,7 @@ async function renderOnce(
     const image = sharp({
       text: {
         text: markup(text, style),
-        font: `${spec.family} ${Math.round(fontSize)}`,
+        font: `Inter ${Math.round(fontSize)}`,
         fontfile,
         rgba: true,
         width: Math.max(1, Math.round(maxWidth)),
