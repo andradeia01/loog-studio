@@ -3,7 +3,7 @@ import path from "node:path";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  serverExternalPackages: ["sharp"],
+  serverExternalPackages: ["sharp", "@napi-rs/canvas"],
   // Sem isso, o Next 15 pode pegar o home dir como workspace root
   // (se houver algum lockfile no parent) e o plugin Netlify gera paths errados.
   outputFileTracingRoot: path.resolve("."),

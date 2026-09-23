@@ -13,6 +13,7 @@
     "package:netlify": "tsx scripts/package-for-netlify.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.45.4",
     "clsx": "^2.1.1",
