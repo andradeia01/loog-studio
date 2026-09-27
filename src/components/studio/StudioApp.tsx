@@ -104,99 +104,47 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], read
         </div>
       </header>
 
-      <section className="container-loog pt-8">
-        <h1 className="font-display text-3xl font-bold sm:text-4xl">
-          {consultant.name ? `Olá, ${consultant.name.split(" ")[0]} 👋` : "Bem-vindo, consultor LOOG"}
+      <section className="container-loog pt-6 sm:pt-8">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
+          {consultant.name ? `Olá, ${consultant.name.split(" ")[0]}` : "Bem-vindo"}
         </h1>
-        <p className="mt-1 text-loog-muted">Escolha uma arte pronta ou personalize com seus dados.</p>
+        <p className="mt-1 text-sm text-loog-muted sm:text-base">
+          Movimento conecta o amanhã.
+        </p>
 
-        <div className="mt-6 inline-flex rounded-2xl border border-loog-border bg-loog-panel p-1">
-          <button
-            onClick={() => setTab("ready")}
-            className={cn(
-              "rounded-xl px-4 py-2 text-sm font-semibold transition",
-              tab === "ready" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-            )}
-          >
-            Artes prontas
-            {readyArts.length > 0 && (
-              <span className="ml-2 rounded-full bg-black/40 px-2 py-0.5 text-[10px]">{readyArts.length}</span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab("videos")}
-            className={cn(
-              "rounded-xl px-4 py-2 text-sm font-semibold transition",
-              tab === "videos" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-            )}
-          >
-            Vídeos prontos
-            {readyVideos.length > 0 && (
-              <span className="ml-2 rounded-full bg-black/40 px-2 py-0.5 text-[10px]">{readyVideos.length}</span>
-            )}
-          </button>
-          <button
-            onClick={() => setTab("custom")}
-            className={cn(
-              "rounded-xl px-4 py-2 text-sm font-semibold transition",
-              tab === "custom" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-            )}
-          >
-            Personalizar
-          </button>
-          {authEnabled && (
-            <>
-              <button
-                onClick={() => setTab("copy")}
-                className={cn(
-                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                  tab === "copy" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-                )}
-              >
-                Copy IA ✨
-              </button>
-              <button
-                onClick={() => setTab("images")}
-                className={cn(
-                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                  tab === "images" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-                )}
-              >
-                Imagens IA 🎨
-              </button>
-              <button
-                onClick={() => setTab("voice")}
-                className={cn(
-                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                  tab === "voice" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-                )}
-              >
-                Voz IA 🎙️
-              </button>
-              <button
-                onClick={() => setTab("fidelity")}
-                className={cn(
-                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                  tab === "fidelity" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-                )}
-              >
-                Fidelidade 🔥
-              </button>
-            </>
-          )}
-          <Link
-            href="/studio/editor"
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-loog-muted transition hover:text-white"
-          >
+        {/* Barra de abas — scroll horizontal em mobile, wrap em desktop */}
+        <nav className="mt-5 tabs-scroll sm:mx-0 sm:flex sm:flex-wrap sm:overflow-visible sm:rounded-2xl sm:border sm:border-loog-border sm:bg-loog-panel sm:p-1">
+          {[
+            { k: "ready" as Tab, label: "Artes prontas", count: readyArts.length, always: true },
+            { k: "videos" as Tab, label: "Vídeos prontos", count: readyVideos.length, always: true },
+            { k: "custom" as Tab, label: "Personalizar", always: true },
+            { k: "copy" as Tab, label: "Copy IA ✨", authOnly: true },
+            { k: "images" as Tab, label: "Imagens IA 🎨", authOnly: true },
+            { k: "voice" as Tab, label: "Voz IA 🎙️", authOnly: true },
+            { k: "fidelity" as Tab, label: "Fidelidade 🔥", authOnly: true },
+          ].filter((t) => t.always || (t.authOnly && authEnabled)).map((t) => (
+            <button
+              key={t.k}
+              type="button"
+              onClick={() => setTab(t.k)}
+              className={cn(
+                "tab-item",
+                tab === t.k ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
+              )}
+            >
+              {t.label}
+              {t.count ? (
+                <span className={cn("ml-2 rounded-full px-2 py-0.5 text-[10px]", tab === t.k ? "bg-black/40" : "bg-white/10")}>{t.count}</span>
+              ) : null}
+            </button>
+          ))}
+          <Link href="/studio/editor" className="tab-item text-loog-muted hover:text-white">
             Editor Vídeo 🎬
           </Link>
-          <Link
-            href="/studio/reels"
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-loog-muted transition hover:text-white"
-          >
+          <Link href="/studio/reels" className="tab-item text-loog-muted hover:text-white">
             Fábrica de Reels
           </Link>
-        </div>
+        </nav>
       </section>
 
       {tab === "copy" ? (

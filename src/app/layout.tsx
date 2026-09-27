@@ -4,19 +4,27 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "LOOG Studio",
   description:
-    "Personalize, gere e publique artes exclusivas da LOOG Proteção Veicular em segundos.",
-  metadataBase: new URL("http://localhost:3005"),
+    "Movimento conecta o amanhã. Personalize artes, gere conteúdo com IA e cresça sua base.",
+  metadataBase: new URL("https://loogstudio.netlify.app"),
   openGraph: {
     title: "LOOG Studio",
-    description: "Crie suas artes LOOG em segundos.",
+    description: "Estúdio oficial dos consultores LOOG.",
     type: "website",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "LOOG Studio",
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#08090B",
+  themeColor: "#050608",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
