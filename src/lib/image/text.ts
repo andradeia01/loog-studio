@@ -28,10 +28,10 @@ interface FontSpec {
 }
 
 const FONT_SPECS: FontSpec[] = [
-  { weight: 400, filename: "Inter-Regular.ttf" },
-  { weight: 600, filename: "Inter-SemiBold.ttf" },
-  { weight: 700, filename: "Inter-Bold.ttf" },
-  { weight: 900, filename: "Inter-Black.ttf" },
+  { weight: 400, filename: "Inter-Regular.woff2" },
+  { weight: 600, filename: "Inter-SemiBold.woff2" },
+  { weight: 700, filename: "Inter-Bold.woff2" },
+  { weight: 900, filename: "Inter-Black.woff2" },
 ];
 
 const PUBLIC_DIR = path.join(process.cwd(), "public", "fonts");
