@@ -19,6 +19,7 @@ import { ReadyArtsGallery, type ReadyArt, type ReadyFolder } from "./ReadyArtsGa
 import { FidelityDashboard } from "./FidelityDashboard";
 import { CopyStudio } from "./CopyStudio";
 import { ImagesStudio } from "./ImagesStudio";
+import { VoiceStudio } from "./VoiceStudio";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_CONSULTANT: Consultant = {
@@ -48,7 +49,7 @@ interface Props {
   userId?: string | null;
 }
 
-type Tab = "ready" | "custom" | "copy" | "images" | "fidelity";
+type Tab = "ready" | "custom" | "copy" | "images" | "voice" | "fidelity";
 
 export function StudioApp({ initialTemplates, readyArts, readyFolders = [], consultantSeed, authEnabled, userId = null }: Props) {
   const [tab, setTab] = useState<Tab>(readyArts.length > 0 ? "ready" : "custom");
@@ -149,6 +150,15 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
                 Imagens IA 🎨
               </button>
               <button
+                onClick={() => setTab("voice")}
+                className={cn(
+                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                  tab === "voice" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
+                )}
+              >
+                Voz IA 🎙️
+              </button>
+              <button
                 onClick={() => setTab("fidelity")}
                 className={cn(
                   "rounded-xl px-4 py-2 text-sm font-semibold transition",
@@ -175,6 +185,10 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
       ) : tab === "images" ? (
         <section className="container-loog mt-6">
           <ImagesStudio />
+        </section>
+      ) : tab === "voice" ? (
+        <section className="container-loog mt-6">
+          <VoiceStudio />
         </section>
       ) : tab === "fidelity" ? (
         <section className="container-loog mt-6">
