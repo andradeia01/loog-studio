@@ -1,52 +1,90 @@
 import { NextResponse } from "next/server";
-import sharp from "sharp";
-import { renderText } from "@/lib/image/text";
+import path from "node:path";
+import fs from "node:fs";
+import { promises as fsp } from "node:fs";
+import os from "node:os";
+import { createCanvas, GlobalFonts } from "@napi-rs/canvas";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Endpoint de debug — renderiza um texto de teste em PNG com fundo azul. */
+/** Debug: mostra estado das fontes + testa render. */
 export async function GET() {
-  try {
-    const r = await renderText(
-      "TESTE João da Silva ção 123",
-      {
-        fontFamily: "Inter",
-        fontSize: 60,
-        fontWeight: 700,
-        letterSpacing: 0,
-        lineHeight: 1.2,
-        color: "#FFFFFF",
-        align: "left",
-        uppercase: false,
-        minFontSize: 20,
-      },
-      800,
-    );
-    if (!r) {
-      return NextResponse.json({ error: "renderText retornou null" }, { status: 500 });
+  const info: Record<string, unknown> = {};
+  const cwd = process.cwd();
+  const publicDir = path.join(cwd, "public", "fonts");
+  const tmpDir = path.join(os.tmpdir(), "loog-fonts");
+  const filenames = ["Inter-Regular.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf", "Inter-Black.ttf"];
+
+  info.cwd = cwd;
+  info.tmpDir = tmpDir;
+  info.publicDirExists = fs.existsSync(publicDir);
+  info.fontsInPublic = filenames.map((f) => ({
+    name: f,
+    exists: fs.existsSync(path.join(publicDir, f)),
+    size: fs.existsSync(path.join(publicDir, f)) ? fs.statSync(path.join(publicDir, f)).size : null,
+  }));
+
+  info.familiesBefore = GlobalFonts.families.map((f) => f.family);
+
+  // tentar carregar do public
+  const registerResults: Record<string, boolean> = {};
+  await fsp.mkdir(tmpDir, { recursive: true });
+
+  for (const f of filenames) {
+    let resolved: string | null = null;
+    const pubPath = path.join(publicDir, f);
+    if (fs.existsSync(pubPath)) {
+      resolved = pubPath;
+    } else {
+      const tmpPath = path.join(tmpDir, f);
+      if (!fs.existsSync(tmpPath)) {
+        try {
+          const r = await fetch(`https://loogstudio.netlify.app/fonts/${f}`);
+          if (r.ok) {
+            const buf = Buffer.from(await r.arrayBuffer());
+            await fsp.writeFile(tmpPath, buf);
+          } else {
+            registerResults[f] = false;
+            continue;
+          }
+        } catch (err) {
+          registerResults[f] = false;
+          info[`fetchErr-${f}`] = err instanceof Error ? err.message : String(err);
+          continue;
+        }
+      }
+      resolved = tmpPath;
     }
-    // compõe texto sobre fundo azul-marinho pra visibilidade
-    const composed = await sharp({
-      create: { width: 800, height: r.height + 20, channels: 4, background: { r: 10, g: 25, b: 60, alpha: 1 } },
-    })
-      .composite([{ input: r.buffer, left: 0, top: 10 }])
-      .png()
-      .toBuffer();
-    return new NextResponse(new Uint8Array(composed), {
-      status: 200,
-      headers: {
-        "Content-Type": "image/png",
-        "Cache-Control": "no-store",
-        "X-Text-Width": String(r.width),
-        "X-Text-Height": String(r.height),
-        "X-Font-Size": String(r.fontSize),
-      },
-    });
-  } catch (err) {
-    return NextResponse.json(
-      { error: "exception", message: err instanceof Error ? err.message : String(err) },
-      { status: 500 },
-    );
+    try {
+      const ok = GlobalFonts.registerFromPath(resolved, "Inter");
+      registerResults[f] = ok;
+    } catch (err) {
+      registerResults[f] = false;
+      info[`regErr-${f}`] = err instanceof Error ? err.message : String(err);
+    }
   }
+  info.registerResults = registerResults;
+  info.familiesAfter = GlobalFonts.families.map((f) => f.family);
+  info.has = GlobalFonts.has("Inter");
+
+  // tenta renderizar
+  try {
+    const canvas = createCanvas(800, 100);
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#0A1A3C";
+    ctx.fillRect(0, 0, 800, 100);
+    ctx.font = "700 60px Inter";
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText("TESTE ção 123", 20, 70);
+    const buf = await canvas.encode("png");
+    info.renderOk = true;
+    info.pngSize = buf.length;
+  } catch (err) {
+    info.renderOk = false;
+    info.renderErr = err instanceof Error ? err.message : String(err);
+  }
+
+  return NextResponse.json(info, { status: 200 });
 }
