@@ -11,7 +11,7 @@ export async function GET() {
   const info: Record<string, unknown> = {};
   const cwd = process.cwd();
   const publicDir = path.join(cwd, "public", "fonts");
-  const filenames = ["Inter-Regular.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf", "Inter-Black.ttf"];
+  const filenames = ["Inter-Regular.woff2", "Inter-SemiBold.woff2", "Inter-Bold.woff2", "Inter-Black.woff2"];
 
   info.familiesInitial = GlobalFonts.families.map((f) => f.family).slice(0, 30);
 
