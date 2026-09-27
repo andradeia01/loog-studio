@@ -26,7 +26,7 @@ function LoginInner() {
       setLoading(false);
       return;
     }
-    // Descobre destino: se admin aprovado → /admin; senão → /studio (ou o redirect explícito).
+    // Descobre destino: admin→/admin, gestor→/gestor, consultor aprovado→/studio; pending/rejected→telas específicas.
     let dest = explicitRedirect ?? "/studio";
     if (!explicitRedirect) {
       const { data: profile } = await supabase
@@ -34,9 +34,10 @@ function LoginInner() {
         .select("role, status")
         .eq("id", data.user.id)
         .maybeSingle();
-      if (profile?.status === "approved" && profile.role === "admin") dest = "/admin";
-      else if (profile?.status === "rejected") dest = "/rejected";
-      else if (profile?.status !== "approved") dest = "/pending";
+      if (profile?.status !== "approved") {
+        dest = profile?.status === "rejected" ? "/rejected" : "/pending";
+      } else if (profile.role === "admin") dest = "/admin";
+      else if (profile.role === "gestor") dest = "/gestor";
       else dest = "/studio";
     }
     router.replace(dest);

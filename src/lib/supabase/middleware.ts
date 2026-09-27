@@ -44,7 +44,12 @@ export async function updateSession(request: NextRequest) {
 
   const path = request.nextUrl.pathname;
   const isProtected =
-    path.startsWith("/studio") || path.startsWith("/admin") || path.startsWith("/api/generate");
+    path.startsWith("/studio") ||
+    path.startsWith("/admin") ||
+    path.startsWith("/gestor") ||
+    path.startsWith("/api/generate") ||
+    path.startsWith("/api/ai") ||
+    path.startsWith("/api/admin");
   const isAuthPage =
     path === "/login" || path === "/signup" || path === "/pending" || path === "/rejected";
 
@@ -63,19 +68,21 @@ export async function updateSession(request: NextRequest) {
       .eq("id", user.id)
       .maybeSingle();
 
+    // Destino padrão por role/status (compartilhado)
+    function defaultDest(): string {
+      if (profile?.status !== "approved") {
+        return profile?.status === "rejected" ? "/rejected" : "/pending";
+      }
+      if (profile.role === "admin") return "/admin";
+      if (profile.role === "gestor") return "/gestor";
+      return "/studio";
+    }
+
     // Se logado e na tela de login/signup, manda pro destino certo
     if (isAuthPage && profile) {
       const to = request.nextUrl.clone();
-      to.pathname =
-        profile.status === "approved"
-          ? profile.role === "admin"
-            ? "/admin"
-            : "/studio"
-          : profile.status === "rejected"
-            ? "/rejected"
-            : "/pending";
+      to.pathname = defaultDest();
       to.search = "";
-      // não redireciona se já estamos na tela certa
       if (to.pathname !== path) return NextResponse.redirect(to);
     }
 
@@ -89,7 +96,17 @@ export async function updateSession(request: NextRequest) {
     // Bloqueia /admin se não for admin aprovado
     if (path.startsWith("/admin") && (profile?.role !== "admin" || profile?.status !== "approved")) {
       const to = request.nextUrl.clone();
-      to.pathname = "/studio";
+      to.pathname = defaultDest();
+      return NextResponse.redirect(to);
+    }
+
+    // Bloqueia /gestor se não for gestor OU admin aprovado
+    if (
+      path.startsWith("/gestor") &&
+      (profile?.status !== "approved" || (profile.role !== "gestor" && profile.role !== "admin"))
+    ) {
+      const to = request.nextUrl.clone();
+      to.pathname = defaultDest();
       return NextResponse.redirect(to);
     }
   }
