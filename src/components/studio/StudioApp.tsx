@@ -16,6 +16,7 @@ import { ConsultantForm } from "./ConsultantForm";
 import { PhotoUploader } from "./PhotoUploader";
 import { CustomizeGallery } from "./CustomizeGallery";
 import { ReadyArtsGallery, type ReadyArt, type ReadyFolder } from "./ReadyArtsGallery";
+import { ReadyVideosGallery, type ReadyVideo, type VideoFolder } from "./ReadyVideosGallery";
 import { FidelityDashboard } from "./FidelityDashboard";
 import { CopyStudio } from "./CopyStudio";
 import { ImagesStudio } from "./ImagesStudio";
@@ -44,14 +45,16 @@ interface Props {
   initialTemplates: Template[];
   readyArts: ReadyArt[];
   readyFolders?: ReadyFolder[];
+  readyVideos?: ReadyVideo[];
+  readyVideoFolders?: VideoFolder[];
   consultantSeed: { fullName?: string; phone?: string; instagram?: string; city?: string } | null;
   authEnabled: boolean;
   userId?: string | null;
 }
 
-type Tab = "ready" | "custom" | "copy" | "images" | "voice" | "fidelity";
+type Tab = "ready" | "videos" | "custom" | "copy" | "images" | "voice" | "fidelity";
 
-export function StudioApp({ initialTemplates, readyArts, readyFolders = [], consultantSeed, authEnabled, userId = null }: Props) {
+export function StudioApp({ initialTemplates, readyArts, readyFolders = [], readyVideos = [], readyVideoFolders = [], consultantSeed, authEnabled, userId = null }: Props) {
   const [tab, setTab] = useState<Tab>(readyArts.length > 0 ? "ready" : "custom");
 
   const [consultant, setConsultant] = useState<Consultant>(DEFAULT_CONSULTANT);
@@ -115,9 +118,21 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
               tab === "ready" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
             )}
           >
-            Prontas pra baixar
+            Artes prontas
             {readyArts.length > 0 && (
               <span className="ml-2 rounded-full bg-black/40 px-2 py-0.5 text-[10px]">{readyArts.length}</span>
+            )}
+          </button>
+          <button
+            onClick={() => setTab("videos")}
+            className={cn(
+              "rounded-xl px-4 py-2 text-sm font-semibold transition",
+              tab === "videos" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
+            )}
+          >
+            Vídeos prontos
+            {readyVideos.length > 0 && (
+              <span className="ml-2 rounded-full bg-black/40 px-2 py-0.5 text-[10px]">{readyVideos.length}</span>
             )}
           </button>
           <button
@@ -210,6 +225,25 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
               </div>
             ) : (
               <ReadyArtsGallery arts={readyArts} folders={readyFolders} />
+            )}
+          </div>
+        </section>
+      ) : tab === "videos" ? (
+        <section className="container-loog mt-6">
+          <div className="card p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Vídeos prontos</h2>
+                <p className="text-xs text-loog-muted/80">Reels prontos pra postar direto do celular.</p>
+              </div>
+              <span className="text-xs text-loog-muted">{readyVideos.length} disponíveis</span>
+            </div>
+            {readyVideos.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-loog-border p-10 text-center text-loog-muted">
+                Nenhum vídeo publicado ainda pelo admin. Enquanto isso, use a <b>Fábrica de Reels</b>.
+              </div>
+            ) : (
+              <ReadyVideosGallery videos={readyVideos} folders={readyVideoFolders} />
             )}
           </div>
         </section>
