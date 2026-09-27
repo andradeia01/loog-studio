@@ -17,6 +17,8 @@ import { PhotoUploader } from "./PhotoUploader";
 import { CustomizeGallery } from "./CustomizeGallery";
 import { ReadyArtsGallery, type ReadyArt, type ReadyFolder } from "./ReadyArtsGallery";
 import { FidelityDashboard } from "./FidelityDashboard";
+import { CopyStudio } from "./CopyStudio";
+import { ImagesStudio } from "./ImagesStudio";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_CONSULTANT: Consultant = {
@@ -46,7 +48,7 @@ interface Props {
   userId?: string | null;
 }
 
-type Tab = "ready" | "custom" | "fidelity";
+type Tab = "ready" | "custom" | "copy" | "images" | "fidelity";
 
 export function StudioApp({ initialTemplates, readyArts, readyFolders = [], consultantSeed, authEnabled, userId = null }: Props) {
   const [tab, setTab] = useState<Tab>(readyArts.length > 0 ? "ready" : "custom");
@@ -127,15 +129,35 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
             Personalizar
           </button>
           {authEnabled && (
-            <button
-              onClick={() => setTab("fidelity")}
-              className={cn(
-                "rounded-xl px-4 py-2 text-sm font-semibold transition",
-                tab === "fidelity" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-              )}
-            >
-              Fidelidade 🔥
-            </button>
+            <>
+              <button
+                onClick={() => setTab("copy")}
+                className={cn(
+                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                  tab === "copy" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
+                )}
+              >
+                Copy IA ✨
+              </button>
+              <button
+                onClick={() => setTab("images")}
+                className={cn(
+                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                  tab === "images" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
+                )}
+              >
+                Imagens IA 🎨
+              </button>
+              <button
+                onClick={() => setTab("fidelity")}
+                className={cn(
+                  "rounded-xl px-4 py-2 text-sm font-semibold transition",
+                  tab === "fidelity" ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
+                )}
+              >
+                Fidelidade 🔥
+              </button>
+            </>
           )}
           <Link
             href="/studio/reels"
@@ -146,7 +168,15 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
         </div>
       </section>
 
-      {tab === "fidelity" ? (
+      {tab === "copy" ? (
+        <section className="container-loog mt-6">
+          <CopyStudio />
+        </section>
+      ) : tab === "images" ? (
+        <section className="container-loog mt-6">
+          <ImagesStudio />
+        </section>
+      ) : tab === "fidelity" ? (
         <section className="container-loog mt-6">
           <FidelityDashboard myId={userId} />
         </section>
