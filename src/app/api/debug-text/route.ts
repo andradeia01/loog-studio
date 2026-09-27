@@ -13,14 +13,7 @@ export async function GET() {
   const publicDir = path.join(cwd, "public", "fonts");
   const filenames = ["Inter-Regular.ttf", "Inter-SemiBold.ttf", "Inter-Bold.ttf", "Inter-Black.ttf"];
 
-  // primeiro carrega fontes do sistema (útil pra ver o que Lambda tem)
-  try {
-    GlobalFonts.loadSystemFonts();
-    info.sysLoaded = true;
-  } catch (e) {
-    info.sysLoadedErr = e instanceof Error ? e.message : String(e);
-  }
-  info.familiesAfterSys = GlobalFonts.families.map((f) => f.family).slice(0, 30);
+  info.familiesInitial = GlobalFonts.families.map((f) => f.family).slice(0, 30);
 
   // tenta via registerFromPath (original)
   const pathResults: Record<string, unknown> = {};

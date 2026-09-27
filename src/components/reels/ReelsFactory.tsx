@@ -228,7 +228,7 @@ export function ReelsFactory() {
   return (
     <section className="container-loog mt-6 grid gap-6 lg:grid-cols-[360px_1fr]">
       {/* ------------------------------------------------------ configurações */}
-      <aside className="space-y-6">
+      <aside className="order-2 space-y-6 lg:order-1">
         <div className="card space-y-5 p-5">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Formato</h2>
           <div className="grid grid-cols-2 gap-2">
@@ -351,7 +351,7 @@ export function ReelsFactory() {
       </aside>
 
       {/* ---------------------------------------------------------- vídeos */}
-      <div className="space-y-6">
+      <div className="order-1 space-y-6 lg:order-2">
         {support && (
           <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-sm text-amber-200">{support}</div>
         )}
