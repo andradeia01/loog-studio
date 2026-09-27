@@ -28,7 +28,7 @@ export async function GET() {
   info.familiesBefore = GlobalFonts.families.map((f) => f.family);
 
   // tentar carregar do public
-  const registerResults: Record<string, boolean> = {};
+  const registerResults: Record<string, unknown> = {};
   await fsp.mkdir(tmpDir, { recursive: true });
 
   for (const f of filenames) {

@@ -137,6 +137,12 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], cons
               Fidelidade 🔥
             </button>
           )}
+          <Link
+            href="/studio/reels"
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-loog-muted transition hover:text-white"
+          >
+            Fábrica de Reels 🎬
+          </Link>
         </div>
       </section>
 
