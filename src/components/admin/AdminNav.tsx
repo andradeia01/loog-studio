@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-type Key = "templates" | "consultores" | "artes-prontas" | "fidelidade";
+type Key = "templates" | "consultores" | "artes-prontas" | "videos-prontos" | "fidelidade" | "config";
 
 const TABS: { key: Key; label: string; href: string }[] = [
   { key: "templates", label: "Templates", href: "/admin" },
   { key: "consultores", label: "Consultores", href: "/admin/consultores" },
   { key: "artes-prontas", label: "Artes prontas", href: "/admin/artes-prontas" },
+  { key: "videos-prontos", label: "Vídeos prontos", href: "/admin/videos-prontos" },
   { key: "fidelidade", label: "Fidelidade 🔥", href: "/admin/fidelidade" },
+  { key: "config", label: "Configurações", href: "/admin/config" },
 ];
 
 export function AdminNav({ active, pendingCount }: { active: Key; pendingCount?: number }) {
