@@ -27,7 +27,8 @@ export default function ReelsPage() {
       <section className="container-loog pt-8">
         <h1 className="font-display text-3xl font-bold sm:text-4xl">Fábrica de Reels</h1>
         <p className="mt-1 max-w-2xl text-loog-muted">
-          Suba vários vídeos de uma vez, corte automaticamente o header e o rodapé e baixe tudo pronto no formato Reels.
+          Suba seus vídeos e cada um já entra cortado no template 9:16, com seu perfil do Instagram e a headline no topo.
+          Baixe tudo pronto pra postar.
         </p>
       </section>
 

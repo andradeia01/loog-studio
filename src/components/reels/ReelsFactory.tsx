@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { probeVideo } from "@/lib/reels/detect";
 import { checkSupport, renderPreview, renderReel } from "@/lib/reels/render";
-import { DEFAULT_SETTINGS, MAX_FILES, type Background, type CropBand, type RenderSettings } from "@/lib/reels/types";
+import {
+  DEFAULT_SETTINGS,
+  MAX_FILES,
+  type CropBand,
+  type ReelsProfile,
+  type RenderSettings,
+  type SlotAspect,
+  type Theme,
+} from "@/lib/reels/types";
+import { loadConsultant } from "@/lib/storage";
 import { cn, timestamp } from "@/lib/utils";
 import { CropEditor } from "./CropEditor";
 
@@ -26,12 +35,44 @@ interface Item {
 
 const CONCURRENCY = 2;
 
-const BACKGROUNDS: { key: Background; label: string }[] = [
-  { key: "blur", label: "Desfocado" },
-  { key: "black", label: "Preto" },
-  { key: "white", label: "Branco" },
-  { key: "color", label: "Cor" },
+const SLOTS: { key: SlotAspect; label: string }[] = [
+  { key: "auto", label: "Automático" },
+  { key: "4:5", label: "4:5" },
+  { key: "1:1", label: "1:1" },
+  { key: "16:9", label: "16:9" },
 ];
+
+const PROFILE_KEY = "loog-studio.reels-profile.v1";
+
+/** Perfil e tema ficam salvos no aparelho pra não precisar preencher toda vez. */
+function loadProfile(): Pick<RenderSettings, "profile" | "theme"> | null {
+  try {
+    const raw = window.localStorage.getItem(PROFILE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveProfile(v: Pick<RenderSettings, "profile" | "theme">) {
+  try {
+    window.localStorage.setItem(PROFILE_KEY, JSON.stringify(v));
+  } catch {
+    // storage cheio ou bloqueado
+  }
+}
+
+/** Recorta a foto em quadrado central e reduz pra 320px (vira o círculo do perfil). */
+async function squareAvatar(file: File | string): Promise<string> {
+  const blob = typeof file === "string" ? await (await fetch(file)).blob() : file;
+  const bmp = await createImageBitmap(blob);
+  const side = Math.min(bmp.width, bmp.height);
+  const c = document.createElement("canvas");
+  c.width = c.height = 320;
+  c.getContext("2d")!.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, 320, 320);
+  bmp.close();
+  return c.toDataURL("image/jpeg", 0.9);
+}
 
 function outputName(file: File) {
   return `${file.name.replace(/\.[^.]+$/, "")}-reels.mp4`;
@@ -73,6 +114,29 @@ export function ReelsFactory() {
   useEffect(() => {
     checkSupport().then(setSupport).catch(() => setSupport("Não foi possível iniciar o editor neste navegador."));
   }, []);
+
+  // Perfil salvo; na primeira vez, puxa nome/@/foto do cadastro do consultor.
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  useEffect(() => {
+    const saved = loadProfile();
+    if (saved) {
+      setSettings((s) => ({ ...s, ...saved }));
+      setProfileLoaded(true);
+      return;
+    }
+    const c = loadConsultant();
+    (async () => {
+      const avatar = c?.photoDataUrl ? await squareAvatar(c.photoDataUrl).catch(() => null) : null;
+      setSettings((s) => ({
+        ...s,
+        profile: { ...s.profile, name: c?.name ?? "", handle: (c?.instagram ?? "").replace(/^@+/, ""), avatar },
+      }));
+      setProfileLoaded(true);
+    })();
+  }, []);
+  useEffect(() => {
+    if (profileLoaded) saveProfile({ profile: settings.profile, theme: settings.theme });
+  }, [profileLoaded, settings.profile, settings.theme]);
 
   const patch = useCallback((id: string, p: Partial<Item>) => {
     setItems((list) => list.map((it) => (it.id === id ? { ...it, ...p } : it)));
@@ -214,6 +278,15 @@ export function ReelsFactory() {
     setSettings((s) => ({ ...s, ...p }));
     invalidate();
   };
+  const updateProfile = (p: Partial<ReelsProfile>) => updateSettings({ profile: { ...settings.profile, ...p } });
+
+  // Miniaturas dos cards acompanham as configurações com um pequeno atraso
+  // (evita redesenhar 50 prévias a cada tecla digitada).
+  const [cardSettings, setCardSettings] = useState(settings);
+  useEffect(() => {
+    const t = setTimeout(() => setCardSettings(settings), 350);
+    return () => clearTimeout(t);
+  }, [settings]);
 
   const counts = {
     total: items.length,
@@ -229,80 +302,128 @@ export function ReelsFactory() {
     <section className="container-loog mt-6 grid gap-6 lg:grid-cols-[360px_1fr]">
       {/* ------------------------------------------------------ configurações */}
       <aside className="order-2 space-y-6 lg:order-1">
-        <div className="card space-y-5 p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Formato</h2>
-          <div className="grid grid-cols-2 gap-2">
-            {(
-              [
-                ["reels", "Reels 9:16", "1080×1920 com fundo e título"],
-                ["crop", "Só o corte", "mantém só o miolo do vídeo"],
-              ] as const
-            ).map(([key, label, hint]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => updateSettings({ mode: key })}
-                className={cn(
-                  "rounded-xl border p-3 text-left transition",
-                  settings.mode === key ? "border-loog-brand2/70 bg-loog-brand/20" : "border-loog-border bg-loog-panel hover:border-loog-muted/50",
-                )}
-              >
-                <span className="block text-sm font-semibold">{label}</span>
-                <span className="block text-[11px] text-loog-muted">{hint}</span>
-              </button>
-            ))}
-          </div>
-
-          {settings.mode === "reels" && (
-            <>
-              <div className="space-y-2">
-                <span className="label">Fundo</span>
-                <div className="flex flex-wrap items-center gap-2">
-                  {BACKGROUNDS.map((b) => (
-                    <button
-                      key={b.key}
-                      type="button"
-                      onClick={() => updateSettings({ background: b.key })}
-                      className={settings.background === b.key ? "chip-active" : "chip"}
-                    >
-                      {b.label}
-                    </button>
-                  ))}
-                  {settings.background === "color" && (
-                    <input
-                      type="color"
-                      aria-label="Cor do fundo"
-                      value={settings.backgroundColor}
-                      onChange={(e) => updateSettings({ backgroundColor: e.target.value })}
-                      className="h-8 w-10 cursor-pointer rounded-lg border border-loog-border bg-transparent"
-                    />
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="reels-title" className="label">Título (opcional)</label>
-                  <input
-                    type="color"
-                    aria-label="Cor do título"
-                    value={settings.titleColor}
-                    onChange={(e) => updateSettings({ titleColor: e.target.value })}
-                    className="h-7 w-9 cursor-pointer rounded-md border border-loog-border bg-transparent"
-                  />
-                </div>
-                <textarea
-                  id="reels-title"
-                  rows={2}
-                  maxLength={140}
-                  placeholder="Ex.: Olha o que aconteceu nessa batida 😱"
-                  value={settings.title}
-                  onChange={(e) => updateSettings({ title: e.target.value })}
-                  className="input resize-none"
+        <div className="card space-y-4 p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Perfil do Instagram</h2>
+          <div className="flex items-center gap-4">
+            <label className="group relative h-16 w-16 shrink-0 cursor-pointer overflow-hidden rounded-full border border-loog-border bg-loog-panel">
+              {settings.profile.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={settings.profile.avatar} alt="Foto de perfil" className="h-full w-full object-cover" />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-[10px] text-loog-muted">+ foto</span>
+              )}
+              <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-[10px] font-semibold opacity-0 transition group-hover:opacity-100">
+                trocar
+              </span>
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) updateProfile({ avatar: await squareAvatar(f) });
+                }}
+              />
+            </label>
+            <div className="min-w-0 flex-1 space-y-2">
+              <input
+                aria-label="Nome do perfil"
+                placeholder="Nome (ex.: LOOG Proteção)"
+                maxLength={40}
+                value={settings.profile.name}
+                onChange={(e) => updateProfile({ name: e.target.value })}
+                className="input !py-2"
+              />
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-loog-muted">@</span>
+                <input
+                  aria-label="Arroba do Instagram"
+                  placeholder="seuinstagram"
+                  maxLength={30}
+                  value={settings.profile.handle}
+                  onChange={(e) => updateProfile({ handle: e.target.value.replace(/^@+/, "").replace(/\s+/g, "") })}
+                  className="input !py-2 !pl-7"
                 />
               </div>
-            </>
-          )}
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            {settings.profile.avatar ? (
+              <button type="button" className="text-xs text-loog-muted underline hover:text-white" onClick={() => updateProfile({ avatar: null })}>
+                remover foto
+              </button>
+            ) : (
+              <span />
+            )}
+            <Toggle checked={settings.profile.verified} onChange={(v) => updateProfile({ verified: v })} label="Selo de verificado" />
+          </div>
+        </div>
+
+        <div className="card space-y-2 p-5">
+          <label htmlFor="reels-headline" className="text-sm font-semibold uppercase tracking-wider text-loog-muted">
+            Headline
+          </label>
+          <textarea
+            id="reels-headline"
+            rows={3}
+            maxLength={160}
+            placeholder="Ex.: Ele achou que o seguro cobria… olha o que aconteceu 😱"
+            value={settings.headline}
+            onChange={(e) => updateSettings({ headline: e.target.value })}
+            className="input resize-none"
+          />
+          <p className="text-[11px] text-loog-muted">Aparece em destaque logo abaixo do seu perfil, acima do vídeo.</p>
+        </div>
+
+        {previewItem && (
+          <div className="card p-5">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-loog-muted">Prévia do Reels</h2>
+            <Preview item={previewItem} settings={settings} width={540} className="mx-auto block w-full max-w-[240px] rounded-lg" />
+            <p className="mt-2 truncate text-center text-[11px] text-loog-muted">{previewItem.file.name}</p>
+          </div>
+        )}
+
+        <div className="card space-y-5 p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Layout</h2>
+          <div className="space-y-2">
+            <span className="label">Tema</span>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  ["dark", "Escuro", "bg-black text-white"],
+                  ["light", "Claro", "bg-white text-black"],
+                ] as [Theme, string, string][]
+              ).map(([key, label, swatch]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => updateSettings({ theme: key })}
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl border p-2.5 text-sm font-semibold transition",
+                    settings.theme === key ? "border-loog-brand2/70 bg-loog-brand/20" : "border-loog-border bg-loog-panel hover:border-loog-muted/50",
+                  )}
+                >
+                  <span className={cn("flex h-6 w-6 items-center justify-center rounded-md border border-loog-border text-[10px]", swatch)}>Aa</span>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <span className="label">Espaço do vídeo</span>
+            <div className="flex flex-wrap gap-2">
+              {SLOTS.map((o) => (
+                <button key={o.key} type="button" onClick={() => updateSettings({ slot: o.key })} className={settings.slot === o.key ? "chip-active" : "chip"}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-loog-muted">
+              O vídeo é cortado pra preencher o espaço. &quot;Automático&quot; segue o formato do conteúdo.
+            </p>
+          </div>
 
           <div className="space-y-2">
             <span className="label">Overlay (PNG transparente)</span>
@@ -326,7 +447,7 @@ export function ReelsFactory() {
                 </button>
               )}
             </div>
-            <p className="text-[11px] text-loog-muted">Esticado no quadro todo. Use 1080×1920 no modo Reels.</p>
+            <p className="text-[11px] text-loog-muted">Opcional. PNG 1080×1920 desenhado por cima de tudo.</p>
           </div>
 
           <div className="space-y-3 border-t border-loog-border pt-4">
@@ -340,14 +461,6 @@ export function ReelsFactory() {
             />
           </div>
         </div>
-
-        {previewItem && (
-          <div className="card p-5">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-loog-muted">Prévia</h2>
-            <Preview item={previewItem} settings={settings} />
-            <p className="mt-2 truncate text-center text-[11px] text-loog-muted">{previewItem.file.name}</p>
-          </div>
-        )}
       </aside>
 
       {/* ---------------------------------------------------------- vídeos */}
@@ -449,13 +562,7 @@ export function ReelsFactory() {
                 >
                   <button type="button" className="relative block w-full bg-black" onClick={() => setPreviewId(it.id)} aria-label={`Ver prévia de ${it.file.name}`}>
                     {it.thumbnail ? (
-                      <>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={it.thumbnail} alt="" className="block aspect-[9/16] w-full object-contain" />
-                        <div className="pointer-events-none absolute inset-0">
-                          <ThumbMask item={it} />
-                        </div>
-                      </>
+                      <Preview item={it} settings={cardSettings} width={270} className="block aspect-[9/16] w-full" />
                     ) : (
                       <div className="flex aspect-[9/16] items-center justify-center text-xs text-loog-muted">
                         {it.status === "error" ? "Erro" : "Analisando…"}
@@ -537,45 +644,46 @@ export function ReelsFactory() {
   );
 }
 
-function ThumbMask({ item }: { item: Item }) {
-  return (
-    <>
-      <div className="absolute inset-x-0 top-0 bg-black/65" style={{ height: `${item.band.top * 100}%` }} />
-      <div className="absolute inset-x-0 bottom-0 bg-black/65" style={{ height: `${(1 - item.band.bottom) * 100}%` }} />
-      <div className="absolute inset-x-0 border-y border-loog-brand2/80" style={{ top: `${item.band.top * 100}%`, bottom: `${(1 - item.band.bottom) * 100}%` }} />
-    </>
-  );
-}
+// Prévias são geradas uma de cada vez: cada uma usa um quadro 1080×1920 temporário.
+let previewQueue: Promise<unknown> = Promise.resolve();
 
-function Preview({ item, settings }: { item: Item; settings: RenderSettings }) {
+function Preview({
+  item,
+  settings,
+  width = 1080,
+  className,
+}: {
+  item: Item;
+  settings: RenderSettings;
+  width?: number;
+  className?: string;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const img = new Image();
-    img.onload = async () => {
+    const run = async () => {
+      if (cancelled) return;
+      const img = new Image();
+      img.src = item.thumbnail;
+      await img.decode();
+      if (cancelled) return;
       const frame = await renderPreview(img, item.band, settings);
       const c = ref.current;
       if (cancelled || !c) return;
-      c.width = frame.width;
-      c.height = frame.height;
-      c.getContext("2d")!.drawImage(frame, 0, 0);
+      c.width = width;
+      c.height = Math.round((width * 16) / 9);
+      const ctx = c.getContext("2d")!;
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(frame, 0, 0, c.width, c.height);
     };
-    img.src = item.thumbnail;
+    previewQueue = previewQueue.then(run, run);
     return () => {
       cancelled = true;
     };
-  }, [item.thumbnail, item.band, settings]);
+  }, [item.thumbnail, item.band, settings, width]);
 
-  return (
-    <canvas
-      ref={ref}
-      className={cn(
-        "mx-auto block w-full rounded-lg bg-black",
-        settings.mode === "reels" ? "max-w-[220px]" : "max-w-[300px]",
-      )}
-    />
-  );
+  return <canvas ref={ref} className={cn("bg-black", className)} />;
 }
 
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
