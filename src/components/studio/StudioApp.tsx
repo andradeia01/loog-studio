@@ -185,10 +185,16 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], read
             </>
           )}
           <Link
+            href="/studio/editor"
+            className="rounded-xl px-4 py-2 text-sm font-semibold text-loog-muted transition hover:text-white"
+          >
+            Editor Vídeo 🎬
+          </Link>
+          <Link
             href="/studio/reels"
             className="rounded-xl px-4 py-2 text-sm font-semibold text-loog-muted transition hover:text-white"
           >
-            Fábrica de Reels 🎬
+            Fábrica de Reels
           </Link>
         </div>
       </section>
