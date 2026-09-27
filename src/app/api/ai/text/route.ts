@@ -14,8 +14,13 @@ export const maxDuration = 60;
 const BodySchema = z.object({
   template: z.string(),
   fields: z.record(z.string(), z.string()),
-  model: z.enum(["gpt-4o", "gpt-4o-mini"]).default("gpt-4o-mini"),
 });
+
+/**
+ * Modelo é DEFINIDO PELO SISTEMA — consultor não escolhe.
+ * Usamos gpt-4o pra qualidade máxima (o -mini às vezes gera copy fraco pra vendas).
+ */
+const MODEL = "gpt-4o" as const;
 
 export async function POST(req: NextRequest) {
   const auth = await requireApproved();
@@ -56,27 +61,26 @@ export async function POST(req: NextRequest) {
   const started = Date.now();
   try {
     const res = await openai.chat.completions.create({
-      model: parsed.data.model,
+      model: MODEL,
       messages: [
         { role: "system", content: sys },
         { role: "user", content: userPrompt },
       ],
       temperature: 0.85,
-      max_tokens: 800,
+      max_tokens: 900,
     });
     const durationMs = Date.now() - started;
     const text = res.choices[0]?.message?.content ?? "";
     const tokensIn = res.usage?.prompt_tokens ?? 0;
     const tokensOut = res.usage?.completion_tokens ?? 0;
-    const cost = calcTextCost(parsed.data.model, tokensIn, tokensOut);
+    const cost = calcTextCost(MODEL, tokensIn, tokensOut);
 
-    // registra em ai_generations (via admin — bypassa RLS)
     const admin = createSupabaseAdmin();
     if (admin) {
       await admin.from("ai_generations").insert({
         profile_id: auth.auth.userId,
         type: "text",
-        model: parsed.data.model,
+        model: MODEL,
         prompt: `[${tplKey}] ${userPrompt}`.slice(0, 5000),
         result: { text, template: tplKey },
         tokens_in: tokensIn,
@@ -94,19 +98,42 @@ export async function POST(req: NextRequest) {
       quota,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const raw = err instanceof Error ? err.message : String(err);
+    const friendly = friendlyOpenAIError(raw);
     const admin = createSupabaseAdmin();
     if (admin) {
       await admin.from("ai_generations").insert({
         profile_id: auth.auth.userId,
         type: "text",
-        model: parsed.data.model,
+        model: MODEL,
         prompt: userPrompt.slice(0, 5000),
-        error: msg.slice(0, 500),
+        error: raw.slice(0, 500),
       });
     }
-    return NextResponse.json({ error: "Falha OpenAI: " + msg }, { status: 500 });
+    return NextResponse.json({ error: friendly, code: friendly.code }, { status: friendly.status });
   }
+}
+
+/** Converte erros técnicos da OpenAI em mensagem clara pro consultor. */
+function friendlyOpenAIError(raw: string): { message: string; code: string; status: number } {
+  const low = raw.toLowerCase();
+  if (low.includes("insufficient_quota") || low.includes("credit_balance_exhausted") || low.includes("no credits")) {
+    return {
+      message: "A conta de IA está sem créditos no momento. Peça pro admin recarregar o saldo.",
+      code: "no_credits",
+      status: 503,
+    };
+  }
+  if (low.includes("invalid_api_key") || low.includes("incorrect api key")) {
+    return { message: "A chave da OpenAI está inválida. Peça pro admin atualizar em Configurações.", code: "invalid_key", status: 503 };
+  }
+  if (low.includes("rate limit") || low.includes("rate_limit")) {
+    return { message: "Muitas gerações agora. Tenta de novo em alguns segundos.", code: "rate_limit", status: 429 };
+  }
+  if (low.includes("content_policy") || low.includes("content policy")) {
+    return { message: "O conteúdo foi bloqueado pelas regras da OpenAI. Reformule o pedido.", code: "content_policy", status: 400 };
+  }
+  return { message: "Falha na geração. Tenta de novo em alguns segundos.", code: "unknown", status: 500 };
 }
 
 /** GET — retorna lista de templates disponíveis (sem chamar OpenAI). */

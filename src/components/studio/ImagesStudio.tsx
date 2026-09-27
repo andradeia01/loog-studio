@@ -7,15 +7,26 @@ interface Preset {
   key: string;
   label: string;
   description: string;
+  icon?: string;
   prompt: string;
 }
+
+const FALLBACK_ICON: Record<string, string> = {
+  "cena-carro-noturno": "🌃",
+  "cliente-feliz": "😊",
+  "recrutamento": "💼",
+  "assistencia-24h": "🛟",
+  "datas-comemorativas": "🎉",
+  "sinistro-atendido": "🔧",
+};
+
+type Target = "feed" | "story-reel" | "landscape";
 
 export function ImagesStudio() {
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetKey, setPresetKey] = useState<string>("");
   const [promptExtra, setPromptExtra] = useState("");
-  const [size, setSize] = useState<"1024x1024" | "1024x1792" | "1792x1024">("1024x1024");
-  const [quality, setQuality] = useState<"standard" | "hd">("standard");
+  const [target, setTarget] = useState<Target>("feed");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ url: string | null; b64?: string; revised?: string } | null>(null);
@@ -27,7 +38,7 @@ export function ImagesStudio() {
         setPresets(d.presets ?? []);
         if (d.presets?.[0]) setPresetKey(d.presets[0].key);
       })
-      .catch(() => setError("Falha ao carregar presets."));
+      .catch(() => setError("Não consegui carregar os estilos. Recarrega a página."));
   }, []);
 
   const preset = presets.find((p) => p.key === presetKey);
@@ -41,7 +52,7 @@ export function ImagesStudio() {
       const res = await fetch("/api/ai/image", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ preset: presetKey, prompt_extra: promptExtra.trim() || undefined, size, quality }),
+        body: JSON.stringify({ preset: presetKey, prompt_extra: promptExtra.trim() || undefined, target }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
@@ -75,97 +86,109 @@ export function ImagesStudio() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-      <aside className="card p-4">
-        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-loog-muted">Presets LOOG</h3>
-        <ul className="space-y-1">
-          {presets.map((p) => (
-            <li key={p.key}>
-              <button
-                type="button"
-                onClick={() => { setPresetKey(p.key); setResult(null); setError(null); }}
-                className={cn(
-                  "flex w-full flex-col rounded-lg px-3 py-2 text-left transition",
-                  presetKey === p.key ? "bg-loog-brand text-white" : "hover:bg-white/5",
-                )}
-              >
-                <span className="text-sm font-semibold">{p.label}</span>
-                <span className={cn("text-[11px]", presetKey === p.key ? "text-white/80" : "text-loog-muted")}>{p.description}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+    <div className="space-y-4">
+      {/* Presets em grid mobile-first */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        {presets.map((p) => {
+          const icon = p.icon ?? FALLBACK_ICON[p.key] ?? "🎨";
+          const active = presetKey === p.key;
+          return (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => { setPresetKey(p.key); setResult(null); setError(null); }}
+              className={cn(
+                "flex min-h-[80px] flex-col items-center justify-center gap-1 rounded-xl border p-3 text-center transition",
+                active
+                  ? "border-loog-brand2 bg-loog-brand/20 text-white shadow-glow"
+                  : "border-loog-border bg-loog-panel text-loog-text hover:border-loog-brand2/50",
+              )}
+            >
+              <span className="text-xl">{icon}</span>
+              <span className="text-[11px] font-semibold leading-tight sm:text-xs">{p.label}</span>
+            </button>
+          );
+        })}
+      </div>
 
-      <div className="space-y-4">
-        <form onSubmit={submit} className="card space-y-4 p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">
-            {preset ? preset.label : "Gerar imagem"}
-          </h2>
-          {preset && (
-            <div className="rounded-lg border border-loog-border bg-loog-panel/40 p-3 text-[11px] text-loog-muted">
-              <b>Prompt base:</b> {preset.prompt}
-            </div>
-          )}
+      {preset && (
+        <form onSubmit={submit} className="card space-y-4 p-4 sm:p-5">
           <div>
-            <label className="label mb-1.5">Detalhes extras (opcional)</label>
+            <h2 className="font-display text-lg font-bold">
+              <span className="mr-2">{preset.icon ?? FALLBACK_ICON[preset.key] ?? "🎨"}</span>
+              {preset.label}
+            </h2>
+            <p className="mt-0.5 text-xs text-loog-muted">{preset.description}</p>
+          </div>
+
+          <div>
+            <label className="label mb-1.5">Onde vai postar?</label>
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  { k: "feed" as Target, label: "Feed (1:1)", hint: "quadrado" },
+                  { k: "story-reel" as Target, label: "Story / Reel", hint: "9:16" },
+                  { k: "landscape" as Target, label: "Horizontal", hint: "16:9" },
+                ]
+              ).map((t) => (
+                <button
+                  key={t.k}
+                  type="button"
+                  onClick={() => setTarget(t.k)}
+                  className={cn(
+                    "flex flex-col items-center rounded-lg border px-2 py-2.5 text-xs transition",
+                    target === t.k
+                      ? "border-loog-brand2 bg-loog-brand/20 font-semibold text-white"
+                      : "border-loog-border text-loog-muted hover:text-white",
+                  )}
+                >
+                  <span>{t.label}</span>
+                  <span className="text-[10px] opacity-60">{t.hint}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="label mb-1.5">
+              Detalhes específicos (opcional)
+            </label>
             <textarea
-              className="input min-h-[80px] resize-y"
-              placeholder="Ex.: cliente segurando as chaves; carro branco; incluir texto 'Bem-vindo à família LOOG'"
+              className="input min-h-[70px] resize-y"
+              placeholder="Ex.: pessoa segurando as chaves; carro branco; incluir espaço pra headline curta"
               maxLength={500}
               value={promptExtra}
               onChange={(e) => setPromptExtra(e.target.value)}
             />
-            <p className="mt-1 text-[10px] text-loog-muted">
-              {promptExtra.length}/500 caracteres — quanto mais específico, melhor.
-            </p>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="label mb-1.5">Formato</label>
-              <select className="input" value={size} onChange={(e) => setSize(e.target.value as typeof size)}>
-                <option value="1024x1024">Quadrado 1:1 (Feed)</option>
-                <option value="1024x1792">Vertical 9:16 (Story/Reel)</option>
-                <option value="1792x1024">Horizontal 16:9</option>
-              </select>
-            </div>
-            <div>
-              <label className="label mb-1.5">Qualidade</label>
-              <select className="input" value={quality} onChange={(e) => setQuality(e.target.value as typeof quality)}>
-                <option value="standard">Padrão (mais barato)</option>
-                <option value="hd">HD (mais nítido)</option>
-              </select>
-            </div>
-          </div>
-          <button type="submit" className="btn-primary w-full !py-2" disabled={loading}>
-            {loading ? "Gerando imagem (10-30s)…" : "🎨 Gerar imagem"}
-          </button>
-          {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
-        </form>
 
-        {result && (
-          <div className="card space-y-3 p-5">
-            <h3 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Resultado</h3>
-            <div className="rounded-xl border border-loog-border bg-black p-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={result.url ?? `data:image/png;base64,${result.b64 ?? ""}`}
-                alt="IA"
-                className="mx-auto max-h-[600px] w-full max-w-full object-contain"
-              />
+          <button type="submit" className="btn-primary w-full" disabled={loading}>
+            {loading ? "Gerando imagem (15-30s)…" : "🎨 Gerar imagem"}
+          </button>
+          {error && (
+            <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+              {error}
             </div>
-            <button type="button" className="btn-primary w-full !py-2 !text-xs" onClick={download}>
-              📥 Baixar / Compartilhar
-            </button>
-            {result.revised && (
-              <details className="text-[11px] text-loog-muted">
-                <summary className="cursor-pointer">Prompt revisado pela IA</summary>
-                <div className="mt-2 rounded border border-loog-border/40 p-2">{result.revised}</div>
-              </details>
-            )}
+          )}
+        </form>
+      )}
+
+      {result && (
+        <div className="card space-y-3 p-4 sm:p-5">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Resultado</h3>
+          <div className="rounded-xl border border-loog-border bg-black p-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={result.url ?? `data:image/png;base64,${result.b64 ?? ""}`}
+              alt="IA"
+              className="mx-auto max-h-[600px] w-full max-w-full object-contain"
+            />
           </div>
-        )}
-      </div>
+          <button type="button" className="btn-primary w-full" onClick={download}>
+            📥 Baixar / Compartilhar
+          </button>
+        </div>
+      )}
     </div>
   );
 }

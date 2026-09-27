@@ -14,9 +14,18 @@ export const maxDuration = 90;
 const BodySchema = z.object({
   preset: z.string().optional(),
   prompt_extra: z.string().max(500).optional(),
-  size: z.enum(["1024x1024", "1024x1792", "1792x1024"]).default("1024x1024"),
-  quality: z.enum(["standard", "hd"]).default("standard"),
+  /** Único controle exposto: em qual formato de post quer usar. Sistema escolhe tamanho + qualidade. */
+  target: z.enum(["feed", "story-reel", "landscape"]).default("feed"),
 });
+
+/** Sistema escolhe tamanho + qualidade sozinho, baseado no target. */
+function pickSizeAndQuality(target: "feed" | "story-reel" | "landscape") {
+  switch (target) {
+    case "story-reel": return { size: "1024x1792" as const, quality: "hd" as const };
+    case "landscape":  return { size: "1792x1024" as const, quality: "standard" as const };
+    default:           return { size: "1024x1024" as const, quality: "hd" as const };
+  }
+}
 
 export async function POST(req: NextRequest) {
   const auth = await requireApproved();
@@ -37,13 +46,14 @@ export async function POST(req: NextRequest) {
   const fullPrompt = [basePrompt, parsed.data.prompt_extra].filter(Boolean).join(" ").trim();
   if (!fullPrompt) return NextResponse.json({ error: "sem prompt (defina preset ou prompt_extra)" }, { status: 400 });
 
+  const { size, quality } = pickSizeAndQuality(parsed.data.target);
   const started = Date.now();
   try {
     const res = await openai.images.generate({
       model: "dall-e-3",
       prompt: fullPrompt,
-      size: parsed.data.size,
-      quality: parsed.data.quality,
+      size,
+      quality,
       response_format: "b64_json",
       n: 1,
     });
@@ -67,32 +77,28 @@ export async function POST(req: NextRequest) {
       publicUrl = admin.storage.from("ready-arts").getPublicUrl(filename).data.publicUrl;
     }
 
-    const cost =
-      parsed.data.quality === "hd"
-        ? IMAGE_PRICING["dall-e-3-1024-hd"]
-        : parsed.data.size === "1024x1024"
-          ? IMAGE_PRICING["dall-e-3-1024"]
-          : IMAGE_PRICING["dall-e-3-1024x1792"];
+    const cost = calcImageCost(size, quality);
 
     await admin.from("ai_generations").insert({
       profile_id: auth.auth.userId,
       type: "image",
       model: "dall-e-3",
       prompt: fullPrompt.slice(0, 5000),
-      result: { url: publicUrl, size: parsed.data.size, preset: presetKey ?? null },
+      result: { url: publicUrl, size, preset: presetKey ?? null },
       cost_usd: cost,
       duration_ms: durationMs,
     });
 
     return NextResponse.json({
       url: publicUrl,
-      b64: publicUrl ? null : b64, // fallback se storage falhou
+      b64: publicUrl ? null : b64,
       revised_prompt: res.data?.[0]?.revised_prompt,
       cost_usd: cost,
       quota,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const raw = err instanceof Error ? err.message : String(err);
+    const friendly = friendlyOpenAIError(raw);
     const admin = createSupabaseAdmin();
     if (admin) {
       await admin.from("ai_generations").insert({
@@ -100,11 +106,34 @@ export async function POST(req: NextRequest) {
         type: "image",
         model: "dall-e-3",
         prompt: fullPrompt.slice(0, 5000),
-        error: msg.slice(0, 500),
+        error: raw.slice(0, 500),
       });
     }
-    return NextResponse.json({ error: "Falha DALL-E: " + msg }, { status: 500 });
+    return NextResponse.json({ error: friendly.message, code: friendly.code }, { status: friendly.status });
   }
+}
+
+function calcImageCost(size: string, quality: string): number {
+  if (quality === "hd") return IMAGE_PRICING["dall-e-3-1024-hd"];
+  if (size === "1024x1024") return IMAGE_PRICING["dall-e-3-1024"];
+  return IMAGE_PRICING["dall-e-3-1024x1792"];
+}
+
+function friendlyOpenAIError(raw: string): { message: string; code: string; status: number } {
+  const low = raw.toLowerCase();
+  if (low.includes("insufficient_quota") || low.includes("credit_balance_exhausted") || low.includes("no credits")) {
+    return { message: "A conta de IA está sem créditos. Peça pro admin recarregar o saldo.", code: "no_credits", status: 503 };
+  }
+  if (low.includes("invalid_api_key") || low.includes("incorrect api key")) {
+    return { message: "A chave da OpenAI está inválida. Peça pro admin atualizar em Configurações.", code: "invalid_key", status: 503 };
+  }
+  if (low.includes("rate limit") || low.includes("rate_limit")) {
+    return { message: "Muitas gerações agora. Tenta de novo em alguns segundos.", code: "rate_limit", status: 429 };
+  }
+  if (low.includes("content_policy") || low.includes("content policy") || low.includes("safety")) {
+    return { message: "A imagem foi bloqueada pelas regras da OpenAI. Reformule o pedido.", code: "content_policy", status: 400 };
+  }
+  return { message: "Falha na geração. Tenta de novo em alguns segundos.", code: "unknown", status: 500 };
 }
 
 export async function GET() {
