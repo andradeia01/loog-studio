@@ -170,10 +170,27 @@ export function detectBand(frames: Float32Array[], w: number, h: number): CropBa
   return { top, bottom };
 }
 
-/** Converte a faixa em retângulo de crop em pixels (valores pares, exigidos pelo encoder). */
-export function bandToCrop(band: CropBand, width: number, height: number) {
-  const floorEven = (n: number) => Math.floor(n / 2) * 2;
-  const top = Math.min(floorEven(band.top * height), height - 2);
-  const bottom = Math.min(height, Math.max(top + 2, Math.round(band.bottom * height)));
-  return { left: 0, top, width: floorEven(width), height: floorEven(bottom - top) };
+/**
+ * Retângulo de crop (em pixels do vídeo original) que preenche um espaço de
+ * proporção `aspect` (largura/altura): parte da faixa de conteúdo e corta o
+ * excesso centralizado, como um "cover". Valores pares, exigidos pelo encoder.
+ */
+export function coverCrop(band: CropBand, width: number, height: number, aspect: number) {
+  const floorEven = (n: number) => Math.max(2, Math.floor(n / 2) * 2);
+  const bandTop = band.top * height;
+  const bandH = Math.max(2, (band.bottom - band.top) * height);
+  let w = width;
+  let h = bandH;
+  if (w / h > aspect) w = h * aspect;
+  else h = w / aspect;
+  const cw = floorEven(w);
+  const ch = floorEven(h);
+  const left = Math.floor((width - cw) / 4) * 2;
+  const top = Math.min(height - ch, Math.floor((bandTop + (bandH - h) / 2) / 2) * 2);
+  return { left, top: Math.max(0, top), width: cw, height: ch };
+}
+
+/** Proporção (largura/altura) da faixa de conteúdo. */
+export function bandAspect(band: CropBand, width: number, height: number) {
+  return width / Math.max(1, (band.bottom - band.top) * height);
 }

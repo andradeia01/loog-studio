@@ -1,5 +1,5 @@
-import { bandToCrop } from "./detect";
-import { REELS_H, REELS_W, SPEED_FACTOR, type CropBand, type RenderSettings } from "./types";
+import { bandAspect, coverCrop } from "./detect";
+import { REELS_H, REELS_W, SPEED_FACTOR, THEMES, type CropBand, type RenderSettings } from "./types";
 
 export interface RenderJob {
   file: File;
@@ -22,163 +22,226 @@ export async function checkSupport(): Promise<string | null> {
   return null;
 }
 
-const TITLE_MAX_W = REELS_W - 2 * 72;
-const TITLE_GAP = 40;
-const SAFE_TOP = 120;
+// ------------------------------------------------------------------ template
+// Quadro 1080×1920: [foto · nome ✓ · @] + headline + espaço do vídeo,
+// o bloco inteiro centralizado na vertical.
 
-/** Quebra o título em linhas e reduz a fonte até caber em no máximo 4 linhas. */
-function layoutTitle(ctx: OffscreenCanvasRenderingContext2D, text: string) {
+const PAD_X = 64;
+const AVATAR = 132;
+const MARGIN_Y = 120;
+const GAP = 40;
+const FONT = "Inter, system-ui, sans-serif";
+const VERIFIED_BLUE = "#0095F6";
+
+type Ctx2D = OffscreenCanvasRenderingContext2D;
+type Rect = { x: number; y: number; w: number; h: number };
+
+function fitText(ctx: Ctx2D, text: string, maxW: number) {
+  if (ctx.measureText(text).width <= maxW) return text;
+  let t = text;
+  while (t.length > 1 && ctx.measureText(`${t}…`).width > maxW) t = t.slice(0, -1);
+  return `${t}…`;
+}
+
+function wrapHeadline(ctx: Ctx2D, text: string) {
+  const maxW = REELS_W - 2 * PAD_X;
   const paragraphs = text.trim().split(/\n+/);
-  for (let size = 72; size >= 36; size -= 4) {
-    ctx.font = `800 ${size}px Inter, system-ui, sans-serif`;
+  for (let size = 66; size >= 40; size -= 4) {
+    ctx.font = `800 ${size}px ${FONT}`;
     const lines: string[] = [];
     for (const p of paragraphs) {
       let line = "";
       for (const word of p.split(/\s+/)) {
         const next = line ? `${line} ${word}` : word;
-        if (ctx.measureText(next).width > TITLE_MAX_W && line) {
+        if (ctx.measureText(next).width > maxW && line) {
           lines.push(line);
           line = word;
         } else line = next;
       }
       if (line) lines.push(line);
     }
-    if (lines.length <= 4 || size === 36) return { size, lines, lineHeight: Math.round(size * 1.18) };
+    if (lines.length <= 5 || size === 40) return { size, lines: lines.slice(0, 6), lineHeight: Math.round(size * 1.2) };
   }
   throw new Error("unreachable");
 }
 
-/** Pré-renderiza o título (igual em todos os quadros) numa camada própria. */
-function renderTitleLayer(text: string, color: string) {
-  if (!text.trim()) return null;
+function drawVerified(ctx: Ctx2D, cx: number, cy: number, r: number) {
+  ctx.save();
+  ctx.fillStyle = VERIFIED_BLUE;
+  // selo serrilhado como o do Instagram
+  ctx.beginPath();
+  for (let i = 0; i <= 24; i++) {
+    const a = (Math.PI * 2 * i) / 24;
+    const rr = i % 2 === 0 ? r : r * 0.86;
+    ctx.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+  }
+  ctx.fill();
+  ctx.strokeStyle = "#FFFFFF";
+  ctx.lineWidth = r * 0.22;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.38, cy + r * 0.02);
+  ctx.lineTo(cx - r * 0.1, cy + r * 0.3);
+  ctx.lineTo(cx + r * 0.4, cy - r * 0.28);
+  ctx.stroke();
+  ctx.restore();
+}
+
+async function loadAvatar(src: string | null) {
+  if (!src) return null;
+  try {
+    return await createImageBitmap(await (await fetch(src)).blob());
+  } catch {
+    return null;
+  }
+}
+
+/** Desenha o cabeçalho (perfil + headline) numa camada transparente, uma vez só. */
+async function renderHeader(s: RenderSettings) {
+  const theme = THEMES[s.theme];
+  const { name, handle, verified } = s.profile;
+  const hasProfile = !!(name.trim() || handle.trim() || s.profile.avatar);
   const probe = new OffscreenCanvas(1, 1).getContext("2d")!;
-  const { size, lines, lineHeight } = layoutTitle(probe, text);
-  const pad = 12;
-  const canvas = new OffscreenCanvas(REELS_W, lines.length * lineHeight + pad * 2);
+  const headline = s.headline.trim() ? wrapHeadline(probe, s.headline) : null;
+
+  const profileH = hasProfile ? AVATAR : 0;
+  const headlineGap = hasProfile && headline ? 36 : 0;
+  const headlineH = headline ? headline.lines.length * headline.lineHeight : 0;
+  const height = profileH + headlineGap + headlineH;
+  if (!height) return null;
+
+  const canvas = new OffscreenCanvas(REELS_W, height + 8);
   const ctx = canvas.getContext("2d")!;
-  ctx.font = `800 ${size}px Inter, system-ui, sans-serif`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.fillStyle = color;
-  ctx.shadowColor = "rgba(0,0,0,0.45)";
-  ctx.shadowBlur = 12;
-  ctx.shadowOffsetY = 3;
-  lines.forEach((l, i) => ctx.fillText(l, REELS_W / 2, pad + i * lineHeight));
+  ctx.textBaseline = "alphabetic";
+
+  if (hasProfile) {
+    const avatar = await loadAvatar(s.profile.avatar);
+    const cx = PAD_X + AVATAR / 2;
+    const cy = AVATAR / 2;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, AVATAR / 2, 0, Math.PI * 2);
+    ctx.clip();
+    if (avatar) {
+      ctx.drawImage(avatar, PAD_X, 0, AVATAR, AVATAR);
+    } else {
+      ctx.fillStyle = s.theme === "dark" ? "#262626" : "#EFEFEF";
+      ctx.fillRect(PAD_X, 0, AVATAR, AVATAR);
+      ctx.fillStyle = theme.muted;
+      ctx.font = `700 56px ${FONT}`;
+      ctx.textAlign = "center";
+      ctx.fillText((name.trim()[0] ?? handle.replace(/^@/, "")[0] ?? "?").toUpperCase(), cx, cy + 20);
+      ctx.textAlign = "left";
+    }
+    ctx.restore();
+    avatar?.close();
+
+    const tx = PAD_X + AVATAR + 28;
+    const maxW = REELS_W - PAD_X - tx;
+    const cleanHandle = handle.trim().replace(/^@+/, "");
+    const displayName = name.trim() || cleanHandle;
+    const at = cleanHandle ? `@${cleanHandle}` : "";
+    const nameY = at ? cy - 6 : cy + 16;
+
+    ctx.fillStyle = theme.text;
+    ctx.font = `700 48px ${FONT}`;
+    const shownName = fitText(ctx, displayName, maxW - (verified ? 52 : 0));
+    ctx.fillText(shownName, tx, nameY);
+    if (verified) drawVerified(ctx, tx + ctx.measureText(shownName).width + 28, nameY - 17, 19);
+
+    if (at) {
+      ctx.fillStyle = theme.muted;
+      ctx.font = `400 38px ${FONT}`;
+      ctx.fillText(fitText(ctx, at, maxW), tx, cy + 46);
+    }
+  }
+
+  if (headline) {
+    ctx.fillStyle = theme.text;
+    ctx.font = `800 ${headline.size}px ${FONT}`;
+    ctx.textBaseline = "top";
+    const y0 = profileH + headlineGap;
+    headline.lines.forEach((l, i) => ctx.fillText(l, PAD_X, y0 + i * headline.lineHeight));
+  }
   return canvas;
 }
 
-/** Posição do conteúdo e do título no quadro 9:16. */
-function reelsLayout(cw: number, ch: number, titleH: number) {
-  const reserved = titleH ? titleH + TITLE_GAP + SAFE_TOP : 0;
-  let scale = REELS_W / cw;
-  if (ch * scale > REELS_H - reserved) scale = (REELS_H - reserved) / ch;
-  const dw = Math.round(cw * scale);
-  const dh = Math.round(ch * scale);
-  let y = Math.round((REELS_H - dh) / 2);
-  if (titleH && y - TITLE_GAP - titleH < SAFE_TOP) y = SAFE_TOP + titleH + TITLE_GAP;
-  return { x: Math.round((REELS_W - dw) / 2), y, dw, dh, titleY: y - TITLE_GAP - titleH };
+function slotAspect(s: RenderSettings, contentAspect: number) {
+  switch (s.slot) {
+    case "1:1":
+      return 1;
+    case "4:5":
+      return 4 / 5;
+    case "16:9":
+      return 16 / 9;
+    default:
+      return Math.min(16 / 9, Math.max(3 / 4, contentAspect));
+  }
 }
 
-type Ctx2D = OffscreenCanvasRenderingContext2D;
-/** Desenha a faixa de conteúdo (já recortada) no retângulo de destino. */
-type Paint = (ctx: Ctx2D, dx: number, dy: number, dw: number, dh: number) => void;
-
 /**
- * Monta o quadro final (fundo, conteúdo, título, overlay). Usado tanto no
- * export quanto na prévia, pra prévia ser fiel ao arquivo gerado.
+ * Monta o template e devolve o compositor de quadros. `contentAspect` é a
+ * proporção da faixa de conteúdo detectada (usada no espaço "auto").
  */
-export function createCompositor(s: RenderSettings, cw: number, ch: number) {
-  let outW: number;
-  let outH: number;
-  if (s.mode === "reels") {
-    outW = REELS_W;
-    outH = REELS_H;
-  } else {
-    const scale = Math.min(1, REELS_W / cw);
-    outW = Math.floor((cw * scale) / 2) * 2;
-    outH = Math.floor((ch * scale) / 2) * 2;
-  }
+export async function createTemplate(s: RenderSettings, contentAspect: number) {
+  await document.fonts?.load("800 64px Inter").catch(() => undefined);
+  const header = await renderHeader(s);
+  const headerH = header ? header.height - 8 : 0;
+  const headerBlock = headerH ? headerH + GAP : 0;
 
-  const titleLayer = s.mode === "reels" ? renderTitleLayer(s.title, s.titleColor) : null;
-  const layout = s.mode === "reels" ? reelsLayout(cw, ch, titleLayer?.height ?? 0) : null;
+  let slotH = Math.round(REELS_W / slotAspect(s, contentAspect));
+  const available = REELS_H - 2 * MARGIN_Y - headerBlock;
+  if (slotH > available) slotH = available;
+  const y0 = Math.max(MARGIN_Y, Math.round((REELS_H - headerBlock - slotH) / 2));
+  const slot: Rect = { x: 0, y: y0 + headerBlock, w: REELS_W, h: slotH };
 
-  const canvas = new OffscreenCanvas(outW, outH);
+  const canvas = new OffscreenCanvas(REELS_W, REELS_H);
   const ctx = canvas.getContext("2d", { alpha: false })!;
   ctx.imageSmoothingQuality = "high";
+  const bg = THEMES[s.theme].bg;
 
-  // Fundo desfocado barato: reduz o quadro a 36×64, desfoca numa tela média
-  // (blur em 270×480 custa pouco) e só então amplia pro quadro final.
-  const blurSmall = s.background === "blur" ? new OffscreenCanvas(36, 64) : null;
-  const blurCtx = blurSmall?.getContext("2d") ?? null;
-  const blurMid = blurSmall ? new OffscreenCanvas(270, 480) : null;
-  const blurMidCtx = blurMid?.getContext("2d") ?? null;
-  if (blurMidCtx) blurMidCtx.filter = "blur(10px)";
-
-  const compose = (paint: Paint) => {
-    if (!layout) {
-      paint(ctx, 0, 0, outW, outH);
-    } else {
-      if (blurCtx && blurSmall && blurMid && blurMidCtx) {
-        const cover = Math.max(36 / cw, 64 / ch);
-        paint(blurCtx, (36 - cw * cover) / 2, (64 - ch * cover) / 2, cw * cover, ch * cover);
-        // margem negativa esconde a borda clara que o blur cria nos cantos
-        blurMidCtx.drawImage(blurSmall, -20, -20, 310, 520);
-        ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(blurMid, 0, 0, outW, outH);
-        ctx.fillStyle = "rgba(0,0,0,0.35)";
-        ctx.fillRect(0, 0, outW, outH);
-      } else {
-        ctx.fillStyle = s.background === "white" ? "#FFFFFF" : s.background === "color" ? s.backgroundColor : "#000000";
-        ctx.fillRect(0, 0, outW, outH);
-      }
-      paint(ctx, layout.x, layout.y, layout.dw, layout.dh);
-      if (titleLayer) ctx.drawImage(titleLayer, 0, layout.titleY);
-    }
-    if (s.overlay) ctx.drawImage(s.overlay, 0, 0, outW, outH);
+  /** `paint` desenha o conteúdo (já recortado na proporção do espaço) no retângulo dado. */
+  const compose = (paint: (ctx: Ctx2D, r: Rect) => void) => {
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, REELS_W, REELS_H);
+    if (header) ctx.drawImage(header, 0, y0);
+    paint(ctx, slot);
+    if (s.overlay) ctx.drawImage(s.overlay, 0, 0, REELS_W, REELS_H);
     return canvas;
   };
 
-  return { outW, outH, compose };
+  return { slot, compose };
 }
 
 /** Prévia estática a partir da thumbnail, com as mesmas regras do export. */
-export async function renderPreview(
-  thumb: HTMLImageElement,
-  band: CropBand,
-  s: RenderSettings,
-): Promise<OffscreenCanvas> {
-  await loadTitleFont();
-  const sy = band.top * thumb.naturalHeight;
-  const sh = (band.bottom - band.top) * thumb.naturalHeight;
-  const sw = thumb.naturalWidth;
-  // Usa as proporções da thumb; a escala absoluta não muda o layout.
-  const k = 1080 / sw;
-  const comp = createCompositor(s, Math.round(sw * k), Math.max(2, Math.round(sh * k)));
-  return comp.compose((ctx, dx, dy, dw, dh) => {
+export async function renderPreview(thumb: HTMLImageElement, band: CropBand, s: RenderSettings) {
+  const W = thumb.naturalWidth;
+  const H = thumb.naturalHeight;
+  const { slot, compose } = await createTemplate(s, bandAspect(band, W, H));
+  const c = coverCrop(band, W, H, slot.w / slot.h);
+  return compose((ctx, r) => {
     if (s.mirror) {
       ctx.save();
-      ctx.translate(dx + dw, dy);
+      ctx.translate(r.x + r.w, r.y);
       ctx.scale(-1, 1);
-      ctx.drawImage(thumb, 0, sy, sw, sh, 0, 0, dw, dh);
+      ctx.drawImage(thumb, c.left, c.top, c.width, c.height, 0, 0, r.w, r.h);
       ctx.restore();
     } else {
-      ctx.drawImage(thumb, 0, sy, sw, sh, dx, dy, dw, dh);
+      ctx.drawImage(thumb, c.left, c.top, c.width, c.height, r.x, r.y, r.w, r.h);
     }
   });
 }
 
-function loadTitleFont() {
-  return document.fonts?.load("800 64px Inter").catch(() => undefined) ?? Promise.resolve();
-}
+// -------------------------------------------------------------------- export
 
 export async function renderReel(job: RenderJob): Promise<Blob> {
   const mb = await import("mediabunny");
   const { settings: s } = job;
-
-  const crop = bandToCrop(job.band, job.width, job.height);
-  await loadTitleFont();
-  const { outW, outH, compose } = createCompositor(s, crop.width, crop.height);
   const speed = s.speedUp ? SPEED_FACTOR : 1;
+
+  const { slot, compose } = await createTemplate(s, bandAspect(job.band, job.width, job.height));
+  const crop = coverCrop(job.band, job.width, job.height, slot.w / slot.h);
 
   const input = new mb.Input({ source: new mb.BlobSource(job.file), formats: mb.ALL_FORMATS });
   const target = new mb.BufferTarget();
@@ -201,10 +264,10 @@ export async function renderReel(job: RenderJob): Promise<Blob> {
         codec: "avc",
         quality,
         forceTranscode: true,
-        processedWidth: outW,
-        processedHeight: outH,
+        processedWidth: REELS_W,
+        processedHeight: REELS_H,
         process: (sample) => {
-          const canvas = compose((ctx, dx, dy, dw, dh) => sample.draw(ctx, dx, dy, dw, dh));
+          const canvas = compose((ctx, r) => sample.draw(ctx, r.x, r.y, r.w, r.h));
           if (speed === 1) return canvas;
           return new mb.VideoSample(canvas, {
             timestamp: sample.timestamp / speed,
