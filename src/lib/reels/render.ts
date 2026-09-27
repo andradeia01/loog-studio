@@ -106,19 +106,25 @@ export function createCompositor(s: RenderSettings, cw: number, ch: number) {
   const ctx = canvas.getContext("2d", { alpha: false })!;
   ctx.imageSmoothingQuality = "high";
 
-  // Fundo desfocado barato: reduz o quadro a 36×64 e amplia com suavização.
+  // Fundo desfocado barato: reduz o quadro a 36×64, desfoca numa tela média
+  // (blur em 270×480 custa pouco) e só então amplia pro quadro final.
   const blurSmall = s.background === "blur" ? new OffscreenCanvas(36, 64) : null;
   const blurCtx = blurSmall?.getContext("2d") ?? null;
+  const blurMid = blurSmall ? new OffscreenCanvas(270, 480) : null;
+  const blurMidCtx = blurMid?.getContext("2d") ?? null;
+  if (blurMidCtx) blurMidCtx.filter = "blur(10px)";
 
   const compose = (paint: Paint) => {
     if (!layout) {
       paint(ctx, 0, 0, outW, outH);
     } else {
-      if (blurCtx && blurSmall) {
+      if (blurCtx && blurSmall && blurMid && blurMidCtx) {
         const cover = Math.max(36 / cw, 64 / ch);
         paint(blurCtx, (36 - cw * cover) / 2, (64 - ch * cover) / 2, cw * cover, ch * cover);
+        // margem negativa esconde a borda clara que o blur cria nos cantos
+        blurMidCtx.drawImage(blurSmall, -20, -20, 310, 520);
         ctx.imageSmoothingEnabled = true;
-        ctx.drawImage(blurSmall, 0, 0, outW, outH);
+        ctx.drawImage(blurMid, 0, 0, outW, outH);
         ctx.fillStyle = "rgba(0,0,0,0.35)";
         ctx.fillRect(0, 0, outW, outH);
       } else {
