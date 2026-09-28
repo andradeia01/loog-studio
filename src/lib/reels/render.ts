@@ -1,4 +1,5 @@
 import { bandAspect, coverCrop } from "./detect";
+import { getWatermarkBitmap, drawWatermarkWithBitmap } from "../watermark";
 import { REELS_H, REELS_W, SPEED_FACTOR, THEMES, type CropBand, type RenderSettings } from "./types";
 
 export interface RenderJob {
@@ -201,6 +202,9 @@ export async function createTemplate(s: RenderSettings, contentAspect: number) {
   ctx.imageSmoothingQuality = "high";
   const bg = THEMES[s.theme].bg;
 
+  // Pré-carrega a marca d'água LOOG (uma vez só). Se falhar, segue sem.
+  const loogMark = await getWatermarkBitmap();
+
   /** `paint` desenha o conteúdo (já recortado na proporção do espaço) no retângulo dado. */
   const compose = (paint: (ctx: Ctx2D, r: Rect) => void) => {
     ctx.fillStyle = bg;
@@ -208,6 +212,8 @@ export async function createTemplate(s: RenderSettings, contentAspect: number) {
     if (header) ctx.drawImage(header, 0, y0);
     paint(ctx, slot);
     if (s.overlay) ctx.drawImage(s.overlay, 0, 0, REELS_W, REELS_H);
+    // Marca d'água LOOG — sempre última camada, canto inferior direito.
+    if (loogMark) drawWatermarkWithBitmap(ctx, loogMark, REELS_W, REELS_H);
     return canvas;
   };
 

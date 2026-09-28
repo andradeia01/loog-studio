@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { probeVideo } from "@/lib/reels/detect";
 import { checkSupport, renderPreview, renderReel } from "@/lib/reels/render";
+import { preloadWatermark } from "@/lib/watermark";
 import {
   DEFAULT_SETTINGS,
   MAX_FILES,
@@ -113,6 +114,8 @@ export function ReelsFactory() {
 
   useEffect(() => {
     checkSupport().then(setSupport).catch(() => setSupport("Não foi possível iniciar o editor neste navegador."));
+    // Pré-carrega marca d'água pra 1º frame já vir com logo LOOG
+    void preloadWatermark();
   }, []);
 
   // Perfil salvo; na primeira vez, puxa nome/@/foto do cadastro do consultor.

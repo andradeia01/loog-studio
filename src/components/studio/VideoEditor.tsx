@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { cn, slugify, timestamp } from "@/lib/utils";
+import { drawWatermarkSync, preloadWatermark } from "@/lib/watermark";
 
 /**
  * Editor de vídeo MVP — client-only.
@@ -52,6 +53,9 @@ export function VideoEditor() {
   const previewW = Math.round(OUT.w * canvasScale);
   const previewH = Math.round(OUT.h * canvasScale);
 
+  // pré-carrega marca d'água pra ela aparecer no primeiro frame
+  useEffect(() => { void preloadWatermark(); }, []);
+
   useEffect(() => {
     if (!videoFile) { setVideoUrl(""); return; }
     const u = URL.createObjectURL(videoFile);
@@ -89,6 +93,8 @@ export function VideoEditor() {
     ctx.fillRect(0, 0, OUT.w, OUT.h);
     if (video.videoWidth) drawVideoCover(ctx, video, OUT.w, OUT.h);
     drawTextOverlay(ctx, OUT.w, OUT.h);
+    // Marca d'água LOOG — sempre última camada, canto inferior direito.
+    drawWatermarkSync(ctx, OUT.w, OUT.h);
   }
 
   // preview animation loop
