@@ -72,8 +72,64 @@ export async function generateArt(
     canvas = canvas.composite(overlays);
   }
 
+  // Marca d'água LOOG (canto inferior direito, ~14% da largura)
+  const wm = await buildWatermarkOverlay(width, height).catch(() => null);
+  if (wm) {
+    canvas = sharp(await canvas.png().toBuffer()).composite([wm]);
+  }
+
   const buffer = await canvas.png({ compressionLevel: 9, quality: 95 }).toBuffer();
   return buffer;
+}
+
+/** Constrói overlay da marca d'água LOOG a partir do PNG em public/brand/. */
+async function buildWatermarkOverlay(
+  frameW: number,
+  frameH: number,
+): Promise<OverlayOptions | null> {
+  try {
+    const logoPath = path.join(process.cwd(), "public", "brand", "loog-full.png");
+    if (!(await fileExists(logoPath))) return null;
+    const targetW = Math.round(frameW * 0.14);
+    const meta = await sharp(logoPath).metadata();
+    const targetH = Math.round(((meta.height ?? 1) / (meta.width ?? 1)) * targetW);
+    const buf = await sharp(logoPath)
+      .resize({ width: targetW, height: targetH })
+      .png()
+      .toBuffer();
+    // aplicar opacidade 88% via composite dest-in numa camada
+    const withOpacity = await sharp(buf)
+      .ensureAlpha()
+      .composite([
+        {
+          input: Buffer.from([255, 255, 255, Math.round(255 * 0.88)]),
+          raw: { width: 1, height: 1, channels: 4 },
+          tile: true,
+          blend: "dest-in",
+        },
+      ])
+      .png()
+      .toBuffer();
+    const padX = Math.round(frameW * 0.035);
+    const padY = Math.round(frameH * 0.035);
+    return {
+      input: withOpacity,
+      left: frameW - targetW - padX,
+      top: frameH - targetH - padY,
+    };
+  } catch (err) {
+    console.warn("[watermark] falha:", err);
+    return null;
+  }
+}
+
+async function fileExists(p: string): Promise<boolean> {
+  try {
+    await fs.access(p);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function buildOverlay(

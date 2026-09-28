@@ -74,7 +74,8 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
-    console.error("[generate] erro:", err);
-    return NextResponse.json({ error: "falha na geração" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[generate] erro:", msg, err);
+    return NextResponse.json({ error: "falha na geração", message: msg }, { status: 500 });
   }
 }
