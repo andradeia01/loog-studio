@@ -68,67 +68,74 @@ export async function generateArt(
     else if (overlay) overlays.push(overlay);
   }
 
+  // Marca d'água LOOG (canto inferior direito, ~14% da largura)
+  const wm = await buildWatermarkOverlay(width, height).catch((e) => {
+    console.warn("[watermark] descartada:", e);
+    return null;
+  });
+  if (wm) overlays.push(wm);
+
   if (overlays.length > 0) {
     canvas = canvas.composite(overlays);
-  }
-
-  // Marca d'água LOOG (canto inferior direito, ~14% da largura)
-  const wm = await buildWatermarkOverlay(width, height).catch(() => null);
-  if (wm) {
-    canvas = sharp(await canvas.png().toBuffer()).composite([wm]);
   }
 
   const buffer = await canvas.png({ compressionLevel: 9, quality: 95 }).toBuffer();
   return buffer;
 }
 
-/** Constrói overlay da marca d'água LOOG a partir do PNG em public/brand/. */
+/**
+ * Constrói overlay da marca d'água LOOG. Fallback ordenado:
+ *   1) public/brand/loog-full.png no filesystem local (dev + Netlify c/ outputFileTracingIncludes)
+ *   2) fetch do CDN público (Netlify serve /brand/* como static asset)
+ * Se ambos falharem, retorna null e o export sai sem marca (silent fallback).
+ */
 async function buildWatermarkOverlay(
   frameW: number,
   frameH: number,
 ): Promise<OverlayOptions | null> {
-  try {
-    const logoPath = path.join(process.cwd(), "public", "brand", "loog-full.png");
-    if (!(await fileExists(logoPath))) return null;
-    const targetW = Math.round(frameW * 0.14);
-    const meta = await sharp(logoPath).metadata();
-    const targetH = Math.round(((meta.height ?? 1) / (meta.width ?? 1)) * targetW);
-    const buf = await sharp(logoPath)
-      .resize({ width: targetW, height: targetH })
-      .png()
-      .toBuffer();
-    // aplicar opacidade 88% via composite dest-in numa camada
-    const withOpacity = await sharp(buf)
-      .ensureAlpha()
-      .composite([
-        {
-          input: Buffer.from([255, 255, 255, Math.round(255 * 0.88)]),
-          raw: { width: 1, height: 1, channels: 4 },
-          tile: true,
-          blend: "dest-in",
-        },
-      ])
-      .png()
-      .toBuffer();
-    const padX = Math.round(frameW * 0.035);
-    const padY = Math.round(frameH * 0.035);
-    return {
-      input: withOpacity,
-      left: frameW - targetW - padX,
-      top: frameH - targetH - padY,
-    };
-  } catch (err) {
-    console.warn("[watermark] falha:", err);
-    return null;
-  }
+  const buffer = await loadLogoBuffer();
+  if (!buffer) return null;
+
+  const targetW = Math.round(frameW * 0.14);
+  const meta = await sharp(buffer).metadata();
+  const scale = targetW / (meta.width ?? targetW);
+  const targetH = Math.round((meta.height ?? 1) * scale);
+
+  const resized = await sharp(buffer)
+    .resize({ width: targetW, height: targetH, fit: "inside" })
+    .ensureAlpha()
+    .png()
+    .toBuffer();
+
+  const padX = Math.round(frameW * 0.035);
+  const padY = Math.round(frameH * 0.035);
+  return {
+    input: resized,
+    left: frameW - targetW - padX,
+    top: frameH - targetH - padY,
+    // Sharp aceita opacidade global via blend "over" — pra reduzir força usamos wm menor
+  };
 }
 
-async function fileExists(p: string): Promise<boolean> {
+let cachedLogo: Buffer | null = null;
+async function loadLogoBuffer(): Promise<Buffer | null> {
+  if (cachedLogo) return cachedLogo;
+  // 1) filesystem local
+  const localPath = path.join(process.cwd(), "public", "brand", "loog-full.png");
   try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
+    cachedLogo = await fs.readFile(localPath);
+    return cachedLogo;
+  } catch { /* fallback */ }
+  // 2) CDN
+  try {
+    const base = process.env.NEXT_PUBLIC_SITE_URL || "https://loogstudio.netlify.app";
+    const r = await fetch(`${base}/brand/loog-full.png`);
+    if (!r.ok) return null;
+    cachedLogo = Buffer.from(await r.arrayBuffer());
+    return cachedLogo;
+  } catch (err) {
+    console.warn("[watermark] fetch logo falhou:", err);
+    return null;
   }
 }
 

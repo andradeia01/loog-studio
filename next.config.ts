@@ -10,8 +10,9 @@ const nextConfig: NextConfig = {
   // Garante que os TTFs de public/fonts vão pro bundle da function serverless
   // (o /api/generate lê essas fontes via `fontfile` do sharp).
   outputFileTracingIncludes: {
-    "/api/generate": ["./public/fonts/**"],
-    "/api/**/*": ["./public/fonts/**"],
+    "/api/generate": ["./public/fonts/**", "./public/brand/**"],
+    "/api/generate-batch": ["./public/fonts/**", "./public/brand/**"],
+    "/api/**/*": ["./public/fonts/**", "./public/brand/**"],
   },
   eslint: { ignoreDuringBuilds: true },
   images: {

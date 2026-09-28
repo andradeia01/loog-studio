@@ -75,7 +75,8 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[generate] erro:", msg, err);
-    return NextResponse.json({ error: "falha na geração", message: msg }, { status: 500 });
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error("[generate] erro:", msg, stack);
+    return NextResponse.json({ error: "falha_geracao", message: msg, stack: stack?.split("\n").slice(0, 8).join("\n") }, { status: 500 });
   }
 }
