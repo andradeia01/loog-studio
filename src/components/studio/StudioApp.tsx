@@ -21,6 +21,7 @@ import { FidelityDashboard } from "./FidelityDashboard";
 import { CopyStudio } from "./CopyStudio";
 import { ImagesStudio } from "./ImagesStudio";
 import { VoiceStudio } from "./VoiceStudio";
+import { TweetStudio } from "./TweetStudio";
 import { cn } from "@/lib/utils";
 
 const DEFAULT_CONSULTANT: Consultant = {
@@ -52,7 +53,7 @@ interface Props {
   userId?: string | null;
 }
 
-type Tab = "ready" | "videos" | "custom" | "copy" | "images" | "voice" | "fidelity";
+type Tab = "ready" | "videos" | "custom" | "tweet" | "copy" | "images" | "voice" | "fidelity";
 
 export function StudioApp({ initialTemplates, readyArts, readyFolders = [], readyVideos = [], readyVideoFolders = [], consultantSeed, authEnabled, userId = null }: Props) {
   const [tab, setTab] = useState<Tab>(readyArts.length > 0 ? "ready" : "custom");
@@ -118,6 +119,7 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], read
             { k: "ready" as Tab, label: "Artes prontas", count: readyArts.length, always: true },
             { k: "videos" as Tab, label: "Vídeos prontos", count: readyVideos.length, always: true },
             { k: "custom" as Tab, label: "Personalizar", always: true },
+            { k: "tweet" as Tab, label: "Tweet 🐦", always: true },
             { k: "copy" as Tab, label: "Copy IA ✨", authOnly: true },
             { k: "images" as Tab, label: "Imagens IA 🎨", authOnly: true },
             { k: "voice" as Tab, label: "Voz IA 🎙️", authOnly: true },
@@ -147,7 +149,11 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], read
         </nav>
       </section>
 
-      {tab === "copy" ? (
+      {tab === "tweet" ? (
+        <section className="container-loog mt-6">
+          <TweetStudio />
+        </section>
+      ) : tab === "copy" ? (
         <section className="container-loog mt-6">
           <CopyStudio />
         </section>
