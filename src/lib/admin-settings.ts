@@ -5,6 +5,7 @@ export interface ApiKeys {
   elevenlabs?: string;
   fal?: string;
   replicate?: string;
+  placafipe?: string;
 }
 
 export interface Quotas {
