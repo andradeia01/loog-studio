@@ -66,9 +66,15 @@ export async function resolvePlacaFipeToken(): Promise<string | null> {
 function parseValor(raw: unknown): number {
   if (typeof raw === "number") return raw;
   if (typeof raw !== "string") return 0;
-  // "30761.00" ou "30.761,00" — upstream usa ponto decimal
-  const n = Number(raw.replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(n) ? n : Number(raw) || 0;
+  const s = raw.trim();
+  // formato BR "30.761,00" → tem vírgula como decimal
+  if (s.includes(",")) {
+    const n = Number(s.replace(/\./g, "").replace(",", "."));
+    return Number.isFinite(n) ? n : 0;
+  }
+  // formato US "30761.00" (upstream da PlacaFipe) → ponto como decimal
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
 }
 
 function formatBRL(v: number): string {
