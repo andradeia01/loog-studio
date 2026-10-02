@@ -144,6 +144,45 @@ export function PlacaStudio() {
     await entregarPdf(pdfBlob, pdfName);
   }
 
+  async function enviarWhatsapp(telCliente?: string) {
+    if (!pdfBlob || !veiculo) return;
+    const stored = loadConsultant();
+    const nomeConsultor = stored?.name?.split(" ")[0] ?? "seu consultor LOOG";
+    const v = veiculo.veiculo;
+    const modelo = `${v.marca ?? ""} ${v.modelo ?? ""}`.trim();
+    const essencial = planos?.[0]?.mensalidade_formatada ?? "";
+    const completo = planos?.[1]?.mensalidade_formatada ?? "";
+    const premium = planos?.[2]?.mensalidade_formatada ?? "";
+    const texto = [
+      `Olá! Aqui é ${nomeConsultor}, da LOOG Proteção Veicular 🚗`,
+      ``,
+      `Fiz a cotação pro seu *${modelo} ${v.ano_modelo ?? v.ano ?? ""}* (placa ${v.placa}):`,
+      `• Plano Essencial — ${essencial}/mês`,
+      `• Plano Completo — ${completo}/mês  👈 mais escolhido`,
+      `• Plano Premium — ${premium}/mês`,
+      ``,
+      `Adesão isenta nos três planos. O PDF completo vai anexo nessa conversa.`,
+      ``,
+      `Qualquer dúvida, me chama por aqui mesmo. 💙`,
+    ].join("\n");
+
+    const file = new File([pdfBlob], pdfName, { type: "application/pdf" });
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean; share?: (d: ShareData) => Promise<void> };
+    // mobile: Web Share com arquivo → usuário escolhe WhatsApp e PDF vai anexo
+    if (nav.canShare?.({ files: [file] }) && nav.share) {
+      try {
+        await nav.share({ files: [file], text: texto, title: `Cotação LOOG ${v.placa}` });
+        return;
+      } catch { /* usuário cancelou — segue pro fallback */ }
+    }
+    // desktop: abre wa.me com o texto, PDF já foi baixado, usuário anexa manualmente
+    const telLimpo = (telCliente ?? "").replace(/[^0-9]/g, "");
+    const url = telLimpo
+      ? `https://wa.me/${telLimpo.length === 11 ? "55" + telLimpo : telLimpo}?text=${encodeURIComponent(texto)}`
+      : `https://wa.me/?text=${encodeURIComponent(texto)}`;
+    window.open(url, "_blank");
+  }
+
   function limparHist() {
     setHist([]); try { window.localStorage.removeItem(HIST_KEY); } catch {}
   }
@@ -266,14 +305,24 @@ export function PlacaStudio() {
 
             {planos && !cotacaoLoading && (
               <article className="card overflow-hidden">
-                <header className="flex items-center justify-between border-b border-loog-border/60 px-5 py-3">
+                <header className="flex flex-col gap-3 border-b border-loog-border/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Cotação pronta</h3>
-                    <p className="text-[11px] text-loog-muted">PDF já baixou automaticamente — se não abriu, use o botão abaixo.</p>
+                    <p className="text-[11px] text-loog-muted">PDF baixou automaticamente — envie direto pelo WhatsApp com um toque.</p>
                   </div>
-                  <button type="button" onClick={baixarNovamente} className="btn-primary !py-2 !px-3 !text-xs" disabled={!pdfBlob}>
-                    📥 Baixar PDF
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => enviarWhatsapp()}
+                      className="rounded-md bg-[#25D366] px-3 py-2 text-xs font-bold text-black transition hover:brightness-110 disabled:opacity-50"
+                      disabled={!pdfBlob}
+                    >
+                      📲 Enviar WhatsApp
+                    </button>
+                    <button type="button" onClick={baixarNovamente} className="btn-primary !py-2 !px-3 !text-xs" disabled={!pdfBlob}>
+                      📥 Baixar PDF
+                    </button>
+                  </div>
                 </header>
                 <div className="grid gap-3 p-5 sm:grid-cols-3">
                   {planos.map((p, i) => (
