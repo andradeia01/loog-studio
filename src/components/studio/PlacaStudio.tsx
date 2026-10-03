@@ -213,15 +213,10 @@ export function PlacaStudio() {
     setTimeout(() => URL.revokeObjectURL(url), 6000);
   }
 
-  async function enviarWhatsapp() {
-    if (!mensagemWhats || !result?.vehicle || !valores) return;
-    // Baixa o PDF SEMPRE antes de abrir o WhatsApp (desktop: Downloads; mobile: Share Sheet)
-    try { await baixarPdfPremium(); } catch { /* já mostra erro na UI */ }
-
+  function enviarWhatsapp() {
+    if (!mensagemWhats) return;
     const telLimpo = clienteTel.replace(/[^0-9]/g, "");
     const telFinal = telLimpo.startsWith("55") ? telLimpo : (telLimpo.length === 11 ? "55" + telLimpo : telLimpo);
-    // Dá tempo do download iniciar antes de abrir nova aba (alguns browsers bloqueiam janelas em sequência)
-    await new Promise(r => setTimeout(r, 500));
     const url = `https://wa.me/${telFinal}?text=${encodeURIComponent(mensagemWhats)}`;
     window.open(url, "_blank");
   }
