@@ -22,6 +22,7 @@ import { TweetStudio } from "./TweetStudio";
 import { PlacaStudio } from "./PlacaStudio";
 import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
 import { StudioHome } from "./StudioHome";
+import { MundoPane } from "./MundoPane";
 
 const DEFAULT_CONSULTANT: Consultant = {
   name: "", phone: "", instagram: "", city: "", photoDataUrl: null,
@@ -103,10 +104,15 @@ export function StudioApp({
       key: "vendas",
       label: "Vendas",
       icon: "💼",
-      short: "Cotação, placa, PDF oficial LOOG",
+      short: "Cotação, CRM, pipeline e comissões",
       color: "from-blue-500/20 to-cyan-500/5",
       subs: [
         { key: "placa", label: "Cotação por Placa", icon: "🚗" },
+        { key: "simulador", label: "Simulador", icon: "🧮" },
+        { key: "crm", label: "CRM / Leads", icon: "👥" },
+        { key: "pipeline", label: "Pipeline", icon: "📈" },
+        { key: "followups", label: "Follow-ups", icon: "🔔" },
+        { key: "comissoes", label: "Comissões", icon: "💰" },
       ],
     },
     {
@@ -132,6 +138,31 @@ export function StudioApp({
         { key: "copy", label: "Copy IA", icon: "✨" },
         { key: "imagens", label: "Imagens IA", icon: "🎨" },
         { key: "voz", label: "Voz IA", icon: "🎙️" },
+      ],
+    },
+    {
+      key: "academia",
+      label: "Academia",
+      icon: "📚",
+      short: "Treinamentos, scripts e biblioteca de conhecimento LOOG",
+      color: "from-indigo-500/20 to-blue-500/5",
+      subs: [
+        { key: "trilhas", label: "Trilhas", icon: "🛤️" },
+        { key: "biblioteca", label: "Biblioteca", icon: "📖" },
+        { key: "scripts", label: "Scripts de venda", icon: "💬" },
+        { key: "ranking-academia", label: "Ranking", icon: "🏆" },
+      ],
+    },
+    {
+      key: "agenda",
+      label: "Agenda",
+      icon: "📅",
+      short: "Compromissos, lembretes de cliente e reuniões",
+      color: "from-rose-500/20 to-pink-500/5",
+      subs: [
+        { key: "hoje", label: "Hoje", icon: "☀️" },
+        { key: "mes", label: "Mês", icon: "🗓️" },
+        { key: "lembretes", label: "Lembretes", icon: "⏰" },
       ],
     },
     {
@@ -214,8 +245,68 @@ function renderConteudo(opts: RenderOpts) {
     );
   }
 
-  if (activeMundo === "vendas" && activeSub === "placa") {
-    return <PlacaStudio />;
+  if (activeMundo === "vendas") {
+    if (activeSub === "placa") return <PlacaStudio />;
+    if (activeSub === "simulador") return <MundoPane
+      icon="🧮"
+      title="Simulador de cotação"
+      subtitle="Cotação sem placa — informe marca, modelo e ano e veja mensalidade estimada antes de ligar pro cliente."
+      heroColor="from-cyan-500/20 via-blue-500/10 to-transparent"
+      features={[
+        { icon: "🚘", title: "Marca / Modelo / Ano", desc: "Busca no catálogo FIPE do SIVIS por texto livre." },
+        { icon: "💵", title: "Valor FIPE em tempo real", desc: "Mesmo cálculo que roda no SIVIS oficial." },
+        { icon: "📄", title: "PDF premium LOOG", desc: "Gera o mesmo PDF da aba Placa, com dados do cliente." },
+        { icon: "🔀", title: "Converter em cotação real", desc: "1 clique: envia pro Hub e grava proposta no SIVIS." },
+      ]}
+    />;
+    if (activeSub === "crm") return <MundoPane
+      icon="👥"
+      title="CRM / Leads"
+      subtitle="Base de clientes e leads qualificados, com histórico de cotações, status e próximos passos."
+      heroColor="from-sky-500/20 via-blue-500/10 to-transparent"
+      features={[
+        { icon: "🔍", title: "Busca inteligente", desc: "Por nome, telefone, placa ou status." },
+        { icon: "🏷️", title: "Tags e segmentação", desc: "Quente, morno, frio, perdido, cliente ativo." },
+        { icon: "💬", title: "Timeline do lead", desc: "Toda interação registrada (cotação, WhatsApp, ligação)." },
+        { icon: "📱", title: "WhatsApp 1-tap", desc: "Abre conversa com mensagem personalizada pré-pronta." },
+      ]}
+    />;
+    if (activeSub === "pipeline") return <MundoPane
+      icon="📈"
+      title="Pipeline de vendas"
+      subtitle="Kanban visual do seu funil: novo lead → contactado → negociando → fechado."
+      heroColor="from-blue-500/20 via-indigo-500/10 to-transparent"
+      features={[
+        { icon: "🗂️", title: "Kanban drag-and-drop", desc: "Arraste cards entre colunas pra mudar o status." },
+        { icon: "📊", title: "Taxa de conversão", desc: "Veja quantos % passam de cada etapa." },
+        { icon: "⏱️", title: "Tempo médio por etapa", desc: "Identifique gargalos no seu funil." },
+        { icon: "🔔", title: "Alerta de leads parados", desc: "Lead sem contato há X dias? Vira notificação." },
+      ]}
+    />;
+    if (activeSub === "followups") return <MundoPane
+      icon="🔔"
+      title="Follow-ups automáticos"
+      subtitle="Nunca mais esqueça de ligar de volta. Lembretes smart baseados no comportamento do lead."
+      heroColor="from-amber-500/20 via-yellow-500/10 to-transparent"
+      features={[
+        { icon: "📅", title: "Agendar lembrete", desc: "Com 1 clique na timeline do lead." },
+        { icon: "🤖", title: "Follow-up sugerido", desc: "IA sugere próximo passo baseado em comportamento." },
+        { icon: "📝", title: "Scripts prontos", desc: "Textos de follow-up por tipo (cotou e sumiu, pediu desconto, etc)." },
+        { icon: "✅", title: "Marcar como feito", desc: "Com nota do que o lead respondeu." },
+      ]}
+    />;
+    if (activeSub === "comissoes") return <MundoPane
+      icon="💰"
+      title="Comissões"
+      subtitle="Acompanhe seus ganhos: cotações convertidas, extrato por mês, meta e projeção."
+      heroColor="from-emerald-500/20 via-green-500/10 to-transparent"
+      features={[
+        { icon: "💵", title: "Ganho do mês", desc: "Total acumulado + projeção baseada no histórico." },
+        { icon: "🎯", title: "Meta pessoal", desc: "Barra de progresso + quanto falta pra bater." },
+        { icon: "📜", title: "Extrato detalhado", desc: "Cada contrato fechado, valor e data." },
+        { icon: "🏆", title: "Ranking de ganhos", desc: "Compare com média do seu grupo (opt-in)." },
+      ]}
+    />;
   }
 
   if (activeMundo === "conteudo") {
@@ -239,6 +330,96 @@ function renderConteudo(opts: RenderOpts) {
     if (activeSub === "copy") return <CopyStudio />;
     if (activeSub === "imagens") return <ImagesStudio />;
     if (activeSub === "voz") return <VoiceStudio />;
+  }
+
+  if (activeMundo === "academia") {
+    if (activeSub === "trilhas") return <MundoPane
+      icon="🛤️"
+      title="Trilhas de treinamento"
+      subtitle="Caminhos guiados do iniciante ao top performer LOOG. Cada trilha tem vídeos, PDFs e quizzes."
+      heroColor="from-indigo-500/25 via-blue-500/10 to-transparent"
+      features={[
+        { icon: "🎓", title: "Trilha Onboarding", desc: "Do zero ao primeiro cliente em 7 dias." },
+        { icon: "🏅", title: "Trilha Vendedor Pro", desc: "Técnicas de fechamento, objeção e upsell." },
+        { icon: "🎯", title: "Trilha Prospecção", desc: "Como achar leads qualificados nas redes." },
+        { icon: "📈", title: "Progresso + certificado", desc: "Barra de avanço, badges e certificado final." },
+      ]}
+    />;
+    if (activeSub === "biblioteca") return <MundoPane
+      icon="📖"
+      title="Biblioteca"
+      subtitle="Acervo completo de materiais: catálogos, apresentações, cases, legislação e muito mais."
+      heroColor="from-blue-500/20 via-indigo-500/10 to-transparent"
+      features={[
+        { icon: "📚", title: "Categorias", desc: "Técnico, comercial, legal, cases, inspiração." },
+        { icon: "🔎", title: "Busca full-text", desc: "Encontre dentro dos PDFs e vídeos." },
+        { icon: "⭐", title: "Favoritos", desc: "Salve seus materiais mais usados." },
+        { icon: "📥", title: "Download rápido", desc: "Baixar PDFs pra ter offline." },
+      ]}
+    />;
+    if (activeSub === "scripts") return <MundoPane
+      icon="💬"
+      title="Scripts de venda"
+      subtitle="Templates testados pra WhatsApp, ligação e reunião. Copie, personalize e envie."
+      heroColor="from-emerald-500/20 via-teal-500/10 to-transparent"
+      features={[
+        { icon: "📞", title: "Scripts de abordagem", desc: "Como abrir conversa sem parecer invasivo." },
+        { icon: "💰", title: "Contorno de objeção", desc: "Preço, concorrente, desconfiança — todos cobertos." },
+        { icon: "🔥", title: "Scripts de urgência", desc: "Gatilhos éticos pra acelerar fechamento." },
+        { icon: "🎙️", title: "Áudio IA pronto", desc: "Transforma script em áudio pro WhatsApp com voz LOOG." },
+      ]}
+    />;
+    if (activeSub === "ranking-academia") return <MundoPane
+      icon="🏆"
+      title="Ranking Academia"
+      subtitle="Veja quem está mais estudando no seu grupo. Pontos por aula concluída, quiz certo e trilhas finalizadas."
+      heroColor="from-amber-500/25 via-orange-500/10 to-transparent"
+      features={[
+        { icon: "🥇", title: "Top 10 do mês", desc: "Quem completou mais horas de estudo." },
+        { icon: "📊", title: "Suas estatísticas", desc: "Horas, trilhas concluídas, aproveitamento em quizzes." },
+        { icon: "🎁", title: "Prêmios mensais", desc: "Top 3 ganham destaque + bonificações." },
+        { icon: "👥", title: "Comparar com grupo", desc: "Média do seu grupo vs sua performance." },
+      ]}
+    />;
+  }
+
+  if (activeMundo === "agenda") {
+    if (activeSub === "hoje") return <MundoPane
+      icon="☀️"
+      title="Hoje"
+      subtitle="Seus compromissos, follow-ups e tarefas do dia num só lugar."
+      heroColor="from-rose-500/20 via-pink-500/10 to-transparent"
+      features={[
+        { icon: "⏰", title: "Timeline do dia", desc: "Hora por hora, do primeiro compromisso ao último." },
+        { icon: "🔔", title: "Lembretes smart", desc: "Notificação push 15min antes." },
+        { icon: "✅", title: "Checklist diária", desc: "Marcar o que foi feito, levar o pendente pra amanhã." },
+        { icon: "📱", title: "Integra com WhatsApp", desc: "Agendamento com cliente vira compromisso automático." },
+      ]}
+    />;
+    if (activeSub === "mes") return <MundoPane
+      icon="🗓️"
+      title="Mês"
+      subtitle="Visão do calendário mensal: planejamento macro, metas semanais e dias livres."
+      heroColor="from-purple-500/20 via-indigo-500/10 to-transparent"
+      features={[
+        { icon: "📆", title: "Calendário visual", desc: "Dots de cor por tipo (lead, cliente, interno)." },
+        { icon: "🎯", title: "Metas da semana", desc: "Quantas cotações, follow-ups, estudos." },
+        { icon: "🔁", title: "Eventos recorrentes", desc: "Reuniões semanais, ligação quinzenal, etc." },
+        { icon: "📤", title: "Export .ics", desc: "Sincronize com Google Calendar / Apple Calendar." },
+      ]}
+    />;
+    if (activeSub === "lembretes") return <MundoPane
+      icon="⏰"
+      title="Lembretes"
+      subtitle="Lembretes rápidos sem data fixa: 'ligar daqui 2h', 'mandar PDF até 18h', etc."
+      heroColor="from-orange-500/20 via-amber-500/10 to-transparent"
+      features={[
+        { icon: "⚡", title: "Criação rápida", desc: "Digite + horário relativo (ex: '+30min')." },
+        { icon: "🔔", title: "Push + som", desc: "Notificação no celular + alerta sonoro." },
+        { icon: "📝", title: "Com nota curta", desc: "Lembra do contexto quando dispara." },
+        { icon: "🔁", title: "Reagendar fácil", desc: "Snooze +15min, +1h, +dia." },
+      ]}
+    />;
   }
 
   if (activeMundo === "fidelidade") {

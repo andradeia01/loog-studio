@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { LoogLogo } from "@/components/ui/LoogMark";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 
-export type MundoKey = "home" | "vendas" | "conteudo" | "ia" | "producao" | "fidelidade";
+export type MundoKey = "home" | "vendas" | "conteudo" | "ia" | "academia" | "agenda" | "producao" | "fidelidade";
 
 export interface SubTab {
   key: string;
@@ -180,10 +180,10 @@ export function StudioShell({
         </main>
       </div>
 
-      {/* BOTTOM NAV mobile */}
+      {/* BOTTOM NAV mobile: 4 principais + "Mais" (abre drawer) */}
       <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-loog-border/60 bg-loog-bg/95 backdrop-blur-md lg:hidden">
         <div className="mx-auto flex max-w-xl items-stretch">
-          {mundos.slice(0, 5).map((m) => (
+          {mundos.slice(0, 4).map((m) => (
             <button
               key={m.key}
               type="button"
@@ -197,6 +197,17 @@ export function StudioShell({
               <span className="font-semibold">{m.label}</span>
             </button>
           ))}
+          <button
+            type="button"
+            onClick={() => setSidebarOpen(true)}
+            className={cn(
+              "flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] transition",
+              mundos.slice(4).some((m) => m.key === activeMundo) ? "text-loog-brand" : "text-loog-muted",
+            )}
+          >
+            <span className="text-xl">✨</span>
+            <span className="font-semibold">Mais</span>
+          </button>
         </div>
       </nav>
     </div>
