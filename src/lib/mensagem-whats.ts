@@ -1,0 +1,112 @@
+/**
+ * Monta a mensagem WhatsApp oficial da LOOG no formato "Jhonatan" (modelo
+ * aprovado pela diretoria):
+ *   - Investimento inicial = adesão + mensalidade
+ *   - Valor Total do Plano = mensalidade recorrente
+ *   - Lista de benefícios SÓ com nomes (sem valor por cobertura — atrapalha venda)
+ *   - Toggles honram o que o consultor desligou na UI
+ *
+ * Fonte dos valores: cotação real criada no SIVIS via Hub.
+ * Fonte da lista de benefícios: fixa por padrão (coberturas da COTA 5.5)
+ * mais o que vier do Hub, filtrado pelos toggles do consultor.
+ */
+
+export interface CoberturaItem {
+  id: string;
+  nome: string;
+  ligado: boolean;
+}
+
+export interface MontarMensagemInput {
+  cliente: { nome: string };
+  veiculo: {
+    placa: string;
+    brand: string;
+    model: string;
+    modelYear: number;
+    categoria: string; // "carro" | "moto" | ...
+    fipeFormatted: string;
+  };
+  valores: {
+    mensalidadeFormatted: string;
+    adesaoFormatted: string;
+    investimentoInicialFormatted: string;
+  };
+  coberturas: CoberturaItem[];
+  validadeDias: number;
+}
+
+function categoriaLabel(cat: string): string {
+  const c = cat.toLowerCase();
+  if (c === "moto") return "Moto";
+  if (c === "caminhão" || c === "caminhao") return "Caminhão";
+  return "Veículo Passeio";
+}
+
+/**
+ * Linhas de "Proteção Contratada" — sempre presentes no plano base,
+ * independente dos toggles de coberturas adicionais.
+ */
+const PROTECAO_FIXA = [
+  "ASSISTÊNCIA 24H EM TODO TERRITÓRIO NACIONAL",
+  "Reboque com KM ILIMITADO em casos de colisão e até 300km (150km ida e 150km volta) para pane Mecânica, Elétrica e Falta de Combustível",
+];
+
+/** Diferenciais LOOG — fixos, usam o formato ❌/✅ do modelo oficial. */
+const DIFERENCIAIS = [
+  "❌Sem Análise de Perfil;",
+  "❌Sem Consulta SPC e Serasa;",
+  "✅Pagamento mensal via Boleto e Cartão de Crédito;",
+  "✅Pagamento mensal via PIX;",
+  "✅Proteção *MUITO COMPLETA*",
+];
+
+export function montarMensagemWhats(input: MontarMensagemInput): string {
+  const primNome = (input.cliente.nome.trim().split(/\s+/)[0] || "amigo(a)")
+    // capitaliza
+    .replace(/^(.)/, (c) => c.toUpperCase());
+
+  const marcaModelo = `${input.veiculo.brand} - ${input.veiculo.model}`.trim();
+  const adicionaisAtivos = input.coberturas.filter((c) => c.ligado);
+
+  const linhas: string[] = [
+    `*LOOG PROTEÇÃO VEICULAR*`,
+    ``,
+    `Olá ${primNome}, tudo bem?`,
+    ``,
+    `⚠️ Você está prestes a fazer parte da Melhor Associação de Proteção Veicular do Brasil 😀`,
+    ``,
+    `🚙 Cotação ${categoriaLabel(input.veiculo.categoria)}`,
+    ``,
+    `*DADOS DO VEÍCULO*`,
+    `Placa: ${input.veiculo.placa}`,
+    `Veículo: ${marcaModelo}`,
+    `Ano modelo: ${input.veiculo.modelYear}`,
+    `Valor FIPE: ${input.veiculo.fipeFormatted}`,
+    ``,
+    `Investimento inicial : *${input.valores.investimentoInicialFormatted}*`,
+    `Valor Total do Plano: *${input.valores.mensalidadeFormatted}*`,
+    ``,
+    `Veja os Benefícios já *inclusos* no seu plano:`,
+    ``,
+    `*Proteção Contratada*`,
+    ...PROTECAO_FIXA.map((p) => `✔ ${p}`),
+  ];
+
+  if (adicionaisAtivos.length > 0) {
+    linhas.push(``, `*Adicionais Contratados*`);
+    for (const c of adicionaisAtivos) {
+      linhas.push(`✔ ${c.nome}`);
+    }
+  }
+
+  linhas.push(
+    ``,
+    `*DIFERENCIAIS DA LOOG*`,
+    ...DIFERENCIAIS,
+    ``,
+    `Validade de Proposta por ${input.validadeDias} dias.`,
+  );
+
+  return linhas.join("\n");
+}
