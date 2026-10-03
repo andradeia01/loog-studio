@@ -253,19 +253,27 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
   onVoltar?: () => void;
 }) {
   const [preview, setPreview] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [dados, setDados] = useState<Record<string, unknown> | null>(null);
+  const [ocrFalhou, setOcrFalhou] = useState(false);
 
   async function handleFile(file: File) {
-    if (!file.type.startsWith("image/")) { onError("Envie uma imagem (JPG/PNG)."); return; }
-    if (file.size > 10 * 1024 * 1024) { onError("Imagem muito grande (máx 10MB)."); return; }
+    const isImg = file.type.startsWith("image/");
+    const isPdf = file.type === "application/pdf";
+    if (!isImg && !isPdf) { onError("Envie uma imagem (JPG/PNG) ou PDF."); return; }
+    if (file.size > 10 * 1024 * 1024) { onError("Arquivo muito grande (máx 10MB)."); return; }
     onError(null);
     setUploading(true);
     setDados(null);
+    setOcrFalhou(false);
     try {
-      // comprime no cliente se > 2MB
-      const dataUrl = await lerImagemComprimida(file, 2000, 0.85);
-      setPreview(dataUrl);
+      // Imagem: comprime; PDF: envia como está
+      const dataUrl = isImg
+        ? await lerImagemComprimida(file, 2000, 0.85)
+        : await lerArquivoDataUrl(file);
+      setPreview(isImg ? dataUrl : null);
+      setFileName(file.name);
 
       const res = await fetch("/api/ocr/documento", {
         method: "POST",
@@ -273,7 +281,16 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
         body: JSON.stringify({ tipo, imageDataUrl: dataUrl }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body.message ?? "Falha ao ler o documento.");
+      if (!res.ok) {
+        // Fallback: libera edição manual mesmo com OCR offline
+        if (body.acao === "manual") {
+          setOcrFalhou(true);
+          setDados({}); // forma vazia pra editar
+          onError(body.message);
+          return;
+        }
+        throw new Error(body.message ?? "Falha ao ler o documento.");
+      }
       setDados(body.dados ?? {});
     } catch (err) {
       onError(err instanceof Error ? err.message : "Erro ao processar imagem.");
@@ -297,7 +314,7 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
       <p className="mt-1 text-sm text-loog-muted">{subtitulo}</p>
       <p className="mt-2 text-xs text-loog-muted/80">💡 {exemplo}</p>
 
-      {!preview ? (
+      {!preview && !fileName && !dados ? (
         <DropZone onFile={handleFile} />
       ) : (
         <div className="mt-5 grid gap-4 sm:grid-cols-[1fr_280px]">
@@ -308,13 +325,21 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
                 Lendo documento com IA…
               </div>
             )}
+            {!uploading && ocrFalhou && (
+              <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                ⚠ OCR indisponível. Preencha os campos manualmente abaixo — a cotação continua funcionando.
+              </div>
+            )}
             {!uploading && dados && (
               <>
-                <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-emerald-300">
-                  ✓ Lido {camposLidos.length} campos
-                </div>
-                <ul className="mb-4 max-h-64 overflow-y-auto rounded-xl border border-loog-border bg-black/30 p-3 text-xs">
-                  {camposLidos.length === 0 && <li className="text-loog-muted">Nenhum campo reconhecido — tente outra foto.</li>}
+                {!ocrFalhou && (
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-widest text-emerald-300">
+                    ✓ Lidos {camposLidos.length} campos
+                  </div>
+                )}
+                <ul className="mb-4 max-h-64 space-y-1 overflow-y-auto rounded-xl border border-loog-border bg-black/30 p-3 text-xs">
+                  {camposLidos.length === 0 && !ocrFalhou && <li className="text-loog-muted">Nenhum campo reconhecido — tente outra foto.</li>}
+                  {camposLidos.length === 0 && ocrFalhou && <li className="text-loog-muted italic">Pule esta etapa — você vai preencher na revisão.</li>}
                   {camposLidos.map(([k, v]) => (
                     <li key={k} className="flex items-start gap-2 py-1">
                       <span className="w-24 shrink-0 text-loog-muted">{k.replace(/_/g, " ")}:</span>
@@ -323,19 +348,27 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
                   ))}
                 </ul>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => { setPreview(null); setDados(null); }} className="rounded-md border border-loog-border px-3 py-2 text-xs text-loog-muted hover:bg-white/5">
-                    Trocar foto
+                  <button type="button" onClick={() => { setPreview(null); setFileName(""); setDados(null); setOcrFalhou(false); }} className="rounded-md border border-loog-border px-3 py-2 text-xs text-loog-muted hover:bg-white/5">
+                    Trocar arquivo
                   </button>
-                  <button type="button" onClick={confirmar} className="btn-primary !py-2 !text-xs" disabled={camposLidos.length === 0}>
+                  <button type="button" onClick={confirmar} className="btn-primary !py-2 !text-xs">
                     Continuar →
                   </button>
                 </div>
               </>
             )}
           </div>
-          <div className="relative overflow-hidden rounded-xl border border-loog-border bg-black/50">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt="prévia" className="h-full w-full object-contain" />
+          <div className="relative flex min-h-[180px] items-center justify-center overflow-hidden rounded-xl border border-loog-border bg-black/50">
+            {preview ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={preview} alt="prévia" className="h-full w-full object-contain" />
+            ) : (
+              <div className="p-6 text-center text-xs text-loog-muted">
+                <div className="mb-2 text-4xl">📄</div>
+                {fileName}
+                <div className="mt-1 text-[10px]">PDF enviado</div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -367,17 +400,16 @@ function DropZone({ onFile }: { onFile: (file: File) => void }) {
       )}
     >
       <span className="text-4xl">📸</span>
-      <span className="text-sm font-semibold">Toque pra fotografar ou escolher imagem</span>
-      <span className="text-[11px] text-loog-muted">JPG / PNG até 10 MB</span>
+      <span className="text-sm font-semibold">Toque pra fotografar ou escolher arquivo</span>
+      <span className="text-[11px] text-loog-muted">JPG · PNG · PDF até 10 MB</span>
       <input
         type="file"
-        accept="image/*"
-        capture="environment"
+        accept="image/*,application/pdf"
         className="hidden"
         onChange={(e) => {
           const f = e.target.files?.[0];
           if (f) onFile(f);
-          e.target.value = ""; // reseta pra permitir mesmo arquivo
+          e.target.value = "";
         }}
       />
     </label>
@@ -576,6 +608,16 @@ function StepResultado({ resultado, telefone, onNova }: {
 // ============================================================
 // HELPERS
 // ============================================================
+
+/** Lê arquivo como data URL (base64) sem alterar — usado pra PDFs. */
+async function lerArquivoDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(new Error("falha ao ler arquivo"));
+    r.readAsDataURL(file);
+  });
+}
 
 /** Lê imagem e comprime pra reduzir tamanho antes de enviar OCR. */
 async function lerImagemComprimida(file: File, maxW: number, quality: number): Promise<string> {

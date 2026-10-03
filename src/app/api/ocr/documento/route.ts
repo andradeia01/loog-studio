@@ -10,7 +10,12 @@ export const maxDuration = 60;
 
 const BodySchema = z.object({
   tipo: z.enum(["crlv", "cnh", "residencia"]),
-  imageDataUrl: z.string().startsWith("data:image/").max(12_000_000), // ~9MB após base64
+  // aceita data URL de imagem OU PDF
+  imageDataUrl: z.string()
+    .max(12_000_000) // ~9MB após base64
+    .refine((s) => s.startsWith("data:image/") || s.startsWith("data:application/pdf"), {
+      message: "Precisa ser data URL de imagem ou PDF",
+    }),
 });
 
 const HITS = new Map<string, { count: number; resetAt: number }>();
@@ -39,15 +44,29 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const result = await extrairDocumento(parsed.data.tipo as DocumentoTipo, parsed.data.imageDataUrl);
+    const result = await extrairDocumento(parsed.data.tipo as DocumentoTipo, String(parsed.data.imageDataUrl));
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[ocr/documento] erro:", msg);
     const low = msg.toLowerCase();
     if (low.includes("insufficient_quota") || low.includes("credit_balance_exhausted")) {
-      return NextResponse.json({ error: "openai_sem_creditos", message: "A conta OpenAI está sem créditos. Peça pro admin recarregar." }, { status: 503 });
+      return NextResponse.json({
+        error: "openai_sem_creditos",
+        message: "A conta OpenAI está sem créditos. Peça pro admin recarregar o saldo em platform.openai.com/billing.",
+        acao: "manual",
+      }, { status: 503 });
     }
-    return NextResponse.json({ error: "ocr_falhou", message: msg }, { status: 500 });
+    if (low.includes("401") || low.includes("invalid_api_key") || low.includes("incorrect api key") || low.includes("no body")) {
+      return NextResponse.json({
+        error: "openai_key_invalida",
+        message: "A chave da OpenAI está inválida ou expirou. Peça pro admin atualizar em /admin/config → API Keys.",
+        acao: "manual",
+      }, { status: 503 });
+    }
+    if (low.includes("rate limit") || low.includes("rate_limit")) {
+      return NextResponse.json({ error: "rate_limit", message: "Muitas leituras agora. Tenta em alguns segundos." }, { status: 429 });
+    }
+    return NextResponse.json({ error: "ocr_falhou", message: msg, acao: "manual" }, { status: 500 });
   }
 }
