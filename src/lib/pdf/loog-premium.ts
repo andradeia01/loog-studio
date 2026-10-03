@@ -12,7 +12,7 @@
  * Stack: pdf-lib puro (sem binários nativos — Netlify Functions friendly).
  */
 
-import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage, PDFImage } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, PDFFont, PDFPage, PDFImage, LineCapStyle } from "pdf-lib";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
@@ -185,7 +185,7 @@ function renderVeiculo(page: PDFPage, ctx: SecCtx) {
   page.drawText("BR  MERCOSUL", {
     x: placaX + 8, y: placaY + placaH - 8, size: 6, font: ctx.fontBold, color: BRANCO,
   });
-  // ∞ bandeira (fake)
+  // ponto decorativo (bandeira abstrata) no canto da faixa
   page.drawCircle({ x: placaX + placaW - 14, y: placaY + placaH - 5, size: 2.5, color: AMBAR });
   // nº da placa centrado, mono-ish
   const placaTxt = ctx.veiculo.placa;
@@ -308,10 +308,12 @@ function renderDiferenciais(page: PDFPage, ctx: SecCtx) {
     const row = Math.floor(i / 2);
     const yy = colY - row * 15;
     const xx = colX[col];
-    page.drawText(d.ok ? "✓" : "✗", {
-      x: xx, y: yy, size: 11, font: ctx.fontBold, color: d.ok ? VERDE : rgb(0.75, 0.2, 0.2),
-    });
-    page.drawText(d.texto, { x: xx + 14, y: yy, size: 9.5, font: ctx.font, color: GRAFITE });
+    if (d.ok) {
+      drawCheckGlyph(page, xx, yy + 3, 8, VERDE);
+    } else {
+      drawXGlyph(page, xx + 1, yy + 6, 7, rgb(0.75, 0.2, 0.2));
+    }
+    page.drawText(d.texto, { x: xx + 16, y: yy, size: 9.5, font: ctx.font, color: GRAFITE });
   }
 }
 
@@ -343,7 +345,7 @@ function renderFooter(page: PDFPage, ctx: { font: PDFFont; fontObli: PDFFont }) 
   page.drawText("loogprotecaoveicular.com.br", { x: 40, y: 11, size: 8.5, font: ctx.font, color: BRANCO });
   textRight(page, "0800 400 8888  ·  LOOG Proteção Veicular", A4.W - 40, 11, 8.5, ctx.font, BRANCO);
   page.drawText(
-    "Associação de proteção veicular — não é seguradora. Valores sujeitos a aceitação e vistoria prévia.",
+    "Associacao de protecao veicular. Nao e seguradora. Valores sujeitos a aceitacao e vistoria previa.",
     { x: 40, y: 36, size: 6.5, font: ctx.fontObli, color: CINZA },
   );
 }
@@ -386,17 +388,42 @@ function drawCheckLine(page: PDFPage, x: number, y: number, text: string, font: 
   const lines = wrap(text, font, 9.5, maxW);
   for (let i = 0; i < lines.length; i++) {
     if (i === 0) {
-      page.drawText("✓", { x, y, size: 11, font, color: markColor });
+      drawCheckGlyph(page, x + 2, y + 3, 8, markColor);
     }
-    page.drawText(lines[i], { x: x + 14, y, size: 9.5, font, color: GRAFITE });
+    page.drawText(lines[i], { x: x + 16, y, size: 9.5, font, color: GRAFITE });
     y -= 13;
   }
   return y - 2;
 }
 
+/** Desenha um ✓ geométrico: duas linhas formando o check. Resolve o bug WinAnsi do pdf-lib. */
+function drawCheckGlyph(page: PDFPage, x: number, y: number, size: number, color: ReturnType<typeof rgb>) {
+  // dois segmentos: curto descendo + longo subindo
+  page.drawLine({
+    start: { x, y },
+    end: { x: x + size * 0.35, y: y - size * 0.4 },
+    thickness: 1.6, color, lineCap: LineCapStyle.Round,
+  });
+  page.drawLine({
+    start: { x: x + size * 0.35, y: y - size * 0.4 },
+    end: { x: x + size, y: y + size * 0.55 },
+    thickness: 1.6, color, lineCap: LineCapStyle.Round,
+  });
+}
+
+/** Desenha um ✗ geométrico: duas diagonais cruzadas. */
+function drawXGlyph(page: PDFPage, x: number, y: number, size: number, color: ReturnType<typeof rgb>) {
+  page.drawLine({
+    start: { x, y: y - size }, end: { x: x + size, y }, thickness: 1.4, color, lineCap: LineCapStyle.Round,
+  });
+  page.drawLine({
+    start: { x, y }, end: { x: x + size, y: y - size }, thickness: 1.4, color, lineCap: LineCapStyle.Round,
+  });
+}
+
 function trunc(s: string, max: number): string {
   if (s.length <= max) return s;
-  return s.slice(0, max - 1) + "…";
+  return s.slice(0, max - 1) + "...";
 }
 
 function wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
