@@ -52,13 +52,20 @@ const PROTECAO_FIXA = [
   "Reboque com KM ILIMITADO em casos de colisão e até 300km (150km ida e 150km volta) para pane Mecânica, Elétrica e Falta de Combustível",
 ];
 
-/** Diferenciais LOOG — fixos, usam o formato ❌/✅ do modelo oficial. */
+/**
+ * Diferenciais LOOG — fixos.
+ * Usamos String.fromCodePoint pra montar os emojis em runtime, garantindo que
+ * nenhum passo do build (minifier, transpile, normalização Unicode) corrompa
+ * os bytes UTF-8 da string literal.
+ */
+const X_EMOJI = String.fromCodePoint(0x274C); // ❌
+const V_EMOJI = String.fromCodePoint(0x2705); // ✅
 const DIFERENCIAIS = [
-  "❌Sem Análise de Perfil;",
-  "❌Sem Consulta SPC e Serasa;",
-  "✅Pagamento mensal via Boleto e Cartão de Crédito;",
-  "✅Pagamento mensal via PIX;",
-  "✅Proteção *MUITO COMPLETA*",
+  `${X_EMOJI} Sem Análise de Perfil;`,
+  `${X_EMOJI} Sem Consulta SPC e Serasa;`,
+  `${V_EMOJI} Pagamento mensal via Boleto e Cartão de Crédito;`,
+  `${V_EMOJI} Pagamento mensal via PIX;`,
+  `${V_EMOJI} Proteção *MUITO COMPLETA*`,
 ];
 
 export function montarMensagemWhats(input: MontarMensagemInput): string {
@@ -69,13 +76,13 @@ export function montarMensagemWhats(input: MontarMensagemInput): string {
   const marcaModelo = `${input.veiculo.brand} - ${input.veiculo.model}`.trim();
   const adicionaisAtivos = input.coberturas.filter((c) => c.ligado);
 
-  // Emojis com variation selector (️) pra forçar renderização colorida em todos clientes.
-  //   ✔️ = ✔️ (check verde emoji, não símbolo texto)
-  //   ⚠️ = ⚠️ (triângulo laranja)
-  //   ❌/✅ já renderizam como emoji por padrão
-  const check = "✔️"; // ✔️
-  const warn = "⚠️";  // ⚠️
-  const car = "🚗";   // 🚗 (passenger car, mais comum que 🚙)
+  // Monta emojis em runtime via fromCodePoint — imune a corrupção de build.
+  //   ✔ + VS16 = ✔️ (check verde emoji, não símbolo texto)
+  //   ⚠ + VS16 = ⚠️ (triângulo laranja)
+  //   🚗 (passenger car, 2 surrogates)
+  const check = String.fromCodePoint(0x2714, 0xFE0F);  // ✔️
+  const warn = String.fromCodePoint(0x26A0, 0xFE0F);   // ⚠️
+  const car = String.fromCodePoint(0x1F697);           // 🚗
 
   const linhas: string[] = [
     `*LOOG PROTEÇÃO VEICULAR*`,
