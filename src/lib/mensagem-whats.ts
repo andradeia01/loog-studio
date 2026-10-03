@@ -69,14 +69,22 @@ export function montarMensagemWhats(input: MontarMensagemInput): string {
   const marcaModelo = `${input.veiculo.brand} - ${input.veiculo.model}`.trim();
   const adicionaisAtivos = input.coberturas.filter((c) => c.ligado);
 
+  // Emojis com variation selector (️) pra forçar renderização colorida em todos clientes.
+  //   ✔️ = ✔️ (check verde emoji, não símbolo texto)
+  //   ⚠️ = ⚠️ (triângulo laranja)
+  //   ❌/✅ já renderizam como emoji por padrão
+  const check = "✔️"; // ✔️
+  const warn = "⚠️";  // ⚠️
+  const car = "🚗";   // 🚗 (passenger car, mais comum que 🚙)
+
   const linhas: string[] = [
     `*LOOG PROTEÇÃO VEICULAR*`,
     ``,
     `Olá ${primNome}, tudo bem?`,
     ``,
-    `⚠️ Você está prestes a fazer parte da Melhor Associação de Proteção Veicular do Brasil 😀`,
+    `${warn} Você está prestes a fazer parte da Melhor Associação de Proteção Veicular do Brasil!`,
     ``,
-    `🚙 Cotação ${categoriaLabel(input.veiculo.categoria)}`,
+    `${car} Cotação ${categoriaLabel(input.veiculo.categoria)}`,
     ``,
     `*DADOS DO VEÍCULO*`,
     `Placa: ${input.veiculo.placa}`,
@@ -84,19 +92,19 @@ export function montarMensagemWhats(input: MontarMensagemInput): string {
     `Ano modelo: ${input.veiculo.modelYear}`,
     `Valor FIPE: ${input.veiculo.fipeFormatted}`,
     ``,
-    `Investimento inicial : *${input.valores.investimentoInicialFormatted}*`,
+    `Investimento inicial: *${input.valores.investimentoInicialFormatted}*`,
     `Valor Total do Plano: *${input.valores.mensalidadeFormatted}*`,
     ``,
     `Veja os Benefícios já *inclusos* no seu plano:`,
     ``,
     `*Proteção Contratada*`,
-    ...PROTECAO_FIXA.map((p) => `✔ ${p}`),
+    ...PROTECAO_FIXA.map((p) => `${check} ${p}`),
   ];
 
   if (adicionaisAtivos.length > 0) {
     linhas.push(``, `*Adicionais Contratados*`);
     for (const c of adicionaisAtivos) {
-      linhas.push(`✔ ${c.nome}`);
+      linhas.push(`${check} ${c.nome}`);
     }
   }
 
@@ -105,7 +113,7 @@ export function montarMensagemWhats(input: MontarMensagemInput): string {
     `*DIFERENCIAIS DA LOOG*`,
     ...DIFERENCIAIS,
     ``,
-    `Validade de Proposta por ${input.validadeDias} dias.`,
+    `Validade da Proposta: ${input.validadeDias} dias.`,
   );
 
   return linhas.join("\n");
