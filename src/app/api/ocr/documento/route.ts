@@ -50,21 +50,29 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[ocr/documento] erro:", msg);
     const low = msg.toLowerCase();
-    if (low.includes("insufficient_quota") || low.includes("credit_balance_exhausted")) {
+
+    if (low.includes("anthropic não configurado") || low.includes("não configurado")) {
       return NextResponse.json({
-        error: "openai_sem_creditos",
-        message: "A conta OpenAI está sem créditos. Peça pro admin recarregar o saldo em platform.openai.com/billing.",
+        error: "anthropic_nao_configurado",
+        message: "A chave da Anthropic não está cadastrada. Admin: /admin/config → API Keys → Anthropic.",
         acao: "manual",
       }, { status: 503 });
     }
-    if (low.includes("401") || low.includes("invalid_api_key") || low.includes("incorrect api key") || low.includes("no body")) {
+    if (low.includes("credit") || low.includes("insufficient") || low.includes("balance")) {
       return NextResponse.json({
-        error: "openai_key_invalida",
-        message: "A chave da OpenAI está inválida ou expirou. Peça pro admin atualizar em /admin/config → API Keys.",
+        error: "sem_creditos",
+        message: "A conta Anthropic está sem créditos. Peça pro admin recarregar em console.anthropic.com/settings/billing.",
         acao: "manual",
       }, { status: 503 });
     }
-    if (low.includes("rate limit") || low.includes("rate_limit")) {
+    if (low.includes("401") || low.includes("invalid_api_key") || low.includes("authentication") || low.includes("authorization")) {
+      return NextResponse.json({
+        error: "key_invalida",
+        message: "A chave da Anthropic está inválida ou expirou. Admin: atualize em /admin/config → API Keys.",
+        acao: "manual",
+      }, { status: 503 });
+    }
+    if (low.includes("rate limit") || low.includes("rate_limit") || low.includes("429")) {
       return NextResponse.json({ error: "rate_limit", message: "Muitas leituras agora. Tenta em alguns segundos." }, { status: 429 });
     }
     return NextResponse.json({ error: "ocr_falhou", message: msg, acao: "manual" }, { status: 500 });

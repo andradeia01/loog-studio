@@ -110,6 +110,7 @@ function ApiKeysTab() {
   const masked = (apiRow?.value ?? {}) as Record<string, string>;
   const providers = [
     { key: "openai", label: "OpenAI (GPT-4o, DALL-E, Whisper)", hint: "sk-proj-... — https://platform.openai.com/api-keys" },
+    { key: "anthropic", label: "Anthropic (Claude Vision — OCR da Cotação Completa)", hint: "sk-ant-... — https://console.anthropic.com/settings/keys" },
     { key: "elevenlabs", label: "ElevenLabs (voz)", hint: "sk_... — https://elevenlabs.io/app/settings/api-keys" },
     { key: "fal", label: "Fal.ai (imagem/vídeo)", hint: "key_... — https://fal.ai/dashboard/keys" },
     { key: "replicate", label: "Replicate (imagem/vídeo)", hint: "r8_... — https://replicate.com/account/api-tokens" },

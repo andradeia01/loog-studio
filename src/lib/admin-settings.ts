@@ -2,6 +2,7 @@ import { createSupabaseAdmin } from "./supabase/server";
 
 export interface ApiKeys {
   openai?: string;
+  anthropic?: string;
   elevenlabs?: string;
   fal?: string;
   replicate?: string;
