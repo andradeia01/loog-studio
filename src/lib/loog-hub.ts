@@ -105,11 +105,20 @@ async function post<T>(path: string, body: Record<string, unknown>): Promise<T> 
  *   lookup placa (provider configurado) → resolve FIPE no Sivisweb →
  *   cadeia completa salvarLead → ... → getModeloWhats →
  *   proxy de PDF em pdfUrl.
+ *
+ * Campos opcionais extras (cpf, endereço, CEP, etc.) são enviados ao Hub
+ * que repassa pro SIVIS no salvarUsuario — útil pra cotação completa com OCR.
  */
 export async function quoteFromPlate(input: {
   plate: string;
   customerName: string;
   customerPhone: string;
+  customerCpf?: string;
+  customerBirthDate?: string;
+  customerCep?: string;
+  customerAddress?: string;
+  customerCity?: string;
+  customerState?: string;
   leadId?: string;
   idempotencyKey?: string;
   productId?: string | number;

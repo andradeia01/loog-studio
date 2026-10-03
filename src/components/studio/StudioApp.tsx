@@ -20,6 +20,7 @@ import { ImagesStudio } from "./ImagesStudio";
 import { VoiceStudio } from "./VoiceStudio";
 import { TweetStudio } from "./TweetStudio";
 import { PlacaStudio } from "./PlacaStudio";
+import { CotacaoCompleta } from "./CotacaoCompleta";
 import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
 import { StudioHome } from "./StudioHome";
 import { MundoPane } from "./MundoPane";
@@ -107,7 +108,8 @@ export function StudioApp({
       short: "Cotação, CRM, pipeline e comissões",
       color: "from-blue-500/20 to-cyan-500/5",
       subs: [
-        { key: "placa", label: "Cotação por Placa", icon: "🚗" },
+        { key: "placa", label: "Cotação Rápida", icon: "⚡" },
+        { key: "completa", label: "Cotação Completa", icon: "📄" },
         { key: "simulador", label: "Simulador", icon: "🧮" },
         { key: "crm", label: "CRM / Leads", icon: "👥" },
         { key: "pipeline", label: "Pipeline", icon: "📈" },
@@ -247,6 +249,7 @@ function renderConteudo(opts: RenderOpts) {
 
   if (activeMundo === "vendas") {
     if (activeSub === "placa") return <PlacaStudio />;
+    if (activeSub === "completa") return <CotacaoCompleta />;
     if (activeSub === "simulador") return <MundoPane
       icon="🧮"
       title="Simulador de cotação"
