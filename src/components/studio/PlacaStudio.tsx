@@ -1,35 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { cn, slugify, timestamp } from "@/lib/utils";
-import { loadConsultant } from "@/lib/storage";
+import { cn } from "@/lib/utils";
 
-interface FipeInfo {
-  marca: string; modelo: string; ano_modelo: number;
-  codigo_fipe: string; mes_referencia: string; combustivel: string;
-  valor: number; valor_formatado: string;
+interface HubPlan {
+  productId: string | number;
+  name: string;
+  monthlyValueCents?: number;
+  monthlyValueFormatted?: string;
+  joinFeeValueCents?: number;
+  joinFeeFormatted?: string;
+  defaultCoverages?: Array<{ id: string; name: string; valueFormatted: string }>;
+  defaultServices?: Array<{ id: string; name: string; valueFormatted: string }>;
 }
-interface VeiculoInfo {
-  placa: string; placa_alternativa: string | null;
-  marca: string | null; modelo: string | null;
-  ano: string | null; ano_modelo: string | null;
-  cor: string | null; chassi: string | null;
-  municipio: string | null; uf: string | null;
-  segmento: string | null; sub_segmento: string | null;
-  cilindradas: string | null; potencia: string | null;
-  combustivel: string | null;
+interface HubVehicle {
+  plate: string; brand: string; model: string; modelYear: number;
+  color?: string; fipeCode: string; fipeFormatted: string;
+  vehicleCategory: string;
 }
-interface PlacaResult {
+interface HubResult {
   ok: true;
-  placa: string;
-  veiculo: VeiculoInfo;
-  fipe: FipeInfo[];
-  fipe_recomendado: FipeInfo | null;
-  upstream_ms: number | null;
-  aviso?: string;
+  quoteId: string;
+  plan?: HubPlan;
+  whatsappMessage?: string;
+  portalUrl?: string;
+  pdfUrl?: string;
+  printUrl?: string;
+  vehicle?: HubVehicle;
 }
-
-interface Plano { nome: string; mensalidade: number; mensalidade_formatada: string; adesao_formatada: string; destaques: string[] }
 
 interface HistItem { placa: string; marca: string; modelo: string; ano: string; at: number }
 
@@ -50,153 +48,82 @@ function saveHist(list: HistItem[]) {
 
 export function PlacaStudio() {
   const [placa, setPlaca] = useState("");
+  const [clienteNome, setClienteNome] = useState("");
+  const [clienteTel, setClienteTel] = useState("");
   const [loading, setLoading] = useState(false);
-  const [cotacaoLoading, setCotacaoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [veiculo, setVeiculo] = useState<PlacaResult | null>(null);
-  const [planos, setPlanos] = useState<Plano[] | null>(null);
-  const [pdfBlob, setPdfBlob] = useState<Blob | null>(null);
-  const [pdfName, setPdfName] = useState<string>("");
+  const [result, setResult] = useState<HubResult | null>(null);
   const [hist, setHist] = useState<HistItem[]>([]);
 
   useEffect(() => { setHist(loadHist()); }, []);
 
-  const consultar = useCallback(async (rawInput?: string) => {
-    const raw = (rawInput ?? placa).replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const consultar = useCallback(async (ev?: React.FormEvent) => {
+    ev?.preventDefault();
+    const raw = placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
     if (raw.length !== 7) { setError("Placa precisa ter 7 caracteres (ex.: ABC1D23)."); return; }
-    setLoading(true); setError(null); setVeiculo(null); setPlanos(null); setPdfBlob(null);
+    if (!clienteNome.trim()) { setError("Preencha o nome do cliente."); return; }
+    if (clienteTel.replace(/[^0-9]/g, "").length < 10) { setError("Telefone precisa ter DDD + número."); return; }
+    setLoading(true); setError(null); setResult(null);
     try {
-      const res = await fetch(`/api/placa/${encodeURIComponent(raw)}`, { cache: "no-store" });
-      const data = await res.json().catch(() => ({} as Record<string, unknown>));
-      if (!res.ok) {
-        const msg = (data as { message?: string }).message ?? (res.status === 404 ? "Veículo não encontrado." : `Falha (${res.status}).`);
-        throw new Error(msg);
-      }
-      setVeiculo(data as PlacaResult);
-      const v = (data as PlacaResult).veiculo;
-      const next: HistItem[] = [
-        { placa: v.placa, marca: v.marca ?? "", modelo: v.modelo ?? "", ano: v.ano ?? "", at: Date.now() },
-        ...hist.filter((h) => h.placa !== v.placa),
-      ].slice(0, HIST_MAX);
-      setHist(next); saveHist(next);
-      // auto-dispara cotação
-      void gerarCotacao(v.placa);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha inesperada.");
-    } finally { setLoading(false); }
-  }, [placa, hist]);
-
-  async function gerarCotacao(placaFmt: string) {
-    setCotacaoLoading(true);
-    try {
-      const stored = loadConsultant();
       const res = await fetch("/api/cotacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          placa: placaFmt,
-          consultant: {
-            name: stored?.name ?? null,
-            phone: stored?.phone ?? null,
-            instagram: stored?.instagram ?? null,
-            city: stored?.city ?? null,
-          },
-          format: "pdf",
+          placa: raw,
+          cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
         }),
       });
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message ?? `Falha ao gerar cotação (${res.status}).`);
+        const msg = (data as { message?: string }).message ?? `Falha (${res.status}).`;
+        throw new Error(msg);
       }
-      const essencial = parseFloat(res.headers.get("X-Mensalidade-Essencial") ?? "0");
-      const completo = parseFloat(res.headers.get("X-Mensalidade-Completo") ?? "0");
-      const premium = parseFloat(res.headers.get("X-Mensalidade-Premium") ?? "0");
-      setPlanos([
-        { nome: "Essencial", mensalidade: essencial, mensalidade_formatada: brl(essencial), adesao_formatada: "Isenta", destaques: ["Rastreamento 24h", "Roubo e furto", "Chaveiro"] },
-        { nome: "Completo", mensalidade: completo, mensalidade_formatada: brl(completo), adesao_formatada: "Isenta", destaques: ["Tudo do Essencial", "Carro reserva 15 dias", "Guincho 500km", "Colisão com rateio"] },
-        { nome: "Premium", mensalidade: premium, mensalidade_formatada: brl(premium), adesao_formatada: "Isenta", destaques: ["Tudo do Completo", "Guincho ilimitado", "Carro reserva 30 dias", "Consultor dedicado"] },
-      ]);
-      const blob = await res.blob();
-      const filename = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ?? `LOOG-cotacao-${slugify(placaFmt)}-${timestamp()}.pdf`;
-      setPdfBlob(blob); setPdfName(filename);
-      // auto-download — abre no mobile via Web Share quando disponível
-      await entregarPdf(blob, filename);
+      const r = data as HubResult;
+      setResult(r);
+      // adiciona ao histórico
+      if (r.vehicle) {
+        const next: HistItem[] = [
+          { placa: r.vehicle.plate, marca: r.vehicle.brand, modelo: r.vehicle.model, ano: String(r.vehicle.modelYear), at: Date.now() },
+          ...hist.filter((h) => h.placa !== r.vehicle!.plate),
+        ].slice(0, HIST_MAX);
+        setHist(next); saveHist(next);
+      }
+      // auto-baixa o PDF oficial se o Hub devolveu pdfUrl
+      if (r.pdfUrl) {
+        setTimeout(() => { window.open(r.pdfUrl!, "_blank"); }, 400);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao gerar cotação.");
-    } finally { setCotacaoLoading(false); }
-  }
+      setError(err instanceof Error ? err.message : "Falha inesperada.");
+    } finally { setLoading(false); }
+  }, [placa, clienteNome, clienteTel, hist]);
 
-  async function entregarPdf(blob: Blob, filename: string) {
-    const file = new File([blob], filename, { type: "application/pdf" });
-    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean; share?: (d: ShareData) => Promise<void> };
-    if (nav.canShare?.({ files: [file] }) && nav.share) {
-      try { await nav.share({ files: [file], title: filename }); return; } catch {}
-    }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = filename;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 6000);
-  }
-
-  async function baixarNovamente() {
-    if (!pdfBlob) return;
-    await entregarPdf(pdfBlob, pdfName);
-  }
-
-  async function enviarWhatsapp(telCliente?: string) {
-    if (!pdfBlob || !veiculo) return;
-    const stored = loadConsultant();
-    const nomeConsultor = stored?.name?.split(" ")[0] ?? "seu consultor LOOG";
-    const v = veiculo.veiculo;
-    const modelo = `${v.marca ?? ""} ${v.modelo ?? ""}`.trim();
-    const essencial = planos?.[0]?.mensalidade_formatada ?? "";
-    const completo = planos?.[1]?.mensalidade_formatada ?? "";
-    const premium = planos?.[2]?.mensalidade_formatada ?? "";
-    const texto = [
-      `Olá! Aqui é ${nomeConsultor}, da LOOG Proteção Veicular 🚗`,
-      ``,
-      `Fiz a cotação pro seu *${modelo} ${v.ano_modelo ?? v.ano ?? ""}* (placa ${v.placa}):`,
-      `• Plano Essencial — ${essencial}/mês`,
-      `• Plano Completo — ${completo}/mês  👈 mais escolhido`,
-      `• Plano Premium — ${premium}/mês`,
-      ``,
-      `Adesão isenta nos três planos. O PDF completo vai anexo nessa conversa.`,
-      ``,
-      `Qualquer dúvida, me chama por aqui mesmo. 💙`,
-    ].join("\n");
-
-    const file = new File([pdfBlob], pdfName, { type: "application/pdf" });
-    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean; share?: (d: ShareData) => Promise<void> };
-    // mobile: Web Share com arquivo → usuário escolhe WhatsApp e PDF vai anexo
-    if (nav.canShare?.({ files: [file] }) && nav.share) {
-      try {
-        await nav.share({ files: [file], text: texto, title: `Cotação LOOG ${v.placa}` });
-        return;
-      } catch { /* usuário cancelou — segue pro fallback */ }
-    }
-    // desktop: abre wa.me com o texto, PDF já foi baixado, usuário anexa manualmente
-    const telLimpo = (telCliente ?? "").replace(/[^0-9]/g, "");
-    const url = telLimpo
-      ? `https://wa.me/${telLimpo.length === 11 ? "55" + telLimpo : telLimpo}?text=${encodeURIComponent(texto)}`
-      : `https://wa.me/?text=${encodeURIComponent(texto)}`;
-    window.open(url, "_blank");
+  function novaConsulta() {
+    setPlaca(""); setClienteNome(""); setClienteTel(""); setResult(null); setError(null);
   }
 
   function limparHist() {
     setHist([]); try { window.localStorage.removeItem(HIST_KEY); } catch {}
   }
 
-  function brl(v: number) { return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }); }
+  async function enviarWhatsapp() {
+    if (!result) return;
+    const telLimpo = clienteTel.replace(/[^0-9]/g, "");
+    const telFinal = telLimpo.startsWith("55") ? telLimpo : (telLimpo.length === 11 ? "55" + telLimpo : telLimpo);
+    // mensagem oficial vem do Hub (gerada pelo próprio SIVIS)
+    const msg = result.whatsappMessage ?? (result.pdfUrl ? `Olá! Segue sua cotação LOOG oficial: ${result.pdfUrl}` : "Olá! Sua cotação LOOG está pronta.");
+    const url = `https://wa.me/${telFinal}?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank");
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
       <aside className="space-y-4">
-        <form onSubmit={(e) => { e.preventDefault(); consultar(); }} className="card space-y-3 p-5">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Consulta de placa</h2>
+        <form onSubmit={consultar} className="card space-y-3 p-5">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Cotação LOOG</h2>
           <p className="text-xs text-loog-muted/90">
-            Depois do OK, geramos automaticamente a <b>cotação em PDF</b> com os planos LOOG para o cliente.
+            Fluxo automático: digita placa + nome + telefone → cotação oficial direto no sistema LOOG (pasta SDR) + PDF pronto pra enviar.
           </p>
+
           <label className="label">Placa</label>
           <input
             type="text" inputMode="text" autoCapitalize="characters" autoCorrect="off" spellCheck={false}
@@ -204,15 +131,28 @@ export function PlacaStudio() {
             placeholder="ABC-1D23" value={formatPlacaMask(placa)}
             onChange={(e) => setPlaca(e.target.value)} maxLength={8} required
           />
+
+          <label className="label">Nome do cliente</label>
+          <input
+            type="text" className="input" value={clienteNome}
+            onChange={(e) => setClienteNome(e.target.value)} required placeholder="Nome completo"
+          />
+
+          <label className="label">Telefone com DDD</label>
+          <input
+            type="tel" className="input" value={clienteTel}
+            onChange={(e) => setClienteTel(e.target.value)} required placeholder="(11) 99999-9999"
+          />
+
           <button type="submit" className="btn-primary w-full !py-2" disabled={loading}>
-            {loading ? "Consultando…" : "🚗 Consultar + gerar cotação"}
+            {loading ? "Gerando cotação…" : "🚗 Gerar cotação oficial"}
           </button>
           {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
         </form>
 
         <div className="card p-4">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-loog-muted">Últimas consultas</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-loog-muted">Últimas placas</h3>
             {hist.length > 0 && <button type="button" onClick={limparHist} className="text-[10px] text-loog-muted hover:text-white">limpar</button>}
           </div>
           {hist.length === 0 ? (
@@ -221,7 +161,7 @@ export function PlacaStudio() {
             <ul className="space-y-1">
               {hist.map((h) => (
                 <li key={`${h.placa}-${h.at}`}>
-                  <button type="button" onClick={() => { setPlaca(h.placa); consultar(h.placa); }}
+                  <button type="button" onClick={() => setPlaca(h.placa)}
                     className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left transition hover:bg-white/5">
                     <span className="font-mono text-sm font-bold tracking-widest">{h.placa}</span>
                     <span className="truncate pl-3 text-[11px] text-loog-muted">{h.marca} {h.modelo} {h.ano && `· ${h.ano}`}</span>
@@ -234,137 +174,161 @@ export function PlacaStudio() {
       </aside>
 
       <div className="space-y-4">
-        {!veiculo && !loading && !error && (
-          <div className="card flex min-h-[260px] flex-col items-center justify-center gap-2 p-8 text-center">
-            <span className="text-5xl">🚘</span>
-            <h3 className="font-display text-lg font-bold">Consulta + cotação instantânea</h3>
-            <p className="max-w-sm text-xs text-loog-muted">
-              Digite a placa. Trazemos marca, modelo, ano e valor FIPE —
-              e <b>já geramos o PDF da cotação</b> com os três planos LOOG prontos pra enviar ao cliente.
-            </p>
-          </div>
-        )}
-
-        {loading && (
-          <div className="card flex min-h-[260px] flex-col items-center justify-center gap-3 p-8 text-center">
-            <div className="h-10 w-10 animate-spin rounded-full border-2 border-loog-brand border-t-transparent" />
-            <p className="text-xs text-loog-muted">Consultando base nacional…</p>
-          </div>
-        )}
-
-        {veiculo && (
-          <>
-            <article className="card overflow-hidden">
-              <header className="flex items-center justify-between gap-3 border-b border-loog-border/60 bg-loog-brand/15 px-5 py-4">
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Placa consultada</div>
-                  <div className="font-display text-2xl font-extrabold tracking-[0.25em]">{veiculo.veiculo.placa}</div>
-                  {veiculo.veiculo.placa_alternativa && veiculo.veiculo.placa_alternativa !== veiculo.veiculo.placa && (
-                    <div className="text-[10px] text-loog-muted">alt.: {veiculo.veiculo.placa_alternativa}</div>
-                  )}
-                </div>
-                <div className="text-right">
-                  <div className="font-display text-xl font-bold leading-tight">
-                    {veiculo.veiculo.marca ?? "-"} <span className="font-normal text-loog-muted">·</span> {veiculo.veiculo.modelo ?? "-"}
-                  </div>
-                  <div className="text-xs text-loog-muted">
-                    {veiculo.veiculo.ano ?? "-"}
-                    {veiculo.veiculo.ano_modelo && veiculo.veiculo.ano_modelo !== veiculo.veiculo.ano ? ` / mod. ${veiculo.veiculo.ano_modelo}` : ""}
-                  </div>
-                </div>
-              </header>
-
-              <div className="grid gap-x-4 gap-y-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
-                <Field label="Cor" value={veiculo.veiculo.cor} />
-                <Field label="Combustível" value={veiculo.veiculo.combustivel} />
-                <Field label="Cilindradas" value={veiculo.veiculo.cilindradas ? `${veiculo.veiculo.cilindradas} cc` : null} />
-                <Field label="Segmento" value={veiculo.veiculo.segmento} />
-                <Field label="Município" value={veiculo.veiculo.municipio} />
-                <Field label="UF" value={veiculo.veiculo.uf} />
-                <Field label="Chassi" value={veiculo.veiculo.chassi} mono />
-                <Field label="Valor FIPE" value={veiculo.fipe_recomendado?.valor_formatado ?? null} highlight />
-                <Field label="Ref. FIPE" value={veiculo.fipe_recomendado?.mes_referencia ?? null} />
-              </div>
-
-              <footer className="flex items-center justify-between border-t border-loog-border/60 px-5 py-3 text-[10px] text-loog-muted">
-                <span>fonte: PlacaFipe · {veiculo.upstream_ms ? `${veiculo.upstream_ms}ms` : "ok"}</span>
-                {veiculo.aviso && <span className="text-amber-300">⚠ {veiculo.aviso}</span>}
-              </footer>
-            </article>
-
-            {/* Card de cotação */}
-            {cotacaoLoading && (
-              <div className="card flex items-center gap-3 p-5">
-                <div className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-loog-brand border-t-transparent" />
-                <div>
-                  <div className="text-sm font-semibold">Gerando cotação LOOG…</div>
-                  <div className="text-[11px] text-loog-muted">Calculando planos e montando PDF pra entregar ao cliente.</div>
-                </div>
-              </div>
-            )}
-
-            {planos && !cotacaoLoading && (
-              <article className="card overflow-hidden">
-                <header className="flex flex-col gap-3 border-b border-loog-border/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h3 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Cotação pronta</h3>
-                    <p className="text-[11px] text-loog-muted">PDF baixou automaticamente — envie direto pelo WhatsApp com um toque.</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => enviarWhatsapp()}
-                      className="rounded-md bg-[#25D366] px-3 py-2 text-xs font-bold text-black transition hover:brightness-110 disabled:opacity-50"
-                      disabled={!pdfBlob}
-                    >
-                      📲 Enviar WhatsApp
-                    </button>
-                    <button type="button" onClick={baixarNovamente} className="btn-primary !py-2 !px-3 !text-xs" disabled={!pdfBlob}>
-                      📥 Baixar PDF
-                    </button>
-                  </div>
-                </header>
-                <div className="grid gap-3 p-5 sm:grid-cols-3">
-                  {planos.map((p, i) => (
-                    <div key={p.nome} className={cn(
-                      "rounded-xl p-4",
-                      i === 1 ? "bg-loog-brand text-white shadow-glow" : "border border-loog-border bg-white/5",
-                    )}>
-                      <div className={cn("text-[10px] font-semibold uppercase tracking-widest", i === 1 ? "text-white/80" : "text-loog-muted")}>
-                        {i === 1 ? "Mais escolhido" : "Plano"}
-                      </div>
-                      <div className="mt-1 font-display text-lg font-bold">{p.nome}</div>
-                      <div className="mt-2 flex items-baseline gap-1">
-                        <span className={cn("text-xs", i === 1 ? "text-white/80" : "text-loog-muted")}>R$</span>
-                        <span className="font-display text-2xl font-extrabold">{p.mensalidade.toFixed(2).replace(".", ",")}</span>
-                        <span className={cn("text-[10px]", i === 1 ? "text-white/80" : "text-loog-muted")}>/mês</span>
-                      </div>
-                      <div className={cn("text-[10px]", i === 1 ? "text-white/80" : "text-loog-muted")}>adesão isenta</div>
-                      <ul className={cn("mt-3 space-y-1 text-[11px]", i === 1 ? "text-white/95" : "text-loog-muted")}>
-                        {p.destaques.map((d) => <li key={d}>• {d}</li>)}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-                <footer className="border-t border-loog-border/60 px-5 py-3 text-[10px] text-loog-muted">
-                  Valores são estimativas · proposta final sujeita a análise · LOOG — proteção veicular associativa
-                </footer>
-              </article>
-            )}
-          </>
+        {!result && !loading && !error && <EmptyState />}
+        {loading && <LoadingCard />}
+        {result && (
+          <ResultCard
+            r={result}
+            telCliente={clienteTel}
+            onWhats={enviarWhatsapp}
+            onNova={novaConsulta}
+          />
         )}
       </div>
     </div>
   );
 }
 
-function Field({ label, value, mono, highlight }: { label: string; value: string | null | undefined; mono?: boolean; highlight?: boolean }) {
+function EmptyState() {
   return (
-    <div className={highlight ? "rounded-lg bg-loog-brand/15 px-2 py-1" : undefined}>
-      <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">{label}</div>
-      <div className={cn("truncate text-sm", mono && "font-mono text-xs", highlight && "text-base font-bold text-white")}>
-        {value && value !== "null" ? value : <span className="text-loog-muted">—</span>}
-      </div>
+    <div className="card flex min-h-[280px] flex-col items-center justify-center gap-3 p-8 text-center">
+      <span className="text-5xl">🚘</span>
+      <h3 className="font-display text-lg font-bold">Cotação oficial LOOG em 1 clique</h3>
+      <p className="max-w-sm text-xs text-loog-muted">
+        Direto no sistema interno LOOG (pasta SDR). Devolve: valor mensal, adesão,
+        PDF oficial com identidade LOOG e mensagem pronta pro WhatsApp.
+      </p>
     </div>
+  );
+}
+
+function LoadingCard() {
+  return (
+    <div className="card flex min-h-[280px] flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="h-10 w-10 animate-spin rounded-full border-2 border-loog-brand border-t-transparent" />
+      <p className="text-sm font-semibold">Processando cotação…</p>
+      <p className="text-[11px] text-loog-muted">Consultando placa → resolvendo FIPE → criando proposta no sistema LOOG → gerando PDF.</p>
+    </div>
+  );
+}
+
+function ResultCard({ r, telCliente, onWhats, onNova }: {
+  r: HubResult; telCliente: string;
+  onWhats: () => void; onNova: () => void;
+}) {
+  const mensal = r.plan?.monthlyValueFormatted ?? "—";
+  const adesao = r.plan?.joinFeeFormatted ?? "—";
+  const mensalCents = r.plan?.monthlyValueCents ?? 0;
+  const adesaoCents = r.plan?.joinFeeValueCents ?? 0;
+  const investimento = mensalCents && adesaoCents
+    ? ((mensalCents + adesaoCents) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
+    : null;
+
+  const telLimpo = telCliente.replace(/[^0-9]/g, "");
+  const telFinal = telLimpo.startsWith("55") ? telLimpo : (telLimpo.length === 11 ? "55" + telLimpo : telLimpo);
+  const waOnlyLink = r.pdfUrl
+    ? `https://wa.me/${telFinal}?text=${encodeURIComponent(`Olá! Segue sua cotação LOOG: ${r.pdfUrl}`)}`
+    : null;
+
+  return (
+    <>
+      <article className="card overflow-hidden border border-emerald-500/30">
+        <header className="flex items-center gap-3 border-b border-emerald-500/20 bg-emerald-500/10 px-5 py-3">
+          <span className="text-2xl">✅</span>
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-emerald-300">Cotação registrada no sistema LOOG</h3>
+            <p className="text-[11px] text-loog-muted">Nº {r.quoteId.slice(0, 20)} · pasta SDR</p>
+          </div>
+        </header>
+
+        {r.vehicle && (
+          <div className="border-b border-loog-border/60 px-5 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Veículo</div>
+                <div className="font-display text-lg font-bold leading-tight">
+                  {r.vehicle.brand} <span className="font-normal text-loog-muted">·</span> {r.vehicle.model}
+                </div>
+                <div className="text-xs text-loog-muted">
+                  Ano {r.vehicle.modelYear} · Placa <b className="text-white tracking-widest">{r.vehicle.plate}</b> · {r.vehicle.vehicleCategory}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Valor FIPE</div>
+                <div className="font-display text-xl font-bold text-loog-brand">{r.vehicle.fipeFormatted}</div>
+                <div className="text-[10px] text-loog-muted">FIPE {r.vehicle.fipeCode}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="grid gap-3 p-5 sm:grid-cols-2">
+          {investimento && (
+            <div className="rounded-xl bg-loog-brand p-4 text-white shadow-glow">
+              <div className="text-[10px] font-semibold uppercase tracking-widest text-white/80">Investimento Inicial</div>
+              <div className="mt-1 font-display text-3xl font-extrabold">{investimento}</div>
+              <div className="mt-1 text-[11px] text-white/80">1º boleto · {mensal} mensalidade + {adesao} adesão</div>
+            </div>
+          )}
+          <div className={cn("rounded-xl border-2 border-loog-brand bg-white/5 p-4", !investimento && "sm:col-span-2")}>
+            <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-brand">Valor Total do Plano</div>
+            <div className="mt-1 font-display text-3xl font-extrabold text-loog-brand">{mensal}</div>
+            <div className="mt-1 text-[11px] text-loog-muted">mensalidade recorrente · boleto, cartão ou PIX</div>
+          </div>
+        </div>
+
+        {r.plan?.defaultCoverages && r.plan.defaultCoverages.length > 0 && (
+          <div className="border-t border-loog-border/60 px-5 py-4">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Coberturas inclusas</div>
+            <ul className="space-y-1 text-xs text-loog-muted">
+              {r.plan.defaultCoverages.map((c) => (
+                <li key={c.id}>✓ {c.name} <span className="text-loog-muted/60">· {c.valueFormatted}</span></li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <footer className="flex flex-wrap gap-2 border-t border-loog-border/60 px-5 py-3">
+          {r.pdfUrl && (
+            <a href={r.pdfUrl} target="_blank" rel="noopener noreferrer" className="rounded-md bg-loog-brand px-3 py-2 text-xs font-bold text-white hover:brightness-110">
+              📥 Baixar PDF oficial
+            </a>
+          )}
+          <button type="button" onClick={onWhats} className="rounded-md bg-[#25D366] px-3 py-2 text-xs font-bold text-black hover:brightness-110">
+            📲 Enviar mensagem LOOG
+          </button>
+          {waOnlyLink && (
+            <a href={waOnlyLink} target="_blank" rel="noopener noreferrer" className="rounded-md border border-loog-border px-3 py-2 text-xs text-loog-muted hover:bg-white/5">
+              Enviar só link
+            </a>
+          )}
+          {r.portalUrl && (
+            <a href={r.portalUrl} target="_blank" rel="noopener noreferrer" className="ml-auto rounded-md border border-loog-border px-3 py-2 text-xs text-loog-muted hover:bg-white/5">
+              Ver no SIVIS →
+            </a>
+          )}
+        </footer>
+      </article>
+
+      {r.whatsappMessage && (
+        <div className="card p-5">
+          <div className="mb-2 flex items-center justify-between">
+            <h3 className="text-[11px] font-semibold uppercase tracking-widest text-loog-muted">Mensagem WhatsApp oficial</h3>
+            <button
+              type="button"
+              onClick={() => { navigator.clipboard?.writeText(r.whatsappMessage ?? ""); }}
+              className="text-[10px] text-loog-muted hover:text-white"
+            >
+              📋 copiar
+            </button>
+          </div>
+          <pre className="whitespace-pre-wrap rounded-lg bg-black/30 p-3 text-[11px] text-loog-muted">{r.whatsappMessage}</pre>
+        </div>
+      )}
+
+      <button type="button" onClick={onNova} className="text-xs text-loog-muted hover:text-white">
+        ← Nova cotação
+      </button>
+    </>
   );
 }

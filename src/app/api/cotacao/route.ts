@@ -1,71 +1,81 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
-import { consultarPlaca } from "@/lib/placafipe";
-import { calcularCotacao } from "@/lib/cotacao";
-import { gerarPdfCotacao } from "@/lib/pdf/cotacao-pdf";
-import { slugify, timestamp } from "@/lib/utils";
-import { z } from "zod";
+import { quoteFromPlate, HubError } from "@/lib/loog-hub";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BodySchema = z.object({
+const HITS = new Map<string, { count: number; resetAt: number }>();
+const LIMIT = 10;
+const WINDOW_MS = 60_000;
+function rateLimited(ip: string) {
+  const now = Date.now();
+  const rec = HITS.get(ip);
+  if (!rec || rec.resetAt < now) { HITS.set(ip, { count: 1, resetAt: now + WINDOW_MS }); return false; }
+  rec.count += 1;
+  return rec.count > LIMIT;
+}
+
+const Body = z.object({
   placa: z.string().min(7).max(10),
-  consultant: z.object({
-    name: z.string().nullable().optional(),
-    phone: z.string().nullable().optional(),
-    instagram: z.string().nullable().optional(),
-    city: z.string().nullable().optional(),
-  }).default({}),
-  format: z.enum(["pdf", "json"]).default("pdf"),
+  cliente: z.object({
+    nome: z.string().min(2).max(120),
+    telefone: z.string().min(8).max(20),
+  }),
+  leadId: z.string().optional(),
 });
 
+/**
+ * Rota única: recebe placa + cliente, chama Hub `/v1/quote/from-plate`,
+ * devolve cotação oficial LOOG (valor mensal, adesão, pdfUrl, whatsappMessage).
+ *
+ * O Hub cuida de: lookup placa → FIPE → cadeia Sivisweb → PDF proxy.
+ * O LOOG Studio não calcula nada por conta própria.
+ */
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  if (rateLimited(ip)) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
+
+  let consultorId: string | undefined;
   if (supabaseConfigured()) {
     const auth = await requireApproved();
     if (!auth.ok) return auth.res;
+    consultorId = auth.auth.userId;
   }
 
-  const body = await req.json().catch(() => null);
-  const parsed = BodySchema.safeParse(body);
+  const parsed = Body.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "invalido", details: parsed.error.flatten() }, { status: 400 });
   }
 
-  const result = await consultarPlaca(parsed.data.placa);
-  if (!result.ok) {
-    return NextResponse.json({ error: result.error, message: result.message }, { status: result.status });
+  const telefoneDigits = parsed.data.cliente.telefone.replace(/[^0-9]/g, "");
+  if (telefoneDigits.length < 10) {
+    return NextResponse.json({ error: "telefone_invalido", message: "Telefone precisa ter DDD + número (10 ou 11 dígitos)." }, { status: 400 });
   }
-
-  const cotacao = calcularCotacao(result.veiculo, result.fipe_recomendado);
-
-  if (parsed.data.format === "json") {
-    return NextResponse.json({ ok: true, veiculo: result.veiculo, fipe: result.fipe_recomendado, cotacao });
-  }
+  // Hub espera E.164 BR (55DDNNNNNNNNN); se já veio com 55, mantém, senão prefixa.
+  const customerPhone = telefoneDigits.startsWith("55") ? telefoneDigits : `55${telefoneDigits}`;
 
   try {
-    const pdfBytes = await gerarPdfCotacao({
-      veiculo: result.veiculo,
-      cotacao,
-      consultant: parsed.data.consultant,
+    const result = await quoteFromPlate({
+      plate: parsed.data.placa,
+      customerName: parsed.data.cliente.nome,
+      customerPhone,
+      leadId: parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined),
     });
-    const filename = `LOOG-cotacao-${slugify(result.veiculo.placa)}-${timestamp()}.pdf`;
-    return new NextResponse(new Uint8Array(pdfBytes), {
-      status: 200,
-      headers: {
-        "Content-Type": "application/pdf",
-        "Content-Length": String(pdfBytes.byteLength),
-        "Content-Disposition": `attachment; filename="${filename}"`,
-        "Cache-Control": "no-store",
-        "X-Mensalidade-Essencial": String(cotacao.planos[0]?.mensalidade ?? 0),
-        "X-Mensalidade-Completo": String(cotacao.planos[1]?.mensalidade ?? 0),
-        "X-Mensalidade-Premium": String(cotacao.planos[2]?.mensalidade ?? 0),
-      },
-    });
+    return NextResponse.json({ ok: true, ...result });
   } catch (err) {
+    if (err instanceof HubError) {
+      const user = err.status === 404
+        ? "Placa não encontrada ou FIPE não resolvida — verifique a placa e tente novamente."
+        : err.status === 502 || err.status === 503
+          ? "Sistema interno LOOG indisponível no momento. Tente em alguns segundos."
+          : err.message;
+      return NextResponse.json({ error: err.code ?? "hub_error", message: user, status: err.status }, { status: err.status >= 400 && err.status < 500 ? err.status : 502 });
+    }
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[cotacao] erro pdf:", msg);
-    return NextResponse.json({ error: "pdf_falhou", message: msg }, { status: 500 });
+    console.error("[cotacao] falha:", msg);
+    return NextResponse.json({ error: "falha", message: msg }, { status: 500 });
   }
 }
