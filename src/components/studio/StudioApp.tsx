@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   CATEGORY_LABEL,
   Consultant,
@@ -10,8 +9,6 @@ import {
   TemplateCategory,
 } from "@/lib/types";
 import { loadConsultant, saveConsultant } from "@/lib/storage";
-import { LoogLogo } from "@/components/ui/LoogMark";
-import { LogoutButton } from "@/components/auth/LogoutButton";
 import { ConsultantForm } from "./ConsultantForm";
 import { PhotoUploader } from "./PhotoUploader";
 import { CustomizeGallery } from "./CustomizeGallery";
@@ -23,14 +20,11 @@ import { ImagesStudio } from "./ImagesStudio";
 import { VoiceStudio } from "./VoiceStudio";
 import { TweetStudio } from "./TweetStudio";
 import { PlacaStudio } from "./PlacaStudio";
-import { cn } from "@/lib/utils";
+import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
+import { StudioHome } from "./StudioHome";
 
 const DEFAULT_CONSULTANT: Consultant = {
-  name: "",
-  phone: "",
-  instagram: "",
-  city: "",
-  photoDataUrl: null,
+  name: "", phone: "", instagram: "", city: "", photoDataUrl: null,
 };
 
 const CATEGORIES: { key: TemplateCategory | "todos"; label: string }[] = [
@@ -54,10 +48,12 @@ interface Props {
   userId?: string | null;
 }
 
-type Tab = "ready" | "videos" | "custom" | "tweet" | "placa" | "copy" | "images" | "voice" | "fidelity";
-
-export function StudioApp({ initialTemplates, readyArts, readyFolders = [], readyVideos = [], readyVideoFolders = [], consultantSeed, authEnabled, userId = null }: Props) {
-  const [tab, setTab] = useState<Tab>(readyArts.length > 0 ? "ready" : "custom");
+export function StudioApp({
+  initialTemplates, readyArts, readyFolders = [], readyVideos = [],
+  readyVideoFolders = [], consultantSeed, authEnabled, userId = null,
+}: Props) {
+  const [activeMundo, setActiveMundo] = useState<MundoKey>("home");
+  const [activeSub, setActiveSub] = useState<string | null>(null);
 
   const [consultant, setConsultant] = useState<Consultant>(DEFAULT_CONSULTANT);
   const [ready, setReady] = useState(false);
@@ -93,169 +89,253 @@ export function StudioApp({ initialTemplates, readyArts, readyFolders = [], read
 
   const dataOk = ConsultantSchema.safeParse(consultant).success;
 
+  // ============== MAPA DOS MUNDOS ==============
+  const mundos: Mundo[] = useMemo(() => [
+    {
+      key: "home",
+      label: "Início",
+      icon: "🏠",
+      short: "Visão geral e atalhos",
+      color: "from-loog-brand/20 to-transparent",
+      subs: [],
+    },
+    {
+      key: "vendas",
+      label: "Vendas",
+      icon: "💼",
+      short: "Cotação, placa, PDF oficial LOOG",
+      color: "from-blue-500/20 to-cyan-500/5",
+      subs: [
+        { key: "placa", label: "Cotação por Placa", icon: "🚗" },
+      ],
+    },
+    {
+      key: "conteudo",
+      label: "Conteúdo",
+      icon: "🎨",
+      short: "Artes e vídeos prontos ou personalizados",
+      color: "from-pink-500/20 to-rose-500/5",
+      subs: [
+        { key: "artes", label: "Artes prontas", icon: "📷", badge: readyArts.length },
+        { key: "videos", label: "Vídeos prontos", icon: "🎬", badge: readyVideos.length },
+        { key: "personalizar", label: "Personalizar", icon: "✏️" },
+        { key: "tweet", label: "Tweet Post", icon: "🐦" },
+      ],
+    },
+    {
+      key: "ia",
+      label: "Estúdio IA",
+      icon: "🤖",
+      short: "Copy, imagens e voz com GPT-4o e ElevenLabs",
+      color: "from-violet-500/20 to-fuchsia-500/5",
+      subs: [
+        { key: "copy", label: "Copy IA", icon: "✨" },
+        { key: "imagens", label: "Imagens IA", icon: "🎨" },
+        { key: "voz", label: "Voz IA", icon: "🎙️" },
+      ],
+    },
+    {
+      key: "fidelidade",
+      label: "Fidelidade",
+      icon: "🔥",
+      short: "Check-ins, streak, ranking e pontos",
+      color: "from-amber-500/20 to-orange-500/5",
+      subs: [],
+    },
+    {
+      key: "producao",
+      label: "Produção",
+      icon: "🎬",
+      short: "Editor e Fábrica de Reels",
+      color: "from-emerald-500/20 to-teal-500/5",
+      subs: [],
+      externalLinks: [
+        { href: "/studio/reels", label: "Fábrica de Reels", icon: "🎞️" },
+        { href: "/studio/editor", label: "Editor de Vídeo", icon: "✂️" },
+      ],
+    },
+  ], [readyArts.length, readyVideos.length]);
+
+  const handleNavigate = useCallback((m: MundoKey, s?: string | null) => {
+    setActiveMundo(m);
+    setActiveSub(s ?? null);
+  }, []);
+
   return (
-    <main className="min-h-screen pb-24">
-      <header className="border-b border-loog-border/60 bg-loog-bg/70 backdrop-blur">
-        <div className="container-loog flex items-center justify-between py-4">
-          <Link href="/" className="inline-flex">
-            <LoogLogo className="h-8" priority />
-          </Link>
-          <div className="flex items-center gap-2">
-            {authEnabled && <LogoutButton className="!py-2 !px-3 !text-xs" />}
-          </div>
-        </div>
-      </header>
-
-      <section className="container-loog pt-6 sm:pt-8">
-        <h1 className="font-display text-3xl font-extrabold tracking-tight sm:text-4xl">
-          {consultant.name ? `Olá, ${consultant.name.split(" ")[0]}` : "Bem-vindo"}
-        </h1>
-        <p className="mt-1 text-sm text-loog-muted sm:text-base">
-          Movimento conecta o amanhã.
-        </p>
-
-        {/* Barra de abas — scroll horizontal em mobile, wrap em desktop */}
-        <nav className="mt-5 tabs-scroll sm:mx-0 sm:flex sm:flex-wrap sm:overflow-visible sm:rounded-2xl sm:border sm:border-loog-border sm:bg-loog-panel sm:p-1">
-          {[
-            { k: "ready" as Tab, label: "Artes prontas", count: readyArts.length, always: true },
-            { k: "videos" as Tab, label: "Vídeos prontos", count: readyVideos.length, always: true },
-            { k: "custom" as Tab, label: "Personalizar", always: true },
-            { k: "tweet" as Tab, label: "Tweet 🐦", always: true },
-            { k: "placa" as Tab, label: "Placa 🚗", always: true },
-            { k: "copy" as Tab, label: "Copy IA ✨", authOnly: true },
-            { k: "images" as Tab, label: "Imagens IA 🎨", authOnly: true },
-            { k: "voice" as Tab, label: "Voz IA 🎙️", authOnly: true },
-            { k: "fidelity" as Tab, label: "Fidelidade 🔥", authOnly: true },
-          ].filter((t) => t.always || (t.authOnly && authEnabled)).map((t) => (
-            <button
-              key={t.k}
-              type="button"
-              onClick={() => setTab(t.k)}
-              className={cn(
-                "tab-item",
-                tab === t.k ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
-              )}
-            >
-              {t.label}
-              {t.count ? (
-                <span className={cn("ml-2 rounded-full px-2 py-0.5 text-[10px]", tab === t.k ? "bg-black/40" : "bg-white/10")}>{t.count}</span>
-              ) : null}
-            </button>
-          ))}
-          <Link href="/studio/editor" className="tab-item text-loog-muted hover:text-white">
-            Editor Vídeo 🎬
-          </Link>
-          <Link href="/studio/reels" className="tab-item text-loog-muted hover:text-white">
-            Fábrica de Reels
-          </Link>
-        </nav>
-      </section>
-
-      {tab === "tweet" ? (
-        <section className="container-loog mt-6">
-          <TweetStudio />
-        </section>
-      ) : tab === "placa" ? (
-        <section className="container-loog mt-6">
-          <PlacaStudio />
-        </section>
-      ) : tab === "copy" ? (
-        <section className="container-loog mt-6">
-          <CopyStudio />
-        </section>
-      ) : tab === "images" ? (
-        <section className="container-loog mt-6">
-          <ImagesStudio />
-        </section>
-      ) : tab === "voice" ? (
-        <section className="container-loog mt-6">
-          <VoiceStudio />
-        </section>
-      ) : tab === "fidelity" ? (
-        <section className="container-loog mt-6">
-          <FidelityDashboard myId={userId} />
-        </section>
-      ) : tab === "ready" ? (
-        <section className="container-loog mt-6">
-          <div className="card p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Artes prontas</h2>
-                <p className="text-xs text-loog-muted/80">Baixe direto, sem editar nada.</p>
-              </div>
-              <span className="text-xs text-loog-muted">{readyArts.length} disponíveis</span>
-            </div>
-            {readyArts.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-loog-border p-10 text-center text-loog-muted">
-                Nenhuma arte pronta publicada ainda. Passe pra aba <b>Personalizar</b> e crie a sua.
-              </div>
-            ) : (
-              <ReadyArtsGallery arts={readyArts} folders={readyFolders} />
-            )}
-          </div>
-        </section>
-      ) : tab === "videos" ? (
-        <section className="container-loog mt-6">
-          <div className="card p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Vídeos prontos</h2>
-                <p className="text-xs text-loog-muted/80">Reels prontos pra postar direto do celular.</p>
-              </div>
-              <span className="text-xs text-loog-muted">{readyVideos.length} disponíveis</span>
-            </div>
-            {readyVideos.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-loog-border p-10 text-center text-loog-muted">
-                Nenhum vídeo publicado ainda pelo admin. Enquanto isso, use a <b>Fábrica de Reels</b>.
-              </div>
-            ) : (
-              <ReadyVideosGallery videos={readyVideos} folders={readyVideoFolders} />
-            )}
-          </div>
-        </section>
-      ) : (
-        <section className="container-loog mt-6 grid gap-6 lg:grid-cols-[380px_1fr]">
-          <div className="space-y-6">
-            <div className="card p-5">
-              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-loog-muted">Seus dados</h2>
-              <ConsultantForm value={consultant} onChange={setConsultant} />
-            </div>
-            <div className="card p-5">
-              <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-loog-muted">Sua foto</h2>
-              <PhotoUploader
-                value={consultant.photoDataUrl ?? null}
-                onChange={(dataUrl) => setConsultant((c) => ({ ...c, photoDataUrl: dataUrl }))}
-              />
-            </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className="card p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Suas artes personalizadas</h2>
-                  <p className="text-xs text-loog-muted/80">Cada arte já mostra seus dados aplicados. Selecione várias e baixe tudo de uma vez.</p>
-                </div>
-                <span className="text-xs text-loog-muted">{filtered.length} disponíveis</span>
-              </div>
-              <div className="mb-4 flex flex-wrap gap-2">
-                {CATEGORIES.map((c) => (
-                  <button key={c.key} type="button" onClick={() => setCategory(c.key)} className={category === c.key ? "chip-active" : "chip"}>
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-              <CustomizeGallery
-                templates={filtered}
-                consultant={consultant}
-                dataOk={dataOk}
-                category={category}
-              />
-            </div>
-          </div>
-        </section>
-      )}
-    </main>
+    <StudioShell
+      mundos={mundos}
+      activeMundo={activeMundo}
+      activeSub={activeSub}
+      onNavigate={handleNavigate}
+      consultantName={consultant.name}
+      authEnabled={authEnabled}
+    >
+      {renderConteudo({
+        activeMundo, activeSub, mundos,
+        consultant, setConsultant, dataOk,
+        category, setCategory, filtered,
+        readyArts, readyFolders, readyVideos, readyVideoFolders,
+        userId, onNavigate: handleNavigate,
+      })}
+    </StudioShell>
   );
 }
 
+// ============== RENDER DE CADA MUNDO/SUB ==============
+interface RenderOpts {
+  activeMundo: MundoKey;
+  activeSub: string | null;
+  mundos: Mundo[];
+  consultant: Consultant;
+  setConsultant: (c: Consultant | ((prev: Consultant) => Consultant)) => void;
+  dataOk: boolean;
+  category: TemplateCategory | "todos";
+  setCategory: (c: TemplateCategory | "todos") => void;
+  filtered: Template[];
+  readyArts: ReadyArt[];
+  readyFolders: ReadyFolder[];
+  readyVideos: ReadyVideo[];
+  readyVideoFolders: VideoFolder[];
+  userId: string | null;
+  onNavigate: (m: MundoKey, s?: string | null) => void;
+}
+
+function renderConteudo(opts: RenderOpts) {
+  const { activeMundo, activeSub } = opts;
+
+  if (activeMundo === "home") {
+    return (
+      <StudioHome
+        mundos={opts.mundos}
+        consultantName={opts.consultant.name}
+        onNavigate={opts.onNavigate}
+        stats={{ artesCount: opts.readyArts.length }}
+      />
+    );
+  }
+
+  if (activeMundo === "vendas" && activeSub === "placa") {
+    return <PlacaStudio />;
+  }
+
+  if (activeMundo === "conteudo") {
+    if (activeSub === "artes") return <SectionCard title="Artes prontas" subtitle="Baixe direto, sem editar nada.">
+      {opts.readyArts.length === 0
+        ? <EmptyState icon="📷" text="Nenhuma arte publicada ainda. Passe pra Personalizar e crie a sua." />
+        : <ReadyArtsGallery arts={opts.readyArts} folders={opts.readyFolders} />
+      }
+    </SectionCard>;
+    if (activeSub === "videos") return <SectionCard title="Vídeos prontos" subtitle="Reels prontos pra postar.">
+      {opts.readyVideos.length === 0
+        ? <EmptyState icon="🎬" text="Nenhum vídeo publicado. Use a Fábrica de Reels enquanto isso." />
+        : <ReadyVideosGallery videos={opts.readyVideos} folders={opts.readyVideoFolders} />
+      }
+    </SectionCard>;
+    if (activeSub === "personalizar") return <PersonalizarPane {...opts} />;
+    if (activeSub === "tweet") return <TweetStudio />;
+  }
+
+  if (activeMundo === "ia") {
+    if (activeSub === "copy") return <CopyStudio />;
+    if (activeSub === "imagens") return <ImagesStudio />;
+    if (activeSub === "voz") return <VoiceStudio />;
+  }
+
+  if (activeMundo === "fidelidade") {
+    return <FidelityDashboard myId={opts.userId} />;
+  }
+
+  if (activeMundo === "producao") {
+    return <ProducaoHub />;
+  }
+
+  // fallback
+  return (
+    <div className="rounded-xl border border-dashed border-loog-border p-8 text-center text-loog-muted">
+      Selecione uma opção no menu lateral.
+    </div>
+  );
+}
+
+function PersonalizarPane(opts: RenderOpts) {
+  const { consultant, setConsultant, dataOk, category, setCategory, filtered } = opts;
+  return (
+    <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
+      <div className="space-y-6">
+        <div className="card p-5">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-loog-muted">Seus dados</h2>
+          <ConsultantForm value={consultant} onChange={setConsultant} />
+        </div>
+        <div className="card p-5">
+          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wider text-loog-muted">Sua foto</h2>
+          <PhotoUploader
+            value={consultant.photoDataUrl ?? null}
+            onChange={(dataUrl) => setConsultant((c) => ({ ...c, photoDataUrl: dataUrl }))}
+          />
+        </div>
+      </div>
+      <div className="card p-5">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Suas artes personalizadas</h2>
+            <p className="text-xs text-loog-muted/80">Cada arte já mostra seus dados aplicados. Selecione várias e baixe tudo de uma vez.</p>
+          </div>
+          <span className="text-xs text-loog-muted">{filtered.length} disponíveis</span>
+        </div>
+        <div className="mb-4 flex flex-wrap gap-2">
+          {CATEGORIES.map((c) => (
+            <button key={c.key} type="button" onClick={() => setCategory(c.key)} className={category === c.key ? "chip-active" : "chip"}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <CustomizeGallery
+          templates={filtered}
+          consultant={consultant}
+          dataOk={dataOk}
+          category={category}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ProducaoHub() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2">
+      <a href="/studio/reels" className="card group block p-6 transition hover:border-loog-brand/40">
+        <div className="mb-3 text-4xl">🎞️</div>
+        <h3 className="font-display text-lg font-bold">Fábrica de Reels</h3>
+        <p className="mt-1 text-xs text-loog-muted">Transforme vídeos em reels prontos pra postar, com cortes automáticos e marca d&apos;água LOOG.</p>
+        <span className="mt-3 inline-flex text-xs text-loog-brand group-hover:translate-x-1">Abrir →</span>
+      </a>
+      <a href="/studio/editor" className="card group block p-6 transition hover:border-loog-brand/40">
+        <div className="mb-3 text-4xl">✂️</div>
+        <h3 className="font-display text-lg font-bold">Editor de Vídeo</h3>
+        <p className="mt-1 text-xs text-loog-muted">Timeline, trim, trilha sonora, texto overlay e exportação com marca LOOG.</p>
+        <span className="mt-3 inline-flex text-xs text-loog-brand group-hover:translate-x-1">Abrir →</span>
+      </a>
+    </div>
+  );
+}
+
+function SectionCard({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
+  return (
+    <div className="card p-5">
+      <div className="mb-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">{title}</h2>
+        {subtitle && <p className="text-xs text-loog-muted/80">{subtitle}</p>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function EmptyState({ icon, text }: { icon: string; text: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-loog-border p-10 text-center text-loog-muted">
+      <div className="mb-2 text-3xl">{icon}</div>
+      {text}
+    </div>
+  );
+}
