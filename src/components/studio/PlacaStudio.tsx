@@ -201,11 +201,26 @@ export function PlacaStudio() {
   }
 
   async function entregarPdf(blob: Blob, filename: string) {
-    const file = new File([blob], filename, { type: "application/pdf" });
-    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean; share?: (d: ShareData) => Promise<void> };
-    if (nav.canShare?.({ files: [file] }) && nav.share) {
-      try { await nav.share({ files: [file], title: filename }); return; } catch {}
+    // No DESKTOP: download direto pra pasta Downloads (sem diálogo do Windows Share).
+    // No MOBILE REAL: usa Web Share API pra oferecer salvar/WhatsApp/etc nativo.
+    const nav = navigator as Navigator & {
+      canShare?: (d: ShareData) => boolean;
+      share?: (d: ShareData) => Promise<void>;
+      userAgentData?: { mobile?: boolean };
+    };
+    const isMobile = nav.userAgentData?.mobile === true
+      || (typeof window !== "undefined"
+          && window.matchMedia?.("(pointer: coarse)").matches
+          && (nav.maxTouchPoints ?? 0) > 0);
+
+    if (isMobile) {
+      const file = new File([blob], filename, { type: "application/pdf" });
+      if (nav.canShare?.({ files: [file] }) && nav.share) {
+        try { await nav.share({ files: [file], title: filename }); return; } catch { /* usuário cancelou — segue pro download */ }
+      }
     }
+
+    // Download direto — single click, cai no Downloads
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = filename;
