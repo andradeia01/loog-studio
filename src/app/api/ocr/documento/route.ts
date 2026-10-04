@@ -51,24 +51,11 @@ export async function POST(req: NextRequest) {
     console.error("[ocr/documento] erro:", msg);
     const low = msg.toLowerCase();
 
-    if (low.includes("anthropic não configurado") || low.includes("não configurado")) {
+    // Mensagem agregada do fallback: "Nenhum provider OCR funcionou. claude: ... | openai: ..."
+    if (low.includes("nenhum provider")) {
       return NextResponse.json({
-        error: "anthropic_nao_configurado",
-        message: "A chave da Anthropic não está cadastrada. Admin: /admin/config → API Keys → Anthropic.",
-        acao: "manual",
-      }, { status: 503 });
-    }
-    if (low.includes("credit") || low.includes("insufficient") || low.includes("balance")) {
-      return NextResponse.json({
-        error: "sem_creditos",
-        message: "A conta Anthropic está sem créditos. Peça pro admin recarregar em console.anthropic.com/settings/billing.",
-        acao: "manual",
-      }, { status: 503 });
-    }
-    if (low.includes("401") || low.includes("invalid_api_key") || low.includes("authentication") || low.includes("authorization")) {
-      return NextResponse.json({
-        error: "key_invalida",
-        message: "A chave da Anthropic está inválida ou expirou. Admin: atualize em /admin/config → API Keys.",
+        error: "todos_providers_falharam",
+        message: msg,
         acao: "manual",
       }, { status: 503 });
     }
