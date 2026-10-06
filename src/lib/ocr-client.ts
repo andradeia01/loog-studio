@@ -141,14 +141,25 @@ function parsearTextoBrasileiro(tipo: DocumentoTipo, texto: string): Record<stri
 
   if (tipo === "cnh") {
     // CNH tem nome em caixa alta, CPF, data nascimento
-    const cpf = find(txt, /\b(\d{3}\.?\d{3}\.?\d{3}-?\d{2})\b/)?.replace(/[^0-9]/g, "") ?? null;
-    const data = find(txt, /\b(\d{2}\/\d{2}\/\d{4})\b/); // 1ª data = nascimento geralmente
-    const dataIso = data ? data.split("/").reverse().join("-") : null;
-    const categoria = find(txt, /CAT[A-Z]*[\s:]*([A-E]{1,3})/i);
-    // Nome: linha com 3+ palavras em CAIXA ALTA
-    const nome = find(txt, /\b([A-ZÀ-Ú]{2,}\s+[A-ZÀ-Ú]{2,}(?:\s+[A-ZÀ-Ú]{2,}){1,5})\b/);
+    const cpf = find(txt, /\b(\d{3}\.?\s*\d{3}\.?\s*\d{3}-?\s*\d{2})\b/)?.replace(/[^0-9]/g, "") ?? null;
+    // 1ª data = nascimento geralmente (datas DD/MM/AAAA ou DD-MM-AAAA)
+    const data = find(txt, /\b(\d{2}[\/.\-]\d{2}[\/.\-]\d{4})\b/);
+    const dataIso = data ? data.replace(/[.\-]/g, "/").split("/").reverse().join("-") : null;
+    const categoria = find(txt, /CAT(?:EGORIA)?[\s:]*([A-E]{1,3})/i);
+    // Nome: busca em várias estratégias
+    // 1) linha após "NOME:"
+    const nomeLabel = find(txt, /NOME[\s:]+([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s]{10,70})/i);
+    // 2) linha com 3+ palavras CAIXA ALTA
+    const nomeAlta = find(txt, /\b([A-ZÀ-Ú]{3,}(?:\s+(?:DE|DA|DO|DOS|DAS)?\s*[A-ZÀ-Ú]{2,}){2,5})\b/);
+    const nome = nomeLabel ?? nomeAlta;
+    const rg = find(txt, /(?:RG|DOC\s*ID|REGISTRO)[\s:]*([\d.\s-]{7,15})/i)?.replace(/[^0-9A-Za-z]/g, "") ?? null;
+    const numeroRegistro = find(txt, /N[°º]?\s*REGISTRO[\s:]*(\d{9,12})/i)
+      ?? find(txt, /REGISTRO[\s:]*(\d{9,12})/i);
 
-    return { nome, cpf, data_nascimento: dataIso, categoria };
+    return {
+      nome, cpf, data_nascimento: dataIso, categoria, rg,
+      numero_registro: numeroRegistro,
+    };
   }
 
   // residencia

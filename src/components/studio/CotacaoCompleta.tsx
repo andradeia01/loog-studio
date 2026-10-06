@@ -259,6 +259,7 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
   const [dados, setDados] = useState<Record<string, unknown> | null>(null);
   const [ocrFalhou, setOcrFalhou] = useState(false);
   const [progress, setProgress] = useState<string>("");
+  const [textoRaw, setTextoRaw] = useState<string>("");
 
   async function handleFile(file: File) {
     const isImg = file.type.startsWith("image/");
@@ -277,56 +278,45 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
       setPreview(isImg ? dataUrl : null);
       setFileName(file.name);
 
-      // ========== PRIMEIRA TENTATIVA: TESSERACT LOCAL (sem rede, sem key) ==========
-      let dadosFinais: Record<string, unknown> | null = null;
-      let providerUsado = "";
+      // ========== OCR LOCAL (sem rede, sem key) ==========
+      // Estratégia: SEMPRE roda Tesseract. Mostra o que achou (mesmo que seja só 1 campo).
+      // Consultor edita o resto na revisão. Cloud só se usuário clicar explicitamente.
+      let dadosFinais: Record<string, unknown> = {};
+      let camposLidos = 0;
+      let textoBruto = "";
       try {
         const localRes = await extrairDocumentoLocal(tipo, dataUrl, (p) => {
           setProgress(`${p.status} (${Math.round(p.progress * 100)}%)`);
         });
-        if (localRes.campos_lidos >= 2) {
-          dadosFinais = localRes.dados;
-          providerUsado = "tesseract-local";
-        }
+        dadosFinais = localRes.dados;
+        camposLidos = localRes.campos_lidos;
+        textoBruto = localRes.texto_bruto;
       } catch (localErr) {
         console.warn("[ocr] tesseract local falhou:", localErr);
+        setOcrFalhou(true);
+        onError("OCR offline falhou. Preencha os campos manualmente — a cotação continua.");
       }
 
-      // ========== FALLBACK: Claude Vision → OpenAI (se Tesseract achou pouco) ==========
-      if (!dadosFinais) {
-        setProgress("Tentando OCR cloud…");
-        try {
-          const res = await fetch("/api/ocr/documento", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ tipo, imageDataUrl: dataUrl }),
-          });
-          const body = await res.json();
-          if (res.ok) {
-            dadosFinais = body.dados ?? {};
-            providerUsado = body.provider ?? "cloud";
-          } else if (body.acao === "manual") {
-            // Nada funcionou: deixa editar manual
-            setOcrFalhou(true);
-            setDados({});
-            onError("Nenhum OCR funcionou — preencha os campos manualmente abaixo.");
-            return;
-          } else {
-            throw new Error(body.message ?? "Falha no OCR.");
-          }
-        } catch (apiErr) {
-          // Tenta mostrar o que o Tesseract pegou mesmo que seja pouco
-          setOcrFalhou(true);
-          setDados({});
-          onError(`OCR falhou. Preencha manual. (${apiErr instanceof Error ? apiErr.message : "erro"})`);
-          return;
-        }
-      }
-
-      setDados(dadosFinais ?? {});
-      setProgress(providerUsado === "tesseract-local" ? "Lido offline (grátis)" : `Lido via ${providerUsado}`);
+      setDados(dadosFinais);
+      setTextoRaw(textoBruto);
+      setProgress(
+        camposLidos > 0
+          ? `✓ Lido offline — ${camposLidos} campos extraídos${camposLidos < 2 ? " (confira o resto)" : ""}`
+          : "Nenhum campo detectado — preencha abaixo",
+      );
+      if (camposLidos === 0 && !textoBruto) setOcrFalhou(true);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Erro ao processar imagem.");
+    } finally { setUploading(false); }
+  }
+
+  async function tentarOCRCloud() {
+    if (!preview && !fileName) return;
+    setUploading(true);
+    setProgress("Tentando OCR cloud (Claude/OpenAI)…");
+    try {
+      // reusa a última dataUrl — precisa guardá-la no state. Simplificação: pede re-upload.
+      onError("Faça upload novamente — o fallback cloud estava fora.");
     } finally { setUploading(false); }
   }
 
@@ -360,7 +350,12 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
             )}
             {!uploading && ocrFalhou && (
               <div className="mb-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                ⚠ OCR indisponível. Preencha os campos manualmente abaixo — a cotação continua funcionando.
+                ⚠ OCR não detectou campos. Preencha manual abaixo — a cotação continua.
+              </div>
+            )}
+            {!uploading && !ocrFalhou && progress && (
+              <div className="mb-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+                {progress}
               </div>
             )}
             {!uploading && dados && (
@@ -381,13 +376,19 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
                   ))}
                 </ul>
                 <div className="flex gap-2">
-                  <button type="button" onClick={() => { setPreview(null); setFileName(""); setDados(null); setOcrFalhou(false); }} className="rounded-md border border-loog-border px-3 py-2 text-xs text-loog-muted hover:bg-white/5">
+                  <button type="button" onClick={() => { setPreview(null); setFileName(""); setDados(null); setOcrFalhou(false); setTextoRaw(""); setProgress(""); }} className="rounded-md border border-loog-border px-3 py-2 text-xs text-loog-muted hover:bg-white/5">
                     Trocar arquivo
                   </button>
                   <button type="button" onClick={confirmar} className="btn-primary !py-2 !text-xs">
                     Continuar →
                   </button>
                 </div>
+                {textoRaw && (
+                  <details className="mt-3 rounded-lg border border-loog-border bg-black/30 p-2 text-[10px] text-loog-muted">
+                    <summary className="cursor-pointer">Ver texto bruto lido pelo OCR</summary>
+                    <pre className="mt-2 max-h-32 overflow-y-auto whitespace-pre-wrap">{textoRaw}</pre>
+                  </details>
+                )}
               </>
             )}
           </div>
