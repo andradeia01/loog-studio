@@ -136,7 +136,10 @@ export function StudioShell({
                 {current.label}
               </h1>
               {current.subs.length > 0 && (
-                <nav className="mt-4 flex gap-1 overflow-x-auto rounded-xl border border-loog-border bg-loog-panel/60 p-1 backdrop-blur">
+                <nav
+                  className="mt-4 flex gap-1 overflow-x-auto rounded-xl border border-loog-border bg-loog-panel/60 p-1 backdrop-blur"
+                  style={{ touchAction: "pan-x", scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
+                >
                   {current.subs.map((s) => (
                     <button
                       key={s.key}

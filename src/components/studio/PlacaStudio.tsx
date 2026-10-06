@@ -375,17 +375,17 @@ function ResultHeader({ r, valores, onNova }: {
       {r.vehicle && (
         <div className="border-b border-loog-border/60 px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
+            <div className="min-w-0 flex-1">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Veículo</div>
-              <div className="font-display text-base font-bold leading-tight">{r.vehicle.brand}</div>
-              <div className="text-sm text-white">{r.vehicle.model}</div>
-              <div className="text-xs text-loog-muted">
+              <div className="font-display text-base font-bold leading-tight break-words">{r.vehicle.brand}</div>
+              <div className="text-sm text-white break-words">{r.vehicle.model}</div>
+              <div className="text-xs text-loog-muted break-words">
                 Ano {r.vehicle.modelYear} · Placa <b className="text-white tracking-widest">{r.vehicle.plate}</b> · {r.vehicle.vehicleCategory}
               </div>
             </div>
-            <div className="text-right">
+            <div className="shrink-0 text-right">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Valor FIPE</div>
-              <div className="font-display text-xl font-bold text-loog-brand">{r.vehicle.fipeFormatted}</div>
+              <div className="font-display text-lg font-bold text-loog-brand whitespace-nowrap sm:text-xl">{r.vehicle.fipeFormatted}</div>
             </div>
           </div>
         </div>
@@ -450,11 +450,11 @@ function AcoesCard({ onWhats, onPdf, pdfLoading, onCopy }: {
   onWhats: () => void; onPdf: () => void; pdfLoading: boolean; onCopy: () => void;
 }) {
   return (
-    <div className="card flex flex-wrap gap-2 p-4">
+    <div className="card grid grid-cols-1 gap-2 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
       <button
         type="button"
         onClick={onWhats}
-        className="flex-1 rounded-md bg-[#25D366] px-3 py-2.5 text-sm font-bold text-black hover:brightness-110"
+        className="w-full rounded-md bg-[#25D366] px-3 py-2.5 text-sm font-bold text-black hover:brightness-110"
       >
         📲 Enviar no WhatsApp
       </button>
@@ -462,14 +462,14 @@ function AcoesCard({ onWhats, onPdf, pdfLoading, onCopy }: {
         type="button"
         onClick={onPdf}
         disabled={pdfLoading}
-        className="flex-1 rounded-md bg-loog-brand px-3 py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50"
+        className="w-full rounded-md bg-loog-brand px-3 py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50"
       >
         {pdfLoading ? "Gerando PDF…" : "📥 Baixar PDF premium LOOG"}
       </button>
       <button
         type="button"
         onClick={onCopy}
-        className="rounded-md border border-loog-border px-3 py-2.5 text-xs text-loog-muted hover:bg-white/5"
+        className="w-full rounded-md border border-loog-border px-3 py-2.5 text-xs text-loog-muted hover:bg-white/5 sm:col-span-2 lg:col-span-1"
       >
         📋 Copiar mensagem
       </button>
