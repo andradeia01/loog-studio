@@ -278,30 +278,59 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
       setPreview(isImg ? dataUrl : null);
       setFileName(file.name);
 
-      // ========== OCR LOCAL (sem rede, sem key) ==========
-      // Estratégia: SEMPRE roda Tesseract. Mostra o que achou (mesmo que seja só 1 campo).
-      // Consultor edita o resto na revisão. Cloud só se usuário clicar explicitamente.
+      // ========== OCR CLOUD (Claude Vision primário → OpenAI fallback no server) ==========
+      // Estratégia: Claude Vision Haiku 4.5 é o PRIMÁRIO. Faz leitura estruturada
+      // direta em JSON com qualidade bem superior ao Tesseract offline.
+      // Se Claude + OpenAI falharem (chave inválida, rate limit, modelo indisponível),
+      // cai pro Tesseract/pdf.js local como último recurso.
       let dadosFinais: Record<string, unknown> = {};
       let camposLidos = 0;
       let textoBruto = "";
+      let providerUsado: "claude" | "openai" | "pdf-native" | "tesseract-local" | null = null;
+
       try {
-        const localRes = await extrairDocumentoLocal(tipo, dataUrl, (p) => {
-          setProgress(`${p.status} (${Math.round(p.progress * 100)}%)`);
+        setProgress("Lendo com Claude Vision…");
+        const r = await fetch("/api/ocr/documento", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ tipo, imageDataUrl: dataUrl }),
         });
-        dadosFinais = localRes.dados;
-        camposLidos = localRes.campos_lidos;
-        textoBruto = localRes.texto_bruto;
-      } catch (localErr) {
-        console.warn("[ocr] tesseract local falhou:", localErr);
-        setOcrFalhou(true);
-        onError("OCR offline falhou. Preencha os campos manualmente — a cotação continua.");
+        const j = await r.json();
+        if (r.ok && j.ok && j.dados) {
+          dadosFinais = j.dados as Record<string, unknown>;
+          camposLidos = Object.values(dadosFinais).filter((v) => v != null && v !== "").length;
+          providerUsado = j.provider ?? "claude";
+        } else {
+          throw new Error(j.message ?? j.error ?? `HTTP ${r.status}`);
+        }
+      } catch (cloudErr) {
+        console.warn("[ocr] cloud falhou, caindo pro offline:", cloudErr);
+        setProgress("Cloud indisponível — tentando OCR offline…");
+        try {
+          const localRes = await extrairDocumentoLocal(tipo, dataUrl, (p) => {
+            setProgress(`${p.status} (${Math.round(p.progress * 100)}%)`);
+          });
+          dadosFinais = localRes.dados;
+          camposLidos = localRes.campos_lidos;
+          textoBruto = localRes.texto_bruto;
+          providerUsado = localRes.provider;
+        } catch (localErr) {
+          console.warn("[ocr] tesseract local tambem falhou:", localErr);
+          setOcrFalhou(true);
+          onError("OCR cloud + offline falharam. Preencha os campos manualmente — a cotação continua.");
+        }
       }
 
       setDados(dadosFinais);
       setTextoRaw(textoBruto);
+      const label = providerUsado === "claude" ? "Claude Vision"
+        : providerUsado === "openai" ? "OpenAI (fallback)"
+        : providerUsado === "pdf-native" ? "PDF nativo"
+        : providerUsado === "tesseract-local" ? "offline (Tesseract)"
+        : "";
       setProgress(
         camposLidos > 0
-          ? `✓ Lido offline — ${camposLidos} campos extraídos${camposLidos < 2 ? " (confira o resto)" : ""}`
+          ? `✓ Lido via ${label} — ${camposLidos} campos extraídos${camposLidos < 2 ? " (confira o resto)" : ""}`
           : "Nenhum campo detectado — preencha abaixo",
       );
       if (camposLidos === 0 && !textoBruto) setOcrFalhou(true);
