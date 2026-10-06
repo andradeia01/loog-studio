@@ -60,6 +60,13 @@ export function PlacaStudio() {
   const [coberturas, setCoberturas] = useState<CoberturaItem[]>([]);
   const [pdfLoading, setPdfLoading] = useState(false);
 
+  // Fallback manual quando a placa não resolve no Hub (401/403/404):
+  const [showManual, setShowManual] = useState(false);
+  const [manualMarca, setManualMarca] = useState("");
+  const [manualModelo, setManualModelo] = useState("");
+  const [manualAno, setManualAno] = useState<string>("");
+  const [manualCombustivel, setManualCombustivel] = useState("Flex");
+
   useEffect(() => { setHist(loadHist()); }, []);
 
   // Quando chega nova cotação, inicializa toggles de coberturas (todas ligadas)
@@ -140,6 +147,10 @@ export function PlacaStudio() {
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
       if (!res.ok) {
         const msg = (data as { message?: string }).message ?? `Falha (${res.status}).`;
+        // Se o backend sinalizar que dá pra cair pro manual, oferece
+        if ((data as { canFallbackManual?: boolean }).canFallbackManual) {
+          setShowManual(true);
+        }
         throw new Error(msg);
       }
       const r = data as HubResult;
@@ -247,6 +258,41 @@ export function PlacaStudio() {
 
   function novaConsulta() {
     setPlaca(""); setClienteNome(""); setClienteTel(""); setResult(null); setError(null);
+    setShowManual(false); setManualMarca(""); setManualModelo(""); setManualAno("");
+  }
+
+  async function cotarManual(ev?: React.FormEvent) {
+    ev?.preventDefault();
+    if (!manualMarca.trim() || !manualModelo.trim() || !manualAno) {
+      setError("Preencha marca, modelo e ano.");
+      return;
+    }
+    const anoNum = Number(manualAno);
+    if (!Number.isInteger(anoNum) || anoNum < 1980 || anoNum > new Date().getFullYear() + 1) {
+      setError("Ano inválido.");
+      return;
+    }
+    setLoading(true); setError(null); setResult(null);
+    try {
+      const res = await fetch("/api/cotacao/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          marca: manualMarca.trim(),
+          modelo: manualModelo.trim(),
+          ano: anoNum,
+          combustivel: manualCombustivel,
+          placa: placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || undefined,
+          cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
+        }),
+      });
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (!res.ok) throw new Error((data as { message?: string }).message ?? `Falha (${res.status}).`);
+      setResult(data as HubResult);
+      setShowManual(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao cotar manualmente.");
+    } finally { setLoading(false); }
   }
 
   function limparHist() {
@@ -285,8 +331,66 @@ export function PlacaStudio() {
           <button type="submit" className="btn-primary w-full !py-2" disabled={loading}>
             {loading ? "Gerando cotação…" : "🚗 Gerar cotação oficial"}
           </button>
-          {error && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
+          {error && (
+            <div className="space-y-2">
+              <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>
+              {showManual && (
+                <button
+                  type="button"
+                  onClick={() => setShowManual(true)}
+                  className="w-full rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/20"
+                >
+                  🛠️ Cotar manualmente (marca/modelo/ano)
+                </button>
+              )}
+            </div>
+          )}
         </form>
+
+        {/* Form de fallback manual (quoteFromText) — abre quando placa falha */}
+        {showManual && (
+          <form onSubmit={cotarManual} className="card space-y-3 border-amber-500/30 bg-amber-500/5 p-5">
+            <div>
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-200">🛠️ Cotação manual</h2>
+              <p className="mt-1 text-[11px] text-loog-muted">
+                A placa não resolveu no provedor LOOG. Informe os dados do veículo e enviamos a cotação direto pro sistema.
+              </p>
+            </div>
+
+            <div>
+              <label className="label">Marca</label>
+              <input type="text" className="input" value={manualMarca} onChange={(e) => setManualMarca(e.target.value)} placeholder="ex.: Chevrolet" required />
+            </div>
+            <div>
+              <label className="label">Modelo</label>
+              <input type="text" className="input" value={manualModelo} onChange={(e) => setManualModelo(e.target.value)} placeholder="ex.: Onix 1.0 LT" required />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="label">Ano</label>
+                <input type="number" min={1980} max={new Date().getFullYear() + 1} className="input" value={manualAno} onChange={(e) => setManualAno(e.target.value)} placeholder="2024" required />
+              </div>
+              <div>
+                <label className="label">Combustível</label>
+                <select className="input" value={manualCombustivel} onChange={(e) => setManualCombustivel(e.target.value)}>
+                  <option value="Flex">Flex</option>
+                  <option value="Gasolina">Gasolina</option>
+                  <option value="Álcool">Álcool</option>
+                  <option value="Diesel">Diesel</option>
+                  <option value="Elétrico">Elétrico</option>
+                  <option value="Híbrido">Híbrido</option>
+                </select>
+              </div>
+            </div>
+
+            <button type="submit" disabled={loading} className="btn-primary w-full !py-2">
+              {loading ? "Gerando…" : "🛠️ Gerar cotação manual"}
+            </button>
+            <button type="button" onClick={() => setShowManual(false)} className="w-full text-[11px] text-loog-muted hover:text-white">
+              cancelar
+            </button>
+          </form>
+        )}
 
         <div className="card p-4">
           <div className="mb-2 flex items-center justify-between">

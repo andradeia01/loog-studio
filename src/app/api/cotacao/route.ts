@@ -88,15 +88,52 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof HubError) {
-      const user = err.status === 404
-        ? "Placa não encontrada ou FIPE não resolvida — verifique a placa e tente novamente."
-        : err.status === 502 || err.status === 503
-          ? "Sistema interno LOOG indisponível no momento. Tente em alguns segundos."
-          : err.message;
-      return NextResponse.json({ error: err.code ?? "hub_error", message: user, status: err.status }, { status: err.status >= 400 && err.status < 500 ? err.status : 502 });
+      // Log DETALHADO pra diagnóstico (nunca vaza pro cliente, só pros Function Logs)
+      console.error("[cotacao] HubError:", {
+        status: err.status,
+        code: err.code,
+        message: err.message,
+        placa: parsed.data.placa,
+        payload: err.payload,
+      });
+
+      // Mensagem específica por status — ajuda o consultor entender e sugere caminho
+      let user: string;
+      let canFallbackManual = false;
+      switch (err.status) {
+        case 401:
+          user = "Chave do sistema LOOG inválida ou sessão expirada. Fale com o admin pra renovar — enquanto isso, use cotação manual (marca/modelo/ano).";
+          canFallbackManual = true;
+          break;
+        case 403:
+          user = "Esta placa está bloqueada no provedor LOOG (pode ser restrição comercial da base). Tente cotação manual.";
+          canFallbackManual = true;
+          break;
+        case 404:
+          user = "Placa não encontrada no provedor LOOG. Verifique se digitou certo — se tiver certeza da placa, use cotação manual (informa marca/modelo/ano).";
+          canFallbackManual = true;
+          break;
+        case 429:
+          user = "Muitas consultas em pouco tempo. Aguarde ~30s e tente novamente.";
+          break;
+        case 408:
+        case 504:
+          user = "O provedor LOOG demorou demais pra responder. Tente de novo.";
+          break;
+        case 502:
+        case 503:
+          user = "Sistema interno LOOG indisponível no momento. Tente em alguns segundos.";
+          break;
+        default:
+          user = `Erro ao consultar placa (status ${err.status}). ${err.message}`;
+      }
+      return NextResponse.json(
+        { error: err.code ?? "hub_error", message: user, status: err.status, canFallbackManual },
+        { status: err.status >= 400 && err.status < 500 ? err.status : 502 },
+      );
     }
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[cotacao] falha:", msg);
+    console.error("[cotacao] falha nao-Hub:", msg);
     return NextResponse.json({ error: "falha", message: msg }, { status: 500 });
   }
 }
