@@ -15,3 +15,4 @@ tsconfig.tsbuildinfo
 .admin-credentials.txt
 admin-credentials.txt
 consultor-teste.txt
+supabase/.temp/

@@ -21,6 +21,7 @@ import { VoiceStudio } from "./VoiceStudio";
 import { TweetStudio } from "./TweetStudio";
 import { PlacaStudio } from "./PlacaStudio";
 import { CotacaoCompleta } from "./CotacaoCompleta";
+import { CrmLeads } from "./CrmLeads";
 import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
 import { StudioHome } from "./StudioHome";
 import { MundoPane } from "./MundoPane";
@@ -263,18 +264,7 @@ function renderConteudo(opts: RenderOpts) {
         { icon: "🔀", title: "Converter em cotação real", desc: "1 clique: envia pro Hub e grava proposta no SIVIS." },
       ]}
     />;
-    if (activeSub === "crm") return <MundoPane
-      icon="👥"
-      title="CRM / Leads"
-      subtitle="Base de clientes e leads qualificados, com histórico de cotações, status e próximos passos."
-      heroColor="from-sky-500/20 via-blue-500/10 to-transparent"
-      features={[
-        { icon: "🔍", title: "Busca inteligente", desc: "Por nome, telefone, placa ou status." },
-        { icon: "🏷️", title: "Tags e segmentação", desc: "Quente, morno, frio, perdido, cliente ativo." },
-        { icon: "💬", title: "Timeline do lead", desc: "Toda interação registrada (cotação, WhatsApp, ligação)." },
-        { icon: "📱", title: "WhatsApp 1-tap", desc: "Abre conversa com mensagem personalizada pré-pronta." },
-      ]}
-    />;
+    if (activeSub === "crm") return <CrmLeads />;
     if (activeSub === "pipeline") return <MundoPane
       icon="📈"
       title="Pipeline de vendas"

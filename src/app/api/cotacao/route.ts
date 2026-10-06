@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
 import { quoteFromPlate, HubError } from "@/lib/loog-hub";
+import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -39,10 +40,12 @@ export async function POST(req: NextRequest) {
   if (rateLimited(ip)) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
 
   let consultorId: string | undefined;
+  let groupId: string | null | undefined;
   if (supabaseConfigured()) {
     const auth = await requireApproved();
     if (!auth.ok) return auth.res;
     consultorId = auth.auth.userId;
+    groupId = auth.auth.groupId;
   }
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
@@ -64,6 +67,24 @@ export async function POST(req: NextRequest) {
       customerPhone,
       leadId: parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined),
     });
+
+    // CRM hook — side-effect, não derruba a cotação se falhar
+    if (consultorId) {
+      void registrarInteracaoCRM({
+        ownerId: consultorId,
+        groupId,
+        tipo: "cotacao_rapida",
+        nome: parsed.data.cliente.nome,
+        telefone: parsed.data.cliente.telefone,
+        payload: {
+          placa: parsed.data.placa,
+          vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
+          valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? null,
+          quoteId: (result as { quoteId?: string }).quoteId ?? null,
+        },
+      });
+    }
+
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof HubError) {
