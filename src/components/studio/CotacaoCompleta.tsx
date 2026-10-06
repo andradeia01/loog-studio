@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { loadConsultant } from "@/lib/storage";
+import { extrairDocumentoLocal } from "@/lib/ocr-client";
 
 // ============================================================
 // TIPOS
@@ -257,6 +258,7 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
   const [uploading, setUploading] = useState(false);
   const [dados, setDados] = useState<Record<string, unknown> | null>(null);
   const [ocrFalhou, setOcrFalhou] = useState(false);
+  const [progress, setProgress] = useState<string>("");
 
   async function handleFile(file: File) {
     const isImg = file.type.startsWith("image/");
@@ -267,31 +269,62 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
     setUploading(true);
     setDados(null);
     setOcrFalhou(false);
+    setProgress("Preparando…");
     try {
-      // Imagem: comprime; PDF: envia como está
       const dataUrl = isImg
         ? await lerImagemComprimida(file, 2000, 0.85)
         : await lerArquivoDataUrl(file);
       setPreview(isImg ? dataUrl : null);
       setFileName(file.name);
 
-      const res = await fetch("/api/ocr/documento", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tipo, imageDataUrl: dataUrl }),
-      });
-      const body = await res.json();
-      if (!res.ok) {
-        // Fallback: libera edição manual mesmo com OCR offline
-        if (body.acao === "manual") {
+      // ========== PRIMEIRA TENTATIVA: TESSERACT LOCAL (sem rede, sem key) ==========
+      let dadosFinais: Record<string, unknown> | null = null;
+      let providerUsado = "";
+      try {
+        const localRes = await extrairDocumentoLocal(tipo, dataUrl, (p) => {
+          setProgress(`${p.status} (${Math.round(p.progress * 100)}%)`);
+        });
+        if (localRes.campos_lidos >= 2) {
+          dadosFinais = localRes.dados;
+          providerUsado = "tesseract-local";
+        }
+      } catch (localErr) {
+        console.warn("[ocr] tesseract local falhou:", localErr);
+      }
+
+      // ========== FALLBACK: Claude Vision → OpenAI (se Tesseract achou pouco) ==========
+      if (!dadosFinais) {
+        setProgress("Tentando OCR cloud…");
+        try {
+          const res = await fetch("/api/ocr/documento", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ tipo, imageDataUrl: dataUrl }),
+          });
+          const body = await res.json();
+          if (res.ok) {
+            dadosFinais = body.dados ?? {};
+            providerUsado = body.provider ?? "cloud";
+          } else if (body.acao === "manual") {
+            // Nada funcionou: deixa editar manual
+            setOcrFalhou(true);
+            setDados({});
+            onError("Nenhum OCR funcionou — preencha os campos manualmente abaixo.");
+            return;
+          } else {
+            throw new Error(body.message ?? "Falha no OCR.");
+          }
+        } catch (apiErr) {
+          // Tenta mostrar o que o Tesseract pegou mesmo que seja pouco
           setOcrFalhou(true);
-          setDados({}); // forma vazia pra editar
-          onError(body.message);
+          setDados({});
+          onError(`OCR falhou. Preencha manual. (${apiErr instanceof Error ? apiErr.message : "erro"})`);
           return;
         }
-        throw new Error(body.message ?? "Falha ao ler o documento.");
       }
-      setDados(body.dados ?? {});
+
+      setDados(dadosFinais ?? {});
+      setProgress(providerUsado === "tesseract-local" ? "Lido offline (grátis)" : `Lido via ${providerUsado}`);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Erro ao processar imagem.");
     } finally { setUploading(false); }
@@ -322,7 +355,7 @@ function StepUpload({ tipo, titulo, subtitulo, exemplo, onOk, onError, onVoltar 
             {uploading && (
               <div className="mb-3 flex items-center gap-2 rounded-lg bg-loog-brand/10 px-3 py-2 text-xs text-loog-brand">
                 <div className="h-3 w-3 animate-spin rounded-full border border-loog-brand border-t-transparent" />
-                Lendo documento com IA…
+                {progress || "Lendo documento…"}
               </div>
             )}
             {!uploading && ocrFalhou && (
