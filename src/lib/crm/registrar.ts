@@ -72,6 +72,20 @@ export async function registrarInteracaoCRM(args: RegistrarArgs): Promise<{ ok: 
         .single();
       if (insErr) throw insErr;
       contactId = created.id;
+
+      // 2.1) auto-followup pra 3 dias depois — só na criação, pra o consultor
+      // nunca esquecer de retornar. Falha aqui é silenciada; o lead é mais importante.
+      const d = new Date();
+      d.setDate(d.getDate() + 3);
+      d.setHours(10, 0, 0, 0); // 10:00 do 3º dia
+      await supabase.from("crm_followups").insert({
+        contact_id: contactId,
+        owner_id: args.ownerId,
+        data_followup: d.toISOString(),
+        descricao: args.tipo === "cotacao_rapida"
+          ? "Retornar sobre a cotação rápida — sentir temperatura, oferecer condições."
+          : "Retornar sobre a cotação completa — confirmar documentação e fechar.",
+      }).select("id").maybeSingle();
     }
 
     // 3) append na timeline
