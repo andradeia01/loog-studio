@@ -1,13 +1,16 @@
 "use client";
 
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { getFrasesDoDia } from "@/lib/frases-diarias";
 import type { Mundo, MundoKey } from "./StudioShell";
 
 interface Props {
   mundos: Mundo[];
   consultantName?: string | null;
+  userId?: string | null;
   onNavigate: (mundo: MundoKey, sub?: string | null) => void;
   stats?: {
     artesCount?: number;
@@ -18,13 +21,16 @@ interface Props {
 }
 
 /** Dashboard inicial do consultor — cards grandes dos mundos + atalhos rápidos. */
-export function StudioHome({ mundos, consultantName, onNavigate, stats }: Props) {
+export function StudioHome({ mundos, consultantName, userId, onNavigate, stats }: Props) {
   const outros = mundos.filter((m) => m.key !== "home");
   const primeiroNome = consultantName?.split(" ")[0] ?? "consultor";
+  // seed de identidade: userId (Supabase) tem prioridade; fallback pro nome
+  const seed = userId ?? consultantName ?? "anon";
+  const frases = useMemo(() => getFrasesDoDia(seed), [seed]);
 
   return (
     <div className="space-y-8">
-      <HeroSaudacao nome={primeiroNome} stats={stats} />
+      <HeroSaudacao nome={primeiroNome} stats={stats} frases={frases} />
 
       <section>
         <h2 className="mb-4 text-xs font-semibold uppercase tracking-widest text-loog-muted">
@@ -42,7 +48,13 @@ export function StudioHome({ mundos, consultantName, onNavigate, stats }: Props)
   );
 }
 
-function HeroSaudacao({ nome, stats }: { nome: string; stats?: Props["stats"] }) {
+function HeroSaudacao({
+  nome, stats, frases,
+}: {
+  nome: string;
+  stats?: Props["stats"];
+  frases: ReturnType<typeof getFrasesDoDia>;
+}) {
   const hora = new Date().getHours();
   const bomDia = hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
   return (
@@ -58,9 +70,17 @@ function HeroSaudacao({ nome, stats }: { nome: string; stats?: Props["stats"] })
         <h1 className="mt-1 font-display text-3xl font-extrabold leading-tight sm:text-4xl">
           {nome.charAt(0).toUpperCase() + nome.slice(1)}, vamos vender?
         </h1>
-        <p className="mt-2 max-w-xl text-sm text-loog-muted">
-          Movimento conecta o amanhã. Cotação, conteúdo e IA — tudo num só lugar.
+
+        {/* Frase motivacional do dia */}
+        <p className="mt-4 max-w-xl text-sm font-medium text-white/95 sm:text-base">
+          {frases.motivacional}
         </p>
+
+        {/* Versículo bíblico do dia */}
+        <blockquote className="mt-4 max-w-xl border-l-2 border-loog-brand/60 pl-3 text-[13px] italic text-loog-muted sm:text-sm">
+          <span className="block">&ldquo;{frases.versiculo.texto}&rdquo;</span>
+          <cite className="mt-1 block text-[11px] not-italic text-loog-muted/80">— {frases.versiculo.ref}</cite>
+        </blockquote>
 
         {stats && (
           <div className="mt-5 flex flex-wrap gap-3">

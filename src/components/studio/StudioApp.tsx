@@ -241,6 +241,7 @@ function renderConteudo(opts: RenderOpts) {
       <StudioHome
         mundos={opts.mundos}
         consultantName={opts.consultant.name}
+        userId={opts.userId}
         onNavigate={opts.onNavigate}
         stats={{ artesCount: opts.readyArts.length }}
       />
