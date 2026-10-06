@@ -48,12 +48,10 @@ async function loadPdfJs() {
   return pdfjsLoader;
 }
 
-/** Converte PDF (data URL) na 1ª página renderizada como data URL de imagem. */
+/** Converte PDF (data URL) na 1ª página renderizada como data URL de imagem (fallback). */
 async function pdfParaImagem(pdfDataUrl: string): Promise<string> {
   const pdfjs = await loadPdfJs();
-  const bin = atob(pdfDataUrl.split(",")[1]);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const bytes = dataUrlToBytes(pdfDataUrl);
   const doc = await pdfjs.getDocument({ data: bytes }).promise;
   const page = await doc.getPage(1);
   const viewport = page.getViewport({ scale: 2 });
@@ -66,6 +64,46 @@ async function pdfParaImagem(pdfDataUrl: string): Promise<string> {
   return canvas.toDataURL("image/png");
 }
 
+function dataUrlToBytes(dataUrl: string): Uint8Array {
+  const bin = atob(dataUrl.split(",")[1]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+/**
+ * Extrai TEXTO NATIVO do PDF (camada de texto) — SEM OCR.
+ * PDFs digitais como CNH-e, CRLV-e, contas de luz/água baixadas direto do site/app
+ * têm texto embutido. Nesse caso o resultado é PERFEITO, não há perda de qualidade.
+ *
+ * Retorna string vazia se o PDF for scanned (só imagem).
+ */
+async function extrairTextoPdfNativo(pdfDataUrl: string): Promise<string> {
+  const pdfjs = await loadPdfJs();
+  const bytes = dataUrlToBytes(pdfDataUrl);
+  const doc = await pdfjs.getDocument({ data: bytes }).promise;
+  const linhas: string[] = [];
+  // Lê as 3 primeiras páginas no máximo (CRLV/CNH/comprovante não passam disso)
+  const numPages = Math.min(doc.numPages, 3);
+  for (let i = 1; i <= numPages; i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    // agrupa itens por linha (mesmo transform.y aproximado)
+    const linhasPagina = new Map<number, string[]>();
+    for (const item of content.items as Array<{ str: string; transform: number[] }>) {
+      if (!item.str) continue;
+      const y = Math.round(item.transform[5]);
+      const arr = linhasPagina.get(y) ?? [];
+      arr.push(item.str);
+      linhasPagina.set(y, arr);
+    }
+    const linhasOrdenadas = [...linhasPagina.entries()].sort((a, b) => b[0] - a[0]);
+    for (const [, parts] of linhasOrdenadas) linhas.push(parts.join(" "));
+    linhas.push(""); // separa páginas
+  }
+  return linhas.join("\n").trim();
+}
+
 // ========= OCR principal =========
 
 export async function extrairDocumentoLocal(
@@ -74,21 +112,45 @@ export async function extrairDocumentoLocal(
   onProgress?: (p: { status: string; progress: number }) => void,
 ): Promise<OCRClientResult> {
   const t0 = Date.now();
+  const isPdf = dataUrl.startsWith("data:application/pdf");
 
-  // Se for PDF, converte 1ª página pra imagem
+  // ========== CAMINHO 1: PDF COM TEXTO NATIVO (CNH-e, CRLV-e, contas digitais) ==========
+  // Qualidade PERFEITA — zero OCR, extração direta da camada de texto do PDF.
+  if (isPdf) {
+    onProgress?.({ status: "Extraindo texto do PDF…", progress: 0.2 });
+    try {
+      const textoNativo = await extrairTextoPdfNativo(dataUrl);
+      // Se o PDF tem camada de texto significativa, usa ela e NÃO roda OCR
+      if (textoNativo.length >= 50) {
+        onProgress?.({ status: "Lido texto nativo (PDF digital)", progress: 0.95 });
+        const dados = parsearTextoBrasileiro(tipo, textoNativo);
+        const campos_lidos = Object.values(dados).filter((v) => v != null && v !== "").length;
+        return {
+          dados, texto_bruto: textoNativo, campos_lidos,
+          provider: "pdf-native" as "tesseract-local", // mesmo type pra compat
+          duration_ms: Date.now() - t0,
+        };
+      }
+      // Texto nativo pequeno → PDF escaneado → segue pro OCR
+      onProgress?.({ status: "PDF sem texto nativo, rodando OCR…", progress: 0.3 });
+    } catch (e) {
+      console.warn("[ocr] falha ao extrair texto nativo:", e);
+    }
+  }
+
+  // ========== CAMINHO 2: OCR com Tesseract.js (imagens + PDFs escaneados) ==========
   let imgDataUrl = dataUrl;
-  if (dataUrl.startsWith("data:application/pdf")) {
-    onProgress?.({ status: "Convertendo PDF…", progress: 0.05 });
+  if (isPdf) {
     imgDataUrl = await pdfParaImagem(dataUrl);
   }
 
-  onProgress?.({ status: "Carregando OCR offline…", progress: 0.1 });
+  onProgress?.({ status: "Carregando OCR offline…", progress: 0.35 });
   const Tesseract = await loadTesseract();
 
   const result = await Tesseract.recognize(imgDataUrl, "por", {
     logger: (m: { status?: string; progress?: number }) => {
       if (m.status && typeof m.progress === "number") {
-        onProgress?.({ status: m.status, progress: 0.2 + m.progress * 0.75 });
+        onProgress?.({ status: m.status, progress: 0.4 + m.progress * 0.55 });
       }
     },
   });
@@ -100,9 +162,7 @@ export async function extrairDocumentoLocal(
   const campos_lidos = Object.values(dados).filter((v) => v != null && v !== "").length;
 
   return {
-    dados,
-    texto_bruto: texto,
-    campos_lidos,
+    dados, texto_bruto: texto, campos_lidos,
     provider: "tesseract-local",
     duration_ms: Date.now() - t0,
   };
