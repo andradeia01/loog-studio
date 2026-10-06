@@ -79,7 +79,7 @@ export function StudioShell({
         </div>
       </header>
 
-      <div className="mx-auto flex max-w-[1600px]">
+      <div className="mx-auto flex w-full max-w-[1600px]">
         {/* SIDEBAR desktop */}
         <aside className="hidden w-[232px] shrink-0 border-r border-loog-border/40 pt-6 lg:block">
           <Nav
@@ -126,8 +126,8 @@ export function StudioShell({
           )}
         </AnimatePresence>
 
-        {/* CONTEÚDO */}
-        <main className="min-w-0 flex-1 px-4 pb-24 pt-6 lg:px-8 lg:pb-10">
+        {/* CONTEÚDO — min-w-0 crítico pra evitar que flex-child estoure lateralmente */}
+        <main className="min-w-0 max-w-full flex-1 overflow-x-hidden px-4 pb-24 pt-6 lg:px-8 lg:pb-10">
           {/* Breadcrumb do mundo + sub-tabs */}
           {current && current.key !== "home" && (
             <div className="mb-6">
