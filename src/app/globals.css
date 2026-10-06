@@ -29,8 +29,10 @@ body {
   text-rendering: optimizeLegibility;
   /* evita bounce em iOS Safari */
   overscroll-behavior-y: none;
-  /* ─── PATCH mobile: scroll vertical sempre ganha prioridade sobre gesture lateral do Chrome Android (navigate back) ─── */
-  touch-action: pan-y;
+  /* NÃO usar touch-action: pan-y aqui — bloqueia scroll vertical quando o
+     dedo tem drift horizontal (polegar normal), forçando o usuário a 2 dedos.
+     Deixar o browser lidar com o gesto nativamente. */
+  touch-action: manipulation;
   /* nunca estoura lateralmente — pros 2 breakpoints (mobile + tablet) */
   overflow-x: hidden;
   max-width: 100vw;
