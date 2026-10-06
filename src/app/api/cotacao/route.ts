@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
-import { quoteFromPlate, HubError } from "@/lib/loog-hub";
+import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
+import { consultarPlaca } from "@/lib/placafipe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -59,16 +60,77 @@ export async function POST(req: NextRequest) {
   }
   // Hub espera E.164 BR (55DDNNNNNNNNN); se já veio com 55, mantém, senão prefixa.
   const customerPhone = telefoneDigits.startsWith("55") ? telefoneDigits : `55${telefoneDigits}`;
+  const leadIdFinal = parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined);
 
+  // ========================================================================
+  // CAMINHO PRIMÁRIO: PlacaFIPE (API paga configurada no admin) → quoteFromText
+  // ========================================================================
+  // Mais confiável que o provider interno do Hub pra placas Mercosul.
+  // Se a PlacaFIPE tiver o veículo + FIPE, montamos o payload e enviamos
+  // diretamente pelo endpoint from-text do Hub, pulando o lookup interno.
+  let viaPrimario: "placafipe" | null = null;
+  try {
+    const placafipe = await consultarPlaca(parsed.data.placa);
+    if (placafipe.ok && placafipe.veiculo.marca && placafipe.veiculo.modelo) {
+      const v = placafipe.veiculo;
+      const fipe = placafipe.fipe_recomendado;
+      const anoModelo = Number(v.ano_modelo || v.ano || fipe?.ano_modelo || 0);
+
+      if (anoModelo >= 1980 && v.marca && v.modelo) {
+        viaPrimario = "placafipe";
+        const result = await quoteFromText({
+          brand: v.marca,
+          model: v.modelo,
+          modelYear: anoModelo,
+          fuel: v.combustivel ?? fipe?.combustivel ?? undefined,
+          plate: parsed.data.placa,
+          customerName: parsed.data.cliente.nome,
+          customerPhone,
+          leadId: leadIdFinal,
+        });
+
+        if (consultorId) {
+          void registrarInteracaoCRM({
+            ownerId: consultorId,
+            groupId,
+            tipo: "cotacao_rapida",
+            nome: parsed.data.cliente.nome,
+            telefone: parsed.data.cliente.telefone,
+            payload: {
+              via: "placafipe+from-text",
+              placa: parsed.data.placa,
+              marca: v.marca, modelo: v.modelo, ano: anoModelo,
+              cor: v.cor, uf: v.uf, municipio: v.municipio,
+              fipeCodigo: fipe?.codigo_fipe ?? null,
+              fipeValor: fipe?.valor_formatado ?? null,
+              vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
+              valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? fipe?.valor_formatado ?? null,
+              quoteId: (result as { quoteId?: string }).quoteId ?? null,
+            },
+          });
+        }
+
+        return NextResponse.json({ ok: true, via: "placafipe", ...result });
+      }
+    } else if (!placafipe.ok) {
+      // Log só pra observabilidade — não derruba, cai no fallback
+      console.warn("[cotacao] PlacaFIPE falhou (seguindo pra Hub direto):", placafipe.status, placafipe.message);
+    }
+  } catch (pfErr) {
+    console.warn("[cotacao] PlacaFIPE erro inesperado:", pfErr instanceof Error ? pfErr.message : pfErr);
+  }
+
+  // ========================================================================
+  // FALLBACK: provider interno do Hub (quoteFromPlate)
+  // ========================================================================
   try {
     const result = await quoteFromPlate({
       plate: parsed.data.placa,
       customerName: parsed.data.cliente.nome,
       customerPhone,
-      leadId: parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined),
+      leadId: leadIdFinal,
     });
 
-    // CRM hook — side-effect, não derruba a cotação se falhar
     if (consultorId) {
       void registrarInteracaoCRM({
         ownerId: consultorId,
@@ -77,6 +139,7 @@ export async function POST(req: NextRequest) {
         nome: parsed.data.cliente.nome,
         telefone: parsed.data.cliente.telefone,
         payload: {
+          via: "hub-from-plate",
           placa: parsed.data.placa,
           vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
           valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? null,
@@ -85,8 +148,9 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ ok: true, via: "hub-from-plate", ...result });
   } catch (err) {
+    void viaPrimario; // evita unused warning
     if (err instanceof HubError) {
       // Log DETALHADO pra diagnóstico (nunca vaza pro cliente, só pros Function Logs)
       console.error("[cotacao] HubError:", {
