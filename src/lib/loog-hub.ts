@@ -140,6 +140,12 @@ export async function quoteFromText(input: {
   plate?: string;
   customerName: string;
   customerPhone: string;
+  customerCpf?: string;
+  customerBirthDate?: string;
+  customerCep?: string;
+  customerAddress?: string;
+  customerCity?: string;
+  customerState?: string;
   leadId?: string;
   idempotencyKey?: string;
   productId?: string | number;

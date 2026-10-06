@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
-import { quoteFromPlate, HubError } from "@/lib/loog-hub";
+import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
+import { consultarPlaca } from "@/lib/placafipe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -49,19 +50,82 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "telefone_invalido", message: "Telefone precisa ter DDD + número." }, { status: 400 });
   }
   const customerPhone = telDigits.startsWith("55") ? telDigits : `55${telDigits}`;
+  const leadIdFinal = parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined);
 
+  // Payload de customer completo (CPF, endereço, CEP, cidade, UF) usado em ambos os caminhos
+  const customerExtras = {
+    customerName: parsed.data.cliente.nome,
+    customerPhone,
+    customerCpf: parsed.data.cliente.cpf?.replace(/[^0-9]/g, ""),
+    customerBirthDate: parsed.data.cliente.data_nascimento,
+    customerCep: parsed.data.cliente.cep?.replace(/[^0-9]/g, ""),
+    customerAddress: parsed.data.cliente.endereco,
+    customerCity: parsed.data.cliente.cidade,
+    customerState: parsed.data.cliente.uf,
+    leadId: leadIdFinal,
+  };
+
+  // ========================================================================
+  // CAMINHO PRIMÁRIO: PlacaFIPE (API paga) → quoteFromText com cliente completo
+  // ========================================================================
+  try {
+    const placafipe = await consultarPlaca(parsed.data.placa);
+    if (placafipe.ok && placafipe.veiculo.marca && placafipe.veiculo.modelo) {
+      const v = placafipe.veiculo;
+      const fipe = placafipe.fipe_recomendado;
+      const anoModelo = Number(v.ano_modelo || v.ano || fipe?.ano_modelo || 0);
+
+      if (anoModelo >= 1980 && v.marca && v.modelo) {
+        const result = await quoteFromText({
+          brand: v.marca,
+          model: v.modelo,
+          modelYear: anoModelo,
+          fuel: v.combustivel ?? fipe?.combustivel ?? undefined,
+          plate: parsed.data.placa,
+          ...customerExtras,
+        });
+
+        if (consultorId) {
+          void registrarInteracaoCRM({
+            ownerId: consultorId,
+            groupId,
+            tipo: "cotacao_completa",
+            nome: parsed.data.cliente.nome,
+            telefone: parsed.data.cliente.telefone,
+            cidade: parsed.data.cliente.cidade ?? v.municipio ?? null,
+            payload: {
+              via: "placafipe+from-text",
+              placa: parsed.data.placa,
+              marca: v.marca, modelo: v.modelo, ano: anoModelo,
+              cor: v.cor, uf: v.uf, municipio: v.municipio,
+              cpf: parsed.data.cliente.cpf ?? null,
+              endereco: parsed.data.cliente.endereco ?? null,
+              cep: parsed.data.cliente.cep ?? null,
+              fipeCodigo: fipe?.codigo_fipe ?? null,
+              fipeValor: fipe?.valor_formatado ?? null,
+              vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
+              valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? fipe?.valor_formatado ?? null,
+              quoteId: (result as { quoteId?: string }).quoteId ?? null,
+            },
+          });
+        }
+
+        return NextResponse.json({ ok: true, via: "placafipe", ...result });
+      }
+    } else if (!placafipe.ok) {
+      console.warn("[cotacao/completa] PlacaFIPE falhou (seguindo pra Hub):", placafipe.status, placafipe.message);
+    }
+  } catch (pfErr) {
+    console.warn("[cotacao/completa] PlacaFIPE erro:", pfErr instanceof Error ? pfErr.message : pfErr);
+  }
+
+  // ========================================================================
+  // FALLBACK: provider interno do Hub (quoteFromPlate) com cliente completo
+  // ========================================================================
   try {
     const result = await quoteFromPlate({
       plate: parsed.data.placa,
-      customerName: parsed.data.cliente.nome,
-      customerPhone,
-      customerCpf: parsed.data.cliente.cpf?.replace(/[^0-9]/g, ""),
-      customerBirthDate: parsed.data.cliente.data_nascimento,
-      customerCep: parsed.data.cliente.cep?.replace(/[^0-9]/g, ""),
-      customerAddress: parsed.data.cliente.endereco,
-      customerCity: parsed.data.cliente.cidade,
-      customerState: parsed.data.cliente.uf,
-      leadId: parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined),
+      ...customerExtras,
     });
 
     if (consultorId) {
@@ -73,6 +137,7 @@ export async function POST(req: NextRequest) {
         telefone: parsed.data.cliente.telefone,
         cidade: parsed.data.cliente.cidade ?? null,
         payload: {
+          via: "hub-from-plate",
           placa: parsed.data.placa,
           cpf: parsed.data.cliente.cpf ?? null,
           endereco: parsed.data.cliente.endereco ?? null,
@@ -85,18 +150,24 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ ok: true, via: "hub-from-plate", ...result });
   } catch (err) {
     if (err instanceof HubError) {
-      const user = err.status === 404
-        ? "Placa não encontrada no sistema oficial — verifique CRLV."
-        : err.status === 502 || err.status === 503
-          ? "Sistema interno LOOG indisponível no momento."
-          : err.message;
+      console.error("[cotacao/completa] HubError:", { status: err.status, code: err.code, message: err.message, placa: parsed.data.placa, payload: err.payload });
+      let user: string;
+      switch (err.status) {
+        case 401: user = "Chave do sistema LOOG inválida ou sessão expirada. Fale com o admin."; break;
+        case 403: user = "Placa bloqueada no provedor LOOG."; break;
+        case 404: user = "Placa não encontrada no sistema oficial — verifique CRLV."; break;
+        case 429: user = "Muitas consultas. Aguarde 30s."; break;
+        case 408: case 504: user = "Provedor demorou demais. Tente de novo."; break;
+        case 502: case 503: user = "Sistema interno LOOG indisponível no momento."; break;
+        default: user = `Erro ao consultar placa (status ${err.status}). ${err.message}`;
+      }
       return NextResponse.json({ error: err.code ?? "hub_error", message: user, status: err.status }, { status: err.status >= 400 && err.status < 500 ? err.status : 502 });
     }
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[cotacao/completa] erro:", msg);
+    console.error("[cotacao/completa] erro nao-Hub:", msg);
     return NextResponse.json({ error: "falha", message: msg }, { status: 500 });
   }
 }
