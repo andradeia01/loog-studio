@@ -73,16 +73,21 @@ export async function POST(req: NextRequest) {
     if (placafipe.ok && placafipe.veiculo.marca && placafipe.veiculo.modelo) {
       const v = placafipe.veiculo;
       const fipe = placafipe.fipe_recomendado;
-      const anoModelo = Number(v.ano_modelo || v.ano || fipe?.ano_modelo || 0);
 
-      if (anoModelo >= 1980 && v.marca && v.modelo) {
-        // Preferir placa alternativa (equivalente antiga) quando SIVIS a conhecer melhor
+      // Preferir SEMPRE modelo+marca do catálogo FIPE (completos) sobre os
+      // da base informacoes_veiculo (abreviados). Evita match errado.
+      const marcaFinal = fipe?.marca || v.marca;
+      const modeloFinal = fipe?.modelo || v.modelo;
+      const anoModelo = Number(fipe?.ano_modelo || v.ano_modelo || v.ano || 0);
+
+      if (anoModelo >= 1980 && marcaFinal && modeloFinal) {
         const placaPraHub = placafipe.veiculo.placa_alternativa ?? parsed.data.placa;
         const result = await quoteFromText({
-          brand: v.marca,
-          model: v.modelo,
+          brand: marcaFinal,
+          model: modeloFinal,
           modelYear: anoModelo,
-          fuel: v.combustivel ?? fipe?.combustivel ?? undefined,
+          fuel: fipe?.combustivel ?? v.combustivel ?? undefined,
+          fipeCode: fipe?.codigo_fipe ?? undefined,
           plate: placaPraHub,
           ...customerExtras,
         });
@@ -98,13 +103,15 @@ export async function POST(req: NextRequest) {
             payload: {
               via: "placafipe+from-text",
               placa: parsed.data.placa,
-              marca: v.marca, modelo: v.modelo, ano: anoModelo,
+              marcaCurta: v.marca, modeloCurto: v.modelo,
+              marca: marcaFinal, modelo: modeloFinal, ano: anoModelo,
               cor: v.cor, uf: v.uf, municipio: v.municipio,
               cpf: parsed.data.cliente.cpf ?? null,
               endereco: parsed.data.cliente.endereco ?? null,
               cep: parsed.data.cliente.cep ?? null,
               fipeCodigo: fipe?.codigo_fipe ?? null,
               fipeValor: fipe?.valor_formatado ?? null,
+              fipeSimilaridade: fipe?.similaridade ?? null,
               vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
               valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? fipe?.valor_formatado ?? null,
               quoteId: (result as { quoteId?: string }).quoteId ?? null,

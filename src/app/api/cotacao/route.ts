@@ -74,18 +74,28 @@ export async function POST(req: NextRequest) {
     if (placafipe.ok && placafipe.veiculo.marca && placafipe.veiculo.modelo) {
       const v = placafipe.veiculo;
       const fipe = placafipe.fipe_recomendado;
-      const anoModelo = Number(v.ano_modelo || v.ano || fipe?.ano_modelo || 0);
 
-      if (anoModelo >= 1980 && v.marca && v.modelo) {
+      // IMPORTANTE: a PlacaFIPE retorna 2 descrições do veículo:
+      //   - informacoes_veiculo.modelo   = texto curto/abreviado (ex "PALIO WK ADVEN FLEX")
+      //   - fipe[].modelo                = texto COMPLETO do catálogo FIPE (ex "Palio Weekend Adventure LOCKER 1.8 Flex")
+      // O Hub faz matching por similaridade no catálogo FIPE, então usar o
+      // texto curto gera MATCH ERRADO (ex: casa com "Palio ELX 1.0 Fire"
+      // que não é o veículo real). Preferir SEMPRE o texto do FIPE quando houver.
+      const marcaFinal = fipe?.marca || v.marca;
+      const modeloFinal = fipe?.modelo || v.modelo;
+      const anoModelo = Number(fipe?.ano_modelo || v.ano_modelo || v.ano || 0);
+
+      if (anoModelo >= 1980 && marcaFinal && modeloFinal) {
         viaPrimario = "placafipe";
-        // Preferir a placa alternativa do PlacaFIPE quando existir — ela costuma
-        // ser a forma que o SIVIS/Hub reconhece (ex: KZL7083 vs KZL7A83 Mercosul).
         const placaPraHub = placafipe.veiculo.placa_alternativa ?? parsed.data.placa;
         const result = await quoteFromText({
-          brand: v.marca,
-          model: v.modelo,
+          brand: marcaFinal,
+          model: modeloFinal,
           modelYear: anoModelo,
-          fuel: v.combustivel ?? fipe?.combustivel ?? undefined,
+          fuel: fipe?.combustivel ?? v.combustivel ?? undefined,
+          // Código FIPE oficial — se o Hub suportar, pula totalmente o matching
+          // por string e usa a FIPE exata (ex: "001255-6" = Palio WK Adventure)
+          fipeCode: fipe?.codigo_fipe ?? undefined,
           plate: placaPraHub,
           customerName: parsed.data.cliente.nome,
           customerPhone,
@@ -102,10 +112,12 @@ export async function POST(req: NextRequest) {
             payload: {
               via: "placafipe+from-text",
               placa: parsed.data.placa,
-              marca: v.marca, modelo: v.modelo, ano: anoModelo,
+              marcaCurta: v.marca, modeloCurto: v.modelo,
+              marca: marcaFinal, modelo: modeloFinal, ano: anoModelo,
               cor: v.cor, uf: v.uf, municipio: v.municipio,
               fipeCodigo: fipe?.codigo_fipe ?? null,
               fipeValor: fipe?.valor_formatado ?? null,
+              fipeSimilaridade: fipe?.similaridade ?? null,
               vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
               valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? fipe?.valor_formatado ?? null,
               quoteId: (result as { quoteId?: string }).quoteId ?? null,

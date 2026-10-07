@@ -138,6 +138,10 @@ export async function quoteFromText(input: {
   fuel?: string;
   fuelInitial?: string;
   plate?: string;
+  /** Código FIPE oficial (ex: "001255-6"). Quando enviado, o Hub DEVE usar ele
+   *  direto ao invés de fazer matching por string em marca/modelo — evita
+   *  divergência de valor FIPE em modelos com múltiplas versões. */
+  fipeCode?: string;
   customerName: string;
   customerPhone: string;
   customerCpf?: string;
