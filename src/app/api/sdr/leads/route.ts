@@ -6,23 +6,22 @@ export const dynamic = "force-dynamic";
 /**
  * GET /api/sdr/leads
  *
- * Retorna as conversas ativas do WhatsApp (via Zaia Endless).
- *
- * Hoje: STUB. Retorna []. Quando canal Waha estiver no ar + credenciais Zaia
- * configuradas, chama a API do Zaia pra listar conversas, extrai lead/stage/tag
- * e devolve pro painel.
+ * Proxy pro Hub /v1/sdr/conversations.
  */
 export async function GET() {
-  const apiKey = process.env.ZAIA_API_KEY;
-  const workspaceId = process.env.ZAIA_WORKSPACE_ID;
+  const hubUrl = process.env.HUB_URL;
+  const hubKey = process.env.HUB_INTERNAL_API_KEY;
 
-  if (!apiKey || !workspaceId) {
+  if (!hubUrl || !hubKey) return NextResponse.json([]);
+
+  try {
+    const r = await fetch(`${hubUrl}/v1/sdr/conversations`, {
+      headers: { Authorization: `Bearer ${hubKey}` },
+      cache: "no-store",
+    });
+    if (!r.ok) return NextResponse.json([]);
+    return NextResponse.json(await r.json());
+  } catch {
     return NextResponse.json([]);
   }
-
-  // TODO: integrar com Zaia API quando canal + API key existirem.
-  //   GET https://api.zaia.app/v1/workspaces/{workspaceId}/conversations?channelType=waha&limit=50
-  //   Mapear p/ { id, name, phone, lastMessage, lastAt, tags, stage }
-
-  return NextResponse.json([]);
 }
