@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { cn } from "@/lib/utils";
 
-type Tab = "status" | "chat" | "leads" | "kanban" | "config";
+type Tab = "status" | "chat" | "leads" | "kanban" | "oficial" | "config";
 
 interface SdrStatus {
   connected: boolean;
@@ -13,7 +13,7 @@ interface SdrStatus {
   channelName: string | null;
   qrCode: string | null;
   qrExpiresAt: string | null;
-  engine: "zaia" | "hub-baileys" | "hub-zapi" | "none";
+  engine: "zaia" | "hub-baileys" | "hub-zapi" | "hub-meta" | "none";
   stats: {
     totalLeads: number;
     cotacoesHoje: number;
@@ -155,6 +155,7 @@ export function SdrPane() {
           { k: "chat" as const, label: "Chat ao vivo", icon: "💬", badge: unreadCount || undefined },
           { k: "leads" as const, label: "Leads", icon: "👥", badge: leads.length || undefined },
           { k: "kanban" as const, label: "Pipeline", icon: "📊", badge: undefined as number | undefined },
+          { k: "oficial" as const, label: "API Oficial", icon: "✅", badge: undefined as number | undefined },
           { k: "config" as const, label: "Config", icon: "⚙️", badge: undefined as number | undefined },
         ]).map((t) => (
           <button
@@ -202,6 +203,7 @@ export function SdrPane() {
           {tab === "kanban" && (
             <KanbanTab leads={leads} onLeadsChange={setLeads} />
           )}
+          {tab === "oficial" && <OficialTab />}
           {tab === "config" && <ConfigTab />}
         </motion.div>
       </AnimatePresence>
@@ -352,11 +354,12 @@ function StatusTab({
   );
 }
 
-function EngineBadge({ engine }: { engine: "zaia" | "hub-baileys" | "hub-zapi" | "none" }) {
+function EngineBadge({ engine }: { engine: "zaia" | "hub-baileys" | "hub-zapi" | "hub-meta" | "none" }) {
   const meta = {
     zaia: { label: "via Zaia Endless", cls: "bg-blue-500/15 text-blue-300 border-blue-500/40" },
     "hub-baileys": { label: "via Hub (Baileys)", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" },
     "hub-zapi": { label: "via Hub (Z-API)", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" },
+    "hub-meta": { label: "via Hub (Meta Oficial)", cls: "bg-sky-500/15 text-sky-300 border-sky-500/40" },
     none: { label: "não configurado", cls: "bg-gray-500/15 text-gray-400 border-gray-500/40" },
   }[engine] ?? { label: "não configurado", cls: "bg-gray-500/15 text-gray-400 border-gray-500/40" };
   return (
@@ -695,6 +698,205 @@ function KanbanTab({
 // ──────────────────────────────────────────────────────────────────
 // CONFIG
 // ──────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
+// API OFICIAL (Meta Cloud API)
+// ──────────────────────────────────────────────────────────────────
+function OficialTab() {
+  const [cfg, setCfg] = useState({
+    metaAccessToken: "",
+    metaPhoneNumberId: "",
+    metaWabaId: "",
+    metaAppSecret: "",
+    metaVerifyToken: "",
+  });
+  const [hasToken, setHasToken] = useState(false);
+  const [hasSecret, setHasSecret] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/sdr/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        setCfg({
+          metaAccessToken: d.metaAccessToken ?? "",
+          metaPhoneNumberId: d.metaPhoneNumberId ?? "",
+          metaWabaId: d.metaWabaId ?? "",
+          metaAppSecret: d.metaAppSecret ?? "",
+          metaVerifyToken: d.metaVerifyToken ?? "",
+        });
+        setHasToken(!!d._hasMetaAccessToken);
+        setHasSecret(!!d._hasMetaAppSecret);
+      })
+      .catch(() => {});
+  }, []);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const body: Record<string, string> = {};
+      if (cfg.metaPhoneNumberId) body.metaPhoneNumberId = cfg.metaPhoneNumberId;
+      if (cfg.metaWabaId) body.metaWabaId = cfg.metaWabaId;
+      if (cfg.metaVerifyToken) body.metaVerifyToken = cfg.metaVerifyToken;
+      // Só manda tokens se não forem mascarados
+      if (cfg.metaAccessToken && !cfg.metaAccessToken.includes("•")) {
+        body.metaAccessToken = cfg.metaAccessToken;
+      }
+      if (cfg.metaAppSecret && !cfg.metaAppSecret.includes("•")) {
+        body.metaAppSecret = cfg.metaAppSecret;
+      }
+      await fetch("/api/sdr/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setSavedAt(new Date().toLocaleTimeString("pt-BR"));
+      // Após salvar, re-mascara os campos de token
+      if (body.metaAccessToken) setHasToken(true);
+      if (body.metaAppSecret) setHasSecret(true);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const WEBHOOK_URL = "https://2-25-189-22.sslip.io/webhook/meta";
+
+  return (
+    <div className="space-y-4 text-sm">
+      <div className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-4">
+        <div className="mb-2 flex items-center gap-2 font-bold text-sky-200">
+          ✅ WhatsApp Business API (Meta Cloud)
+        </div>
+        <p className="text-xs text-sky-100/80">
+          Canal oficial da Meta. Zero risco de ban/logout. Mensagens de resposta
+          (dentro de 24h do lead) são praticamente grátis. Para iniciar conversa é
+          preciso usar <b>templates aprovados</b> pela Meta.
+        </p>
+      </div>
+
+      {/* Webhook URL */}
+      <div className="rounded-xl border border-loog-border bg-loog-panel/40 p-4">
+        <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-loog-muted">
+          URL do webhook (cola no painel da Meta)
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            value={WEBHOOK_URL}
+            readOnly
+            className="flex-1 rounded-lg border border-loog-border bg-loog-bg/60 px-3 py-2 font-mono text-xs text-loog-text"
+          />
+          <button
+            type="button"
+            onClick={() => navigator.clipboard.writeText(WEBHOOK_URL)}
+            className="rounded-lg border border-loog-border bg-loog-bg/60 px-3 py-2 text-xs font-semibold text-loog-text hover:bg-loog-bg"
+          >
+            Copiar
+          </button>
+        </div>
+        <p className="mt-1 text-[11px] text-loog-muted">
+          Meta → App → WhatsApp → Configuração → Webhook. Também assine o campo <b>messages</b>.
+        </p>
+      </div>
+
+      {/* Credenciais */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <MetaField
+          label="Phone Number ID"
+          placeholder="123456789012345"
+          value={cfg.metaPhoneNumberId}
+          onChange={(v) => setCfg({ ...cfg, metaPhoneNumberId: v })}
+          help="Encontra em: Meta → App → WhatsApp → Configuração da API"
+        />
+        <MetaField
+          label="WABA ID (Business Account ID)"
+          placeholder="123456789012345"
+          value={cfg.metaWabaId}
+          onChange={(v) => setCfg({ ...cfg, metaWabaId: v })}
+          help="Mesma tela do Phone Number ID"
+        />
+        <MetaField
+          label={`Access Token${hasToken ? " (salvo)" : ""}`}
+          placeholder="EAAG... (System User Token permanente)"
+          value={cfg.metaAccessToken}
+          onChange={(v) => setCfg({ ...cfg, metaAccessToken: v })}
+          help="System User → Gerar token com permissão whatsapp_business_messaging"
+          type="password"
+        />
+        <MetaField
+          label={`App Secret${hasSecret ? " (salvo)" : ""}`}
+          placeholder="xxxxxxxxxxxxxx"
+          value={cfg.metaAppSecret}
+          onChange={(v) => setCfg({ ...cfg, metaAppSecret: v })}
+          help="Meta → App → Configurações → Básico → App Secret"
+          type="password"
+        />
+        <MetaField
+          label="Verify Token (webhook)"
+          placeholder="qualquer-string-forte-aqui"
+          value={cfg.metaVerifyToken}
+          onChange={(v) => setCfg({ ...cfg, metaVerifyToken: v })}
+          help="String arbitrária que você define. Cola a mesma coisa no painel da Meta."
+        />
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving}
+          className="rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+        >
+          {saving ? "Salvando..." : "Salvar credenciais"}
+        </button>
+        {savedAt && (
+          <span className="text-xs text-emerald-300">✓ salvo às {savedAt}</span>
+        )}
+      </div>
+
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-xs text-amber-100/80">
+        <b className="text-amber-200">Importante:</b> após salvar as credenciais,
+        o canal da Meta ainda <b>não vira o canal ativo</b> automaticamente — ele
+        continua no Z-API. Pra ativar, me avise que eu troco o env{" "}
+        <code className="rounded bg-amber-500/10 px-1">WHATSAPP_CHANNEL=meta-cloud</code>{" "}
+        e reinicio o serviço (uma vez só).
+      </div>
+    </div>
+  );
+}
+
+function MetaField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  help,
+  type,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  help?: string;
+  type?: string;
+}) {
+  return (
+    <div>
+      <label className="mb-1 block text-xs font-semibold uppercase tracking-widest text-loog-muted">
+        {label}
+      </label>
+      <input
+        type={type ?? "text"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-loog-border bg-loog-bg/60 px-3 py-2 font-mono text-xs text-loog-text focus:border-loog-brand focus:outline-none"
+      />
+      {help && <p className="mt-1 text-[11px] text-loog-muted">{help}</p>}
+    </div>
+  );
+}
+
 function ConfigTab() {
   const [cfg, setCfg] = useState<SdrConfig>({
     elevenLabsKey: "",
