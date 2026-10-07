@@ -56,6 +56,67 @@ export function cleanPlaca(raw: string): string | null {
   return only;
 }
 
+/**
+ * Converte placa Mercosul ↔ placa antiga.
+ *
+ * Padrão Mercosul: `AAA1A11` (4ª=dígito, 5ª=letra, 6ª-7ª=dígitos)
+ * Padrão antigo:   `AAA1111` (4ª-7ª todos dígitos)
+ *
+ * A conversão SPTrans/Denatran mapeia a 5ª letra ↔ dígito:
+ *   A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9
+ *
+ * Ex.: KZL7A83 (Mercosul) ↔ KZL7083 (antiga)
+ *      ABC1D23 (Mercosul) ↔ ABC1323 (antiga)
+ *
+ * Retorna null se a placa não puder ser convertida (formato inválido ou
+ * caractere fora do mapa).
+ */
+const LETRA_PARA_DIGITO: Record<string, string> = {
+  A: "0", B: "1", C: "2", D: "3", E: "4",
+  F: "5", G: "6", H: "7", I: "8", J: "9",
+};
+const DIGITO_PARA_LETRA: Record<string, string> = Object.fromEntries(
+  Object.entries(LETRA_PARA_DIGITO).map(([l, d]) => [d, l]),
+);
+
+export function isMercosul(placa: string): boolean {
+  // AAA1A11
+  return /^[A-Z]{3}[0-9][A-Z][0-9]{2}$/.test(placa);
+}
+export function isPlacaAntiga(placa: string): boolean {
+  // AAA1111
+  return /^[A-Z]{3}[0-9]{4}$/.test(placa);
+}
+
+/** Mercosul → antiga. Retorna null se não for Mercosul válido. */
+export function mercosulParaAntiga(placa: string): string | null {
+  const p = (placa || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!isMercosul(p)) return null;
+  const letra5 = p[4];
+  const digito = LETRA_PARA_DIGITO[letra5];
+  if (!digito) return null;
+  return p.slice(0, 4) + digito + p.slice(5);
+}
+
+/** Antiga → Mercosul. Retorna null se não for antiga válida. */
+export function antigaParaMercosul(placa: string): string | null {
+  const p = (placa || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!isPlacaAntiga(p)) return null;
+  const digito5 = p[4];
+  const letra = DIGITO_PARA_LETRA[digito5];
+  if (!letra) return null;
+  return p.slice(0, 4) + letra + p.slice(5);
+}
+
+/** Retorna [placa_original, placa_equivalente] se existir equivalência. */
+export function variantesPlaca(placa: string): string[] {
+  const p = (placa || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const set = new Set<string>([p]);
+  const alt1 = mercosulParaAntiga(p); if (alt1) set.add(alt1);
+  const alt2 = antigaParaMercosul(p); if (alt2) set.add(alt2);
+  return [...set];
+}
+
 export async function resolvePlacaFipeToken(): Promise<string | null> {
   const env = process.env.PLACAFIPE_TOKEN;
   if (env && env.trim()) return env.trim();

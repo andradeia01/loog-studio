@@ -4,7 +4,7 @@ import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
 import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
-import { consultarPlaca } from "@/lib/placafipe";
+import { consultarPlaca, variantesPlaca } from "@/lib/placafipe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -76,12 +76,14 @@ export async function POST(req: NextRequest) {
       const anoModelo = Number(v.ano_modelo || v.ano || fipe?.ano_modelo || 0);
 
       if (anoModelo >= 1980 && v.marca && v.modelo) {
+        // Preferir placa alternativa (equivalente antiga) quando SIVIS a conhecer melhor
+        const placaPraHub = placafipe.veiculo.placa_alternativa ?? parsed.data.placa;
         const result = await quoteFromText({
           brand: v.marca,
           model: v.modelo,
           modelYear: anoModelo,
           fuel: v.combustivel ?? fipe?.combustivel ?? undefined,
-          plate: parsed.data.placa,
+          plate: placaPraHub,
           ...customerExtras,
         });
 
@@ -120,38 +122,55 @@ export async function POST(req: NextRequest) {
   }
 
   // ========================================================================
-  // FALLBACK: provider interno do Hub (quoteFromPlate) com cliente completo
+  // FALLBACK: Hub quoteFromPlate — tenta variantes (Mercosul ↔ antiga)
   // ========================================================================
-  try {
-    const result = await quoteFromPlate({
-      plate: parsed.data.placa,
-      ...customerExtras,
-    });
+  const placasPraTentar = variantesPlaca(parsed.data.placa);
+  let ultimoErro: unknown = null;
 
-    if (consultorId) {
-      void registrarInteracaoCRM({
-        ownerId: consultorId,
-        groupId,
-        tipo: "cotacao_completa",
-        nome: parsed.data.cliente.nome,
-        telefone: parsed.data.cliente.telefone,
-        cidade: parsed.data.cliente.cidade ?? null,
-        payload: {
-          via: "hub-from-plate",
-          placa: parsed.data.placa,
-          cpf: parsed.data.cliente.cpf ?? null,
-          endereco: parsed.data.cliente.endereco ?? null,
-          cep: parsed.data.cliente.cep ?? null,
-          uf: parsed.data.cliente.uf ?? null,
-          vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
-          valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? null,
-          quoteId: (result as { quoteId?: string }).quoteId ?? null,
-        },
+  for (const placaVariante of placasPraTentar) {
+    try {
+      const result = await quoteFromPlate({
+        plate: placaVariante,
+        ...customerExtras,
       });
-    }
 
-    return NextResponse.json({ ok: true, via: "hub-from-plate", ...result });
-  } catch (err) {
+      if (consultorId) {
+        void registrarInteracaoCRM({
+          ownerId: consultorId,
+          groupId,
+          tipo: "cotacao_completa",
+          nome: parsed.data.cliente.nome,
+          telefone: parsed.data.cliente.telefone,
+          cidade: parsed.data.cliente.cidade ?? null,
+          payload: {
+            via: placaVariante !== parsed.data.placa ? "hub-from-plate+variant" : "hub-from-plate",
+            placa: parsed.data.placa,
+            placaUsada: placaVariante,
+            cpf: parsed.data.cliente.cpf ?? null,
+            endereco: parsed.data.cliente.endereco ?? null,
+            cep: parsed.data.cliente.cep ?? null,
+            uf: parsed.data.cliente.uf ?? null,
+            vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
+            valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? null,
+            quoteId: (result as { quoteId?: string }).quoteId ?? null,
+          },
+        });
+      }
+
+      return NextResponse.json({ ok: true, via: "hub-from-plate", placaUsada: placaVariante, ...result });
+    } catch (err) {
+      ultimoErro = err;
+      if (err instanceof HubError) {
+        console.warn(`[cotacao/completa] Hub falhou pra ${placaVariante}: ${err.status} ${err.message}`);
+        continue;
+      }
+      break;
+    }
+  }
+
+  // Nenhuma variante funcionou — processa o último erro
+  {
+    const err = ultimoErro;
     if (err instanceof HubError) {
       console.error("[cotacao/completa] HubError:", { status: err.status, code: err.code, message: err.message, placa: parsed.data.placa, payload: err.payload });
       let user: string;
