@@ -47,6 +47,7 @@ interface SdrConfig {
   claudeModel: "haiku-4-5" | "sonnet-5-5" | "opus-5-5";
   systemPrompt: string;
   audioStrategy: "nunca" | "estrategico" | "sempre-primeiro";
+  groqKey: string;
 }
 
 type KanbanStage = "novo" | "cotado" | "negociando" | "pago" | "perdido";
@@ -614,6 +615,7 @@ function ConfigTab() {
     claudeModel: "haiku-4-5",
     systemPrompt: "",
     audioStrategy: "estrategico",
+    groqKey: "",
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -676,6 +678,22 @@ function ConfigTab() {
             <option value="sempre-primeiro">Sempre na 1ª mensagem</option>
           </select>
         </Field>
+      </Section>
+
+      {/* Groq Whisper (STT) */}
+      <Section title="Groq Whisper (lead manda áudio → bot entende)" icon="🎧">
+        <Field label="API Key Groq" hint="gere grátis em console.groq.com (precisa logar com Google)">
+          <input
+            type="password"
+            value={cfg.groqKey}
+            onChange={(e) => setCfg((c) => ({ ...c, groqKey: e.target.value }))}
+            placeholder="gsk_xxxxxxxxxxxxx"
+            className="w-full rounded-lg border border-loog-border bg-loog-bg px-3 py-2 text-sm font-mono text-loog-text focus:border-loog-brand focus:outline-none"
+          />
+        </Field>
+        <p className="text-[11px] text-loog-muted">
+          Quando o lead manda áudio no WhatsApp, o Tavinho transcreve via whisper-large-v3-turbo (grátis até limite do plano Groq) e responde como se fosse texto. Sem key configurada, o Tavinho responde &quot;me manda em texto&quot;.
+        </p>
       </Section>
 
       {/* Claude */}
