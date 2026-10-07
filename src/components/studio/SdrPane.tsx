@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { cn } from "@/lib/utils";
 
 type Tab = "status" | "chat" | "leads" | "kanban" | "config";
@@ -30,6 +31,8 @@ interface LeadConversation {
   tags: string[];
   stage: KanbanStage;
   unread: number;
+  suggestedBucket?: KanbanStage | null;
+  suggestedReason?: string;
 }
 
 interface ChatMessage {
@@ -196,7 +199,9 @@ export function SdrPane() {
           )}
           {tab === "chat" && <ChatTab leads={leads} />}
           {tab === "leads" && <LeadsTab leads={leads} loading={loading} />}
-          {tab === "kanban" && <KanbanTab leads={leads} />}
+          {tab === "kanban" && (
+            <KanbanTab leads={leads} onLeadsChange={setLeads} />
+          )}
           {tab === "config" && <ConfigTab />}
         </motion.div>
       </AnimatePresence>
@@ -567,41 +572,123 @@ function LeadsTab({ leads, loading }: { leads: LeadConversation[]; loading: bool
 }
 
 // ──────────────────────────────────────────────────────────────────
-// KANBAN
+// KANBAN (drag-and-drop + sugestões do Claude)
 // ──────────────────────────────────────────────────────────────────
-function KanbanTab({ leads }: { leads: LeadConversation[] }) {
+function KanbanTab({
+  leads,
+  onLeadsChange,
+}: {
+  leads: LeadConversation[];
+  onLeadsChange: (next: LeadConversation[]) => void;
+}) {
   const stages = Object.keys(KANBAN_META) as KanbanStage[];
+
+  const handleDragEnd = async (result: DropResult) => {
+    const { destination, source, draggableId } = result;
+    if (!destination || destination.droppableId === source.droppableId) return;
+    const to = destination.droppableId as KanbanStage;
+    // Optimistic update
+    const next = leads.map((l) =>
+      l.id === draggableId
+        ? { ...l, stage: to, suggestedBucket: null, suggestedReason: undefined }
+        : l
+    );
+    onLeadsChange(next);
+    try {
+      await fetch(
+        `/api/sdr/conversations/${encodeURIComponent(draggableId)}/stage`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bucket: to }),
+        }
+      );
+    } catch {
+      /* polling de 8s vai reconciliar */
+    }
+  };
+
   return (
-    <div className="grid gap-3 overflow-x-auto pb-2 lg:grid-cols-5">
-      {stages.map((stage) => {
-        const items = leads.filter((l) => l.stage === stage);
-        const meta = KANBAN_META[stage];
-        return (
-          <div key={stage} className="min-w-[220px] rounded-2xl border border-loog-border bg-loog-panel/40 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest", meta.cls)}>
-                {meta.emoji} {meta.label}
-              </span>
-              <span className="text-xs text-loog-muted">{items.length}</span>
-            </div>
-            <div className="space-y-2">
-              {items.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-loog-border/50 p-3 text-center text-xs text-loog-muted">
-                  Vazio
-                </div>
-              ) : (
-                items.map((l) => (
-                  <div key={l.id} className="rounded-lg bg-loog-bg/60 p-2.5">
-                    <div className="truncate text-sm font-bold text-loog-text">{l.name}</div>
-                    <div className="font-mono text-[10px] text-loog-muted">{l.phone}</div>
+    <DragDropContext onDragEnd={handleDragEnd}>
+      <div className="grid gap-3 overflow-x-auto pb-2 lg:grid-cols-5">
+        {stages.map((stage) => {
+          const items = leads.filter((l) => l.stage === stage);
+          const meta = KANBAN_META[stage];
+          return (
+            <Droppable key={stage} droppableId={stage}>
+              {(dropProvided, dropSnapshot) => (
+                <div
+                  ref={dropProvided.innerRef}
+                  {...dropProvided.droppableProps}
+                  className={cn(
+                    "min-w-[220px] rounded-2xl border p-3 transition-colors",
+                    dropSnapshot.isDraggingOver
+                      ? "border-emerald-400/60 bg-emerald-500/5"
+                      : "border-loog-border bg-loog-panel/40"
+                  )}
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <span
+                      className={cn(
+                        "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-widest",
+                        meta.cls
+                      )}
+                    >
+                      {meta.emoji} {meta.label}
+                    </span>
+                    <span className="text-xs text-loog-muted">{items.length}</span>
                   </div>
-                ))
+                  <div className="space-y-2">
+                    {items.length === 0 ? (
+                      <div className="rounded-lg border border-dashed border-loog-border/50 p-3 text-center text-xs text-loog-muted">
+                        Vazio
+                      </div>
+                    ) : (
+                      items.map((l, idx) => (
+                        <Draggable key={l.id} draggableId={l.id} index={idx}>
+                          {(dragProvided, dragSnapshot) => (
+                            <div
+                              ref={dragProvided.innerRef}
+                              {...dragProvided.draggableProps}
+                              {...dragProvided.dragHandleProps}
+                              className={cn(
+                                "rounded-lg bg-loog-bg/60 p-2.5 cursor-grab active:cursor-grabbing",
+                                dragSnapshot.isDragging && "shadow-lg ring-2 ring-emerald-400/50"
+                              )}
+                            >
+                              <div className="truncate text-sm font-bold text-loog-text">
+                                {l.name}
+                              </div>
+                              <div className="font-mono text-[10px] text-loog-muted">
+                                {l.phone}
+                              </div>
+                              {l.suggestedBucket && l.suggestedBucket !== l.stage && (
+                                <div
+                                  className={cn(
+                                    "mt-1.5 rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest",
+                                    l.suggestedBucket === "pago"
+                                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                                      : "border-rose-500/40 bg-rose-500/10 text-rose-300"
+                                  )}
+                                  title={l.suggestedReason}
+                                >
+                                  🤖 sugerido: {l.suggestedBucket}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </Draggable>
+                      ))
+                    )}
+                    {dropProvided.placeholder}
+                  </div>
+                </div>
               )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+            </Droppable>
+          );
+        })}
+      </div>
+    </DragDropContext>
   );
 }
 
