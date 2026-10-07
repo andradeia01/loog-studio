@@ -12,7 +12,7 @@ interface SdrStatus {
   channelName: string | null;
   qrCode: string | null;
   qrExpiresAt: string | null;
-  engine: "zaia" | "hub-baileys" | "none";
+  engine: "zaia" | "hub-baileys" | "hub-zapi" | "none";
   stats: {
     totalLeads: number;
     cotacoesHoje: number;
@@ -338,7 +338,7 @@ function StatusTab({
           <ul className="space-y-1 text-xs text-loog-muted">
             <li>✅ Hub Sivisweb · <span className="text-emerald-300">online</span></li>
             <li>✅ PlacaFipe · <span className="text-emerald-300">online</span></li>
-            <li>{engine === "hub-baileys" ? "✅" : "⏳"} Baileys WhatsApp · <span className={engine === "hub-baileys" ? "text-emerald-300" : "text-amber-300"}>{engine === "hub-baileys" ? "online" : "em implantação"}</span></li>
+            <li>{engine === "hub-zapi" ? "✅" : "⏳"} Z-API WhatsApp · <span className={engine === "hub-zapi" ? "text-emerald-300" : "text-amber-300"}>{engine === "hub-zapi" ? "online" : "em implantação"}</span></li>
             <li>⏳ ElevenLabs · <span className="text-amber-300">aguardando API key</span></li>
           </ul>
         </div>
@@ -347,12 +347,13 @@ function StatusTab({
   );
 }
 
-function EngineBadge({ engine }: { engine: "zaia" | "hub-baileys" | "none" }) {
+function EngineBadge({ engine }: { engine: "zaia" | "hub-baileys" | "hub-zapi" | "none" }) {
   const meta = {
     zaia: { label: "via Zaia Endless", cls: "bg-blue-500/15 text-blue-300 border-blue-500/40" },
-    "hub-baileys": { label: "via Hub (caseiro)", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" },
+    "hub-baileys": { label: "via Hub (Baileys)", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" },
+    "hub-zapi": { label: "via Hub (Z-API)", cls: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40" },
     none: { label: "não configurado", cls: "bg-gray-500/15 text-gray-400 border-gray-500/40" },
-  }[engine];
+  }[engine] ?? { label: "não configurado", cls: "bg-gray-500/15 text-gray-400 border-gray-500/40" };
   return (
     <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-widest", meta.cls)}>
       {meta.label}
