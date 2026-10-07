@@ -22,6 +22,7 @@ import { TweetStudio } from "./TweetStudio";
 import { PlacaStudio } from "./PlacaStudio";
 import { CotacaoCompleta } from "./CotacaoCompleta";
 import { CrmLeads } from "./CrmLeads";
+import { SdrPane } from "./SdrPane";
 import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
 import { StudioHome } from "./StudioHome";
 import { MundoPane } from "./MundoPane";
@@ -112,6 +113,7 @@ export function StudioApp({
         { key: "placa", label: "Cotação Rápida", icon: "⚡" },
         { key: "completa", label: "Cotação Completa", icon: "📄" },
         { key: "simulador", label: "Simulador", icon: "🧮" },
+        { key: "sdr", label: "SDR WhatsApp", icon: "💬" },
         { key: "crm", label: "CRM / Leads", icon: "👥" },
         { key: "pipeline", label: "Pipeline", icon: "📈" },
         { key: "followups", label: "Follow-ups", icon: "🔔" },
@@ -264,6 +266,7 @@ function renderConteudo(opts: RenderOpts) {
         { icon: "🔀", title: "Converter em cotação real", desc: "1 clique: envia pro Hub e grava proposta no SIVIS." },
       ]}
     />;
+    if (activeSub === "sdr") return <SdrPane />;
     if (activeSub === "crm") return <CrmLeads />;
     if (activeSub === "pipeline") return <MundoPane
       icon="📈"
