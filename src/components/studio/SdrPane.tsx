@@ -65,6 +65,7 @@ export function SdrPane() {
   const [leads, setLeads] = useState<LeadConversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [generatingQr, setGeneratingQr] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   // Polling simples: refaz status a cada 8s pra pegar QR → conectado
   useEffect(() => {
@@ -102,6 +103,21 @@ export function SdrPane() {
       }
     } finally {
       setGeneratingQr(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!confirm("Desconectar o WhatsApp e apagar a sessão? Vai gerar um QR Code novo pra você escanear.")) return;
+    setResetting(true);
+    try {
+      await fetch("/api/sdr/reset", { method: "POST" });
+      // Força status refresh
+      const s = await fetch("/api/sdr/status").then((r) => r.json()).catch(() => null);
+      setStatus(s);
+      // Gera QR novo logo em seguida
+      await handleGenerateQr();
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -173,6 +189,8 @@ export function SdrPane() {
               loading={loading}
               generatingQr={generatingQr}
               onGenerateQr={handleGenerateQr}
+              resetting={resetting}
+              onReset={handleReset}
             />
           )}
           {tab === "chat" && <ChatTab leads={leads} />}
@@ -193,11 +211,15 @@ function StatusTab({
   loading,
   generatingQr,
   onGenerateQr,
+  resetting,
+  onReset,
 }: {
   status: SdrStatus | null;
   loading: boolean;
   generatingQr: boolean;
   onGenerateQr: () => void;
+  resetting: boolean;
+  onReset: () => void;
 }) {
   if (loading) return <SkeletonCard label="Buscando status da conexão..." />;
 
@@ -229,10 +251,15 @@ function StatusTab({
             </div>
             <button
               type="button"
-              className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-bold text-red-300 hover:bg-red-500/20"
+              onClick={onReset}
+              disabled={resetting}
+              className="w-full rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm font-bold text-red-300 hover:bg-red-500/20 disabled:opacity-50"
             >
-              Desconectar
+              {resetting ? "Desconectando..." : "🔄 Resetar WhatsApp (desconectar + novo QR)"}
             </button>
+            <p className="text-[11px] text-loog-muted">
+              Use quando a conversa travar em "aguardando mensagem" ou quando precisar trocar o número.
+            </p>
           </div>
         ) : status?.qrCode ? (
           <div className="space-y-3">
@@ -254,6 +281,14 @@ function StatusTab({
             >
               {generatingQr ? "Gerando..." : "Gerar novo QR"}
             </button>
+            <button
+              type="button"
+              onClick={onReset}
+              disabled={resetting}
+              className="w-full rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+            >
+              {resetting ? "Resetando..." : "🧹 Resetar tudo (apaga sessão e começa do zero)"}
+            </button>
           </div>
         ) : (
           <div className="space-y-3">
@@ -272,9 +307,14 @@ function StatusTab({
             >
               {generatingQr ? "Gerando QR..." : "🚀 Gerar QR do WhatsApp"}
             </button>
-            <p className="text-center text-[11px] text-loog-muted">
-              Fase 1: botão fica em stub. Fase 2 (próximo deploy): o QR real é gerado pelo Hub via Baileys.
-            </p>
+            <button
+              type="button"
+              onClick={onReset}
+              disabled={resetting}
+              className="w-full rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+            >
+              {resetting ? "Resetando..." : "🧹 Resetar sessão (se o botão acima não gerar QR novo)"}
+            </button>
           </div>
         )}
       </div>
