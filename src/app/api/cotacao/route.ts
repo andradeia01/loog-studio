@@ -4,7 +4,7 @@ import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
 import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
-import { consultarPlaca, variantesPlaca } from "@/lib/placafipe";
+import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placafipe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ function rateLimited(ip: string) {
 
 const Body = z.object({
   placa: z.string().min(7).max(10),
+  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico"]).optional(),
   cliente: z.object({
     nome: z.string().min(2).max(120),
     telefone: z.string().min(8).max(20),
@@ -88,6 +89,13 @@ export async function POST(req: NextRequest) {
       if (anoModelo >= 1980 && marcaFinal && modeloFinal) {
         viaPrimario = "placafipe";
         const placaPraHub = placafipe.veiculo.placa_alternativa ?? parsed.data.placa;
+
+        // Tipo de veículo: usuário manda explícito OU inferimos do segmento/combustível
+        const tipoInferido = inferirTipoVeiculo({
+          segmento: v.segmento, sub_segmento: v.sub_segmento, combustivel: fipe?.combustivel ?? v.combustivel,
+        });
+        const vehicleTypeFinal = parsed.data.tipo_veiculo ?? tipoInferido ?? "carro";
+
         const result = await quoteFromText({
           brand: marcaFinal,
           model: modeloFinal,
@@ -96,6 +104,7 @@ export async function POST(req: NextRequest) {
           // Código FIPE oficial — se o Hub suportar, pula totalmente o matching
           // por string e usa a FIPE exata (ex: "001255-6" = Palio WK Adventure)
           fipeCode: fipe?.codigo_fipe ?? undefined,
+          vehicleType: vehicleTypeFinal,
           plate: placaPraHub,
           customerName: parsed.data.cliente.nome,
           customerPhone,
@@ -147,6 +156,7 @@ export async function POST(req: NextRequest) {
     try {
       const result = await quoteFromPlate({
         plate: placaVariante,
+        vehicleType: parsed.data.tipo_veiculo,
         customerName: parsed.data.cliente.nome,
         customerPhone,
         leadId: leadIdFinal,

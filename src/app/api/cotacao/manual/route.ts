@@ -23,6 +23,7 @@ const Body = z.object({
   ano: z.number().int().min(1980).max(new Date().getFullYear() + 1),
   combustivel: z.string().trim().max(30).optional(),
   placa: z.string().trim().max(10).optional(), // placa opcional (pra constar na proposta)
+  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico"]).optional(),
   cliente: z.object({
     nome: z.string().min(2).max(120),
     telefone: z.string().min(8).max(20),
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest) {
       model: parsed.data.modelo,
       modelYear: parsed.data.ano,
       fuel: parsed.data.combustivel,
+      vehicleType: parsed.data.tipo_veiculo ?? "carro",
       plate: parsed.data.placa,
       customerName: parsed.data.cliente.nome,
       customerPhone,

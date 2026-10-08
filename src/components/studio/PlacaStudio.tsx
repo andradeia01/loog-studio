@@ -51,6 +51,7 @@ function saveHist(list: HistItem[]) {
 
 export function PlacaStudio() {
   const [placa, setPlaca] = useState("");
+  const [tipoVeiculo, setTipoVeiculo] = useState<"carro" | "moto" | "utilitario" | "eletrico">("carro");
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTel, setClienteTel] = useState("");
   const [loading, setLoading] = useState(false);
@@ -141,6 +142,7 @@ export function PlacaStudio() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           placa: raw,
+          tipo_veiculo: tipoVeiculo,
           cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
         }),
       });
@@ -165,7 +167,7 @@ export function PlacaStudio() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha inesperada.");
     } finally { setLoading(false); }
-  }, [placa, clienteNome, clienteTel, hist]);
+  }, [placa, tipoVeiculo, clienteNome, clienteTel, hist]);
 
   async function baixarPdfPremium() {
     if (!result?.vehicle || !valores) return;
@@ -282,6 +284,7 @@ export function PlacaStudio() {
           modelo: manualModelo.trim(),
           ano: anoNum,
           combustivel: manualCombustivel,
+          tipo_veiculo: tipoVeiculo,
           placa: placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || undefined,
           cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
         }),
@@ -307,6 +310,33 @@ export function PlacaStudio() {
           <p className="text-xs text-loog-muted/90">
             Fluxo: placa + cliente → cotação criada no sistema LOOG (pasta SDR) → PDF premium + mensagem WhatsApp oficial.
           </p>
+
+          <label className="label">Tipo do veículo</label>
+          <div
+            className="flex gap-1 overflow-x-auto rounded-xl border border-loog-border bg-loog-panel/60 p-1"
+            style={{ touchAction: "pan-x", scrollbarWidth: "none" }}
+          >
+            {([
+              { v: "carro",      lb: "🚗 Carro" },
+              { v: "moto",       lb: "🏍️ Moto" },
+              { v: "utilitario", lb: "🚚 Utilitário/Diesel" },
+              { v: "eletrico",   lb: "⚡ Elétrico" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.v}
+                type="button"
+                onClick={() => setTipoVeiculo(opt.v)}
+                className={cn(
+                  "shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition whitespace-nowrap",
+                  tipoVeiculo === opt.v
+                    ? "bg-loog-brand text-white shadow-glow"
+                    : "text-loog-muted hover:text-white",
+                )}
+              >
+                {opt.lb}
+              </button>
+            ))}
+          </div>
 
           <label className="label">Placa</label>
           <input

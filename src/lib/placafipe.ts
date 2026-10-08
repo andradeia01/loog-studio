@@ -108,6 +108,46 @@ export function antigaParaMercosul(placa: string): string | null {
   return p.slice(0, 4) + letra + p.slice(5);
 }
 
+/**
+ * Infere o tipo de veículo (SIVIS/LOOG) a partir do segmento + combustível da PlacaFIPE.
+ *
+ * SIVIS trabalha com 4 tipos distintos:
+ *   - carro       (automóvel comum, flex/gasolina/álcool)
+ *   - moto        (motocicleta/triciclo/ciclomotor)
+ *   - utilitario  (caminhonete, caminhão, utilitário Diesel — tabela de plano diferente)
+ *   - eletrico    (veículos 100% elétricos — tabela separada, prêmio diferente)
+ *
+ * Prioridade: motocicleta sempre vem primeiro no segmento; elétrico detecta via
+ * combustível (campo cilindradas=0 também é bom sinal mas nem sempre vem); diesel/
+ * utilitário via segmento + sub_segmento.
+ *
+ * Retorna null se não conseguir inferir (consultor confirma manualmente).
+ */
+export function inferirTipoVeiculo(input: {
+  segmento?: string | null;
+  sub_segmento?: string | null;
+  combustivel?: string | null;
+}): "carro" | "moto" | "utilitario" | "eletrico" | null {
+  const seg = (input.segmento ?? "").toLowerCase();
+  const sub = (input.sub_segmento ?? "").toLowerCase();
+  const comb = (input.combustivel ?? "").toLowerCase();
+
+  // Elétrico (precedência sobre tipo)
+  if (/el[eé]tric|battery|ev\b|bev\b/.test(comb)) return "eletrico";
+
+  // Moto
+  if (/motoci|motocicleta|moto|triciclo|ciclomoto|scooter/.test(seg + " " + sub)) return "moto";
+
+  // Utilitário / Diesel / Caminhão (SIVIS cobra à parte)
+  if (/caminh|utilit[aá]r|van\b|furg[aã]o|pick[-\s]?up|caminhonete/.test(seg + " " + sub)) return "utilitario";
+  if (/diesel/.test(comb)) return "utilitario";
+
+  // Automóvel = carro
+  if (/autom[oó]v|carro|sed[aã]|hatch|suv|cup[eê]/.test(seg + " " + sub)) return "carro";
+
+  return null;
+}
+
 /** Retorna [placa_original, placa_equivalente] se existir equivalência. */
 export function variantesPlaca(placa: string): string[] {
   const p = (placa || "").toUpperCase().replace(/[^A-Z0-9]/g, "");

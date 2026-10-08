@@ -4,7 +4,7 @@ import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
 import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
-import { consultarPlaca, variantesPlaca } from "@/lib/placafipe";
+import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placafipe";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +12,7 @@ export const maxDuration = 60;
 
 const Body = z.object({
   placa: z.string().min(7).max(10),
+  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico"]).optional(),
   cliente: z.object({
     nome: z.string().min(2).max(120),
     telefone: z.string().min(8).max(20),
@@ -82,12 +83,18 @@ export async function POST(req: NextRequest) {
 
       if (anoModelo >= 1980 && marcaFinal && modeloFinal) {
         const placaPraHub = placafipe.veiculo.placa_alternativa ?? parsed.data.placa;
+        const tipoInferido = inferirTipoVeiculo({
+          segmento: v.segmento, sub_segmento: v.sub_segmento, combustivel: fipe?.combustivel ?? v.combustivel,
+        });
+        const vehicleTypeFinal = parsed.data.tipo_veiculo ?? tipoInferido ?? "carro";
+
         const result = await quoteFromText({
           brand: marcaFinal,
           model: modeloFinal,
           modelYear: anoModelo,
           fuel: fipe?.combustivel ?? v.combustivel ?? undefined,
           fipeCode: fipe?.codigo_fipe ?? undefined,
+          vehicleType: vehicleTypeFinal,
           plate: placaPraHub,
           ...customerExtras,
         });
@@ -138,6 +145,7 @@ export async function POST(req: NextRequest) {
     try {
       const result = await quoteFromPlate({
         plate: placaVariante,
+        vehicleType: parsed.data.tipo_veiculo,
         ...customerExtras,
       });
 

@@ -111,6 +111,7 @@ async function post<T>(path: string, body: Record<string, unknown>): Promise<T> 
  */
 export async function quoteFromPlate(input: {
   plate: string;
+  vehicleType?: TipoVeiculo;
   customerName: string;
   customerPhone: string;
   customerCpf?: string;
@@ -131,6 +132,9 @@ export async function quoteFromPlate(input: {
  * Cria cotação a partir de dados já conhecidos (quando a placa não resolve FIPE
  * ou quando o veículo é novo/zero km). Mesmo retorno de quoteFromPlate.
  */
+/** Tipo de veículo esperado pelo SIVIS/LOOG — define o plano/produto correto. */
+export type TipoVeiculo = "carro" | "moto" | "utilitario" | "eletrico";
+
 export async function quoteFromText(input: {
   brand: string;
   model: string;
@@ -142,6 +146,9 @@ export async function quoteFromText(input: {
    *  direto ao invés de fazer matching por string em marca/modelo — evita
    *  divergência de valor FIPE em modelos com múltiplas versões. */
   fipeCode?: string;
+  /** Tipo do veículo — carro/moto/utilitario/eletrico. SIVIS calcula plano
+   *  diferente por tipo. Default no Hub é 'carro' se omitido. */
+  vehicleType?: TipoVeiculo;
   customerName: string;
   customerPhone: string;
   customerCpf?: string;
