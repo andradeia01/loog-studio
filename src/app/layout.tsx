@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { UpdateToast } from "@/components/UpdateToast";
 
 export const metadata: Metadata = {
   title: "LOOG Studio",
@@ -43,7 +44,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className="dark">
-      <body>{children}</body>
+      <body>
+        {children}
+        <UpdateToast />
+      </body>
     </html>
   );
 }
