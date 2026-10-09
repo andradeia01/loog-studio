@@ -55,32 +55,43 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/80 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="relative flex h-full w-full flex-col overflow-y-auto rounded-none border-0 bg-loog-bg shadow-2xl sm:h-auto sm:max-h-[90vh] sm:max-w-xl sm:rounded-3xl sm:border sm:border-loog-border">
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-loog-border bg-loog-bg/95 p-4 backdrop-blur">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">🎥</span>
-            <span className="font-display text-sm font-black text-white">Nova vistoria</span>
-            <span className="text-[10px] text-loog-muted">· {stepLabel(step)}</span>
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-sm"
+      style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
+    >
+      <div className="flex min-h-full w-full sm:items-center sm:justify-center sm:p-4">
+        <div className="relative flex min-h-[100dvh] w-full flex-col bg-loog-bg shadow-2xl sm:min-h-0 sm:w-auto sm:max-w-xl sm:rounded-3xl sm:border sm:border-loog-border">
+          <div
+            className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-loog-border bg-loog-bg/95 p-3 backdrop-blur sm:p-4"
+            style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-xl">🎥</span>
+              <span className="truncate font-display text-sm font-black text-white">Nova vistoria</span>
+              <span className="hidden text-[10px] text-loog-muted sm:inline">· {stepLabel(step)}</span>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 rounded-full border border-loog-border bg-loog-panel/60 px-3 py-1 text-xs text-loog-muted hover:text-white"
+            >
+              ✕ Fechar
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-loog-border bg-loog-panel/60 px-3 py-1 text-xs text-loog-muted hover:text-white"
-          >
-            ✕ Fechar
-          </button>
-        </div>
+          <div className="border-b border-loog-border/50 bg-loog-panel/30 px-3 py-1.5 text-[10px] text-loog-muted sm:hidden">
+            {stepLabel(step)}
+          </div>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={step}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-            className="flex-1 p-4 sm:p-5"
-          >
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={step}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="flex-1 p-4 sm:p-5"
+              style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+            >
             {step === "form" && (
               <FormStep
                 vehicle={vehicle}
@@ -200,8 +211,9 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
                 onClose={onFinished}
               />
             )}
-          </motion.div>
-        </AnimatePresence>
+            </motion.div>
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );
