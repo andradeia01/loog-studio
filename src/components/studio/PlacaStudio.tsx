@@ -303,23 +303,20 @@ export function PlacaStudio() {
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[380px_1fr]">
-      <aside className="space-y-4">
-        <form onSubmit={consultar} className="card space-y-3 p-5">
+    <div className="grid min-w-0 gap-6 lg:grid-cols-[380px_1fr]">
+      <aside className="min-w-0 space-y-4">
+        <form onSubmit={consultar} className="card space-y-3 p-4 sm:p-5">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Cotação LOOG</h2>
           <p className="text-xs text-loog-muted/90">
             Fluxo: placa + cliente → cotação criada no sistema LOOG (pasta SDR) → PDF premium + mensagem WhatsApp oficial.
           </p>
 
           <label className="label">Tipo do veículo</label>
-          <div
-            className="flex gap-1 overflow-x-auto rounded-xl border border-loog-border bg-loog-panel/60 p-1"
-            style={{ touchAction: "pan-x", scrollbarWidth: "none" }}
-          >
+          <div className="grid grid-cols-2 gap-1 rounded-xl border border-loog-border bg-loog-panel/60 p-1 sm:grid-cols-4">
             {([
               { v: "carro",      lb: "🚗 Carro" },
               { v: "moto",       lb: "🏍️ Moto" },
-              { v: "utilitario", lb: "🚚 Utilitário/Diesel" },
+              { v: "utilitario", lb: "🚚 Utilit." },
               { v: "eletrico",   lb: "⚡ Elétrico" },
             ] as const).map((opt) => (
               <button
@@ -327,7 +324,7 @@ export function PlacaStudio() {
                 type="button"
                 onClick={() => setTipoVeiculo(opt.v)}
                 className={cn(
-                  "shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition whitespace-nowrap",
+                  "rounded-lg px-2 py-2 text-[11px] font-semibold leading-tight transition sm:text-xs",
                   tipoVeiculo === opt.v
                     ? "bg-loog-brand text-white shadow-glow"
                     : "text-loog-muted hover:text-white",
@@ -341,7 +338,7 @@ export function PlacaStudio() {
           <label className="label">Placa</label>
           <input
             type="text" inputMode="text" autoCapitalize="characters" autoCorrect="off" spellCheck={false}
-            className="input text-center font-display text-2xl font-extrabold tracking-[0.3em]"
+            className="input text-center font-display text-lg font-extrabold tracking-[0.2em] sm:text-2xl sm:tracking-[0.3em]"
             placeholder="ABC-1D23" value={formatPlacaMask(placa)}
             onChange={(e) => setPlaca(e.target.value)} maxLength={8} required
           />
@@ -379,7 +376,7 @@ export function PlacaStudio() {
 
         {/* Form de fallback manual (quoteFromText) — abre quando placa falha */}
         {showManual && (
-          <form onSubmit={cotarManual} className="card space-y-3 border-amber-500/30 bg-amber-500/5 p-5">
+          <form onSubmit={cotarManual} className="card space-y-3 border-amber-500/30 bg-amber-500/5 p-4 sm:p-5">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-200">🛠️ Cotação manual</h2>
               <p className="mt-1 text-[11px] text-loog-muted">
