@@ -22,6 +22,8 @@ interface SdrMetrics {
   semana: SdrBucket;
   mes: SdrBucket;
   total: SdrBucket & { ganhos: number };
+  data?: SdrBucket | null;
+  dataEspecifica?: string | null;
   taxaConversao: number;
 }
 
@@ -46,6 +48,8 @@ interface StudioMetrics {
   topConsultores: Consultor[]; // compat
 }
 
+const plural = (n: number, singular: string, plural: string) => `${n} ${n === 1 ? singular : plural}`;
+
 const PERIODOS: { k: Exclude<Periodo, "data">; lb: string; full: string }[] = [
   { k: "hoje", lb: "Hoje", full: "HOJE" },
   { k: "ontem", lb: "Ontem", full: "ONTEM" },
@@ -66,12 +70,10 @@ export function SdrDashboard() {
     let alive = true;
     const load = async () => {
       try {
-        const studioUrl = dataEspecifica
-          ? `/api/sdr/studio-metrics?date=${encodeURIComponent(dataEspecifica)}`
-          : "/api/sdr/studio-metrics";
+        const q = dataEspecifica ? `?date=${encodeURIComponent(dataEspecifica)}` : "";
         const [a, b] = await Promise.all([
-          fetch("/api/sdr/metrics").then((r) => (r.ok ? r.json() : null)),
-          fetch(studioUrl).then((r) => (r.ok ? r.json() : null)),
+          fetch(`/api/sdr/metrics${q}`).then((r) => (r.ok ? r.json() : null)),
+          fetch(`/api/sdr/studio-metrics${q}`).then((r) => (r.ok ? r.json() : null)),
         ]);
         if (!alive) return;
         if (a) setSdr(a as SdrMetrics);
@@ -143,7 +145,7 @@ export function SdrDashboard() {
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.2 }}
           >
-            {sdr ? <SdrSection m={sdr} periodo={periodo === "data" ? "hoje" : periodo} setPeriodo={setPeriodo} /> : <ErroCard />}
+            {sdr ? <SdrSection m={sdr} periodo={periodo} setPeriodo={setPeriodo} dataEspecifica={dataEspecifica} setDataEspecifica={handlePickDate} /> : <ErroCard />}
           </motion.div>
         ) : (
           <motion.div
@@ -181,9 +183,24 @@ function ErroCard() {
   );
 }
 
-function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Exclude<Periodo, "data">; setPeriodo: (p: Periodo) => void }) {
-  const period = m[periodo];
-  const label = PERIODOS.find((p) => p.k === periodo)?.full ?? "";
+function SdrSection({ m, periodo, setPeriodo, dataEspecifica, setDataEspecifica }: {
+  m: SdrMetrics;
+  periodo: Periodo;
+  setPeriodo: (p: Periodo) => void;
+  dataEspecifica: string;
+  setDataEspecifica: (v: string) => void;
+}) {
+  const period: SdrBucket = useMemo(() => {
+    if (periodo === "data") return m.data ?? { leads: 0, cotacoes: 0, valorCotado: 0, valorCotadoFormatado: "R$ 0,00", handoffs: 0, negociando: 0 };
+    return m[periodo];
+  }, [m, periodo]);
+  const label = useMemo(() => {
+    if (periodo === "data" && dataEspecifica) {
+      const [y, mo, d] = dataEspecifica.split("-");
+      return `${d}/${mo}/${y.slice(2)}`;
+    }
+    return PERIODOS.find((p) => p.k === periodo)?.full ?? "";
+  }, [periodo, dataEspecifica]);
   return (
     <div className="space-y-5">
       <div className="relative overflow-hidden rounded-3xl border border-emerald-500/40 bg-gradient-to-br from-emerald-500/20 via-emerald-600/10 to-loog-panel p-5 shadow-[0_0_60px_rgba(16,185,129,0.15)] sm:p-6">
@@ -207,9 +224,9 @@ function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Exclud
             </motion.div>
           </AnimatePresence>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-emerald-200/80">
-            <span>📄 {period.cotacoes} cotação{period.cotacoes === 1 ? "" : "ões"}</span>
+            <span>📄 {plural(period.cotacoes, "cotação", "cotações")}</span>
             <span>·</span>
-            <span>👥 {period.leads} lead{period.leads === 1 ? "" : "s"}</span>
+            <span>👥 {plural(period.leads, "lead", "leads")}</span>
             {m.taxaConversao > 0 && (
               <>
                 <span>·</span>
@@ -217,7 +234,13 @@ function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Exclud
               </>
             )}
           </div>
-          <PeriodoSwitch periodo={periodo} setPeriodo={setPeriodo} tema="emerald" />
+          <PeriodoSwitch
+            periodo={periodo}
+            setPeriodo={setPeriodo}
+            tema="emerald"
+            dataEspecifica={dataEspecifica}
+            setDataEspecifica={setDataEspecifica}
+          />
         </div>
       </div>
 
@@ -227,7 +250,7 @@ function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Exclud
         <MetricCard icon="🚨" label="Pra fechar" value={period.handoffs} color="from-rose-500/20 to-rose-500/5" ringColor="border-rose-500/40" textColor="text-rose-300" highlight={period.handoffs > 0} />
         {periodo === "total" ? (
           <MetricCard icon="🏆" label="Fechados" value={m.total.ganhos} color="from-yellow-500/20 to-yellow-500/5" ringColor="border-yellow-500/40" textColor="text-yellow-300" />
-        ) : periodo === "hoje" || periodo === "ontem" ? (
+        ) : periodo === "hoje" || periodo === "ontem" || periodo === "data" ? (
           <MetricCard icon="💬" label="Negociando" value={period.negociando} color="from-amber-500/20 to-amber-500/5" ringColor="border-amber-500/40" textColor="text-amber-300" />
         ) : (
           <MetricCard icon="⚡" label="Conversão" value={m.taxaConversao} suffix="%" color="from-purple-500/20 to-purple-500/5" ringColor="border-purple-500/40" textColor="text-purple-300" />
@@ -316,9 +339,9 @@ function StudioSection({ m, periodo, setPeriodo, dataEspecifica, setDataEspecifi
             </motion.div>
           </AnimatePresence>
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-amber-200/80">
-            <span>📄 {period.cotacoes} cotação{period.cotacoes === 1 ? "" : "ões"}</span>
+            <span>📄 {plural(period.cotacoes, "cotação", "cotações")}</span>
             <span>·</span>
-            <span>👥 {ranking.length} consultor{ranking.length === 1 ? "" : "es"} ativo{ranking.length === 1 ? "" : "s"}</span>
+            <span>👥 {ranking.length === 1 ? "1 consultor ativo" : `${ranking.length} consultores ativos`}</span>
           </div>
           <PeriodoSwitch
             periodo={periodo}
@@ -373,7 +396,7 @@ function StudioSection({ m, periodo, setPeriodo, dataEspecifica, setDataEspecifi
                       <span className="font-display text-lg font-black">{medal}</span>
                       <div>
                         <div className="font-semibold text-white">{c.nome}</div>
-                        <div className="text-[10px] text-loog-muted">{c.cotacoes} cotação{c.cotacoes === 1 ? "" : "ões"}</div>
+                        <div className="text-[10px] text-loog-muted">{plural(c.cotacoes, "cotação", "cotações")}</div>
                       </div>
                     </div>
                     <div className="text-right">

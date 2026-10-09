@@ -3,13 +3,18 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** GET /api/sdr/metrics — proxy pro Hub, dashboard de métricas. */
-export async function GET() {
+/** GET /api/sdr/metrics?date=YYYY-MM-DD — proxy pro Hub, dashboard de métricas. */
+export async function GET(req: Request) {
   const hubUrl = process.env.HUB_URL;
   const hubKey = process.env.HUB_INTERNAL_API_KEY;
   if (!hubUrl || !hubKey) return NextResponse.json({ _stub: true });
   try {
-    const r = await fetch(`${hubUrl}/v1/sdr/metrics`, {
+    const url = new URL(req.url);
+    const date = url.searchParams.get("date");
+    const target = date
+      ? `${hubUrl}/v1/sdr/metrics?date=${encodeURIComponent(date)}`
+      : `${hubUrl}/v1/sdr/metrics`;
+    const r = await fetch(target, {
       headers: { Authorization: `Bearer ${hubKey}` },
       cache: "no-store",
     });
