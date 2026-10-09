@@ -38,6 +38,10 @@ export interface PlacaFipeResult {
   veiculo: VeiculoInfo;
   fipe: FipeMatch[];
   fipe_recomendado: FipeMatch | null;
+  /** true quando o match é duvidoso (score < 75 ou transmissão/carroceria conflitante). UI deve pedir confirmação. */
+  low_confidence?: boolean;
+  /** Top 3 alternativas pro consultor escolher quando low_confidence. */
+  fipe_alternatives?: FipeMatch[];
   upstream_ms: number | null;
   aviso?: string;
 }
@@ -182,6 +186,96 @@ function formatBRL(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+/**
+ * Classifica a transmissão de uma descrição de veículo.
+ * Detecta variações comuns no PlacaFIPE/SIVIS:
+ *   AUT, AT, CVT, DCT, DSG, DUAL CLUTCH, AUTOMATICO → AUTO
+ *   MT, MEC, MANUAL, MECANICO → MANUAL
+ *   caso contrário, null (não é discriminador seguro)
+ */
+function detectTransmission(s: string | null | undefined): "AUTO" | "MANUAL" | null {
+  const u = String(s ?? "").toUpperCase();
+  // Precisa de palavra separada pra evitar falsos positivos (ex: "FLAT" não é AT)
+  if (/\b(AUT|AT|CVT|DCT|DSG|AUTOM[AÁ]TIC\w*)\b/.test(u)) return "AUTO";
+  if (/\b(MT|MEC|MANUAL|MEC[AÂ]NIC\w*)\b/.test(u)) return "MANUAL";
+  return null;
+}
+
+/** Classifica carroceria: HB (Hatch), SW (Station Wagon), SD (Sedan), SUV, PICKUP. */
+function detectBody(s: string | null | undefined): string | null {
+  const u = String(s ?? "").toUpperCase();
+  if (/\b(SW|STATION|PERUA)\b/.test(u)) return "SW";
+  if (/\b(HB|HATCH\w*)\b/.test(u)) return "HATCH";
+  if (/\b(SD|SEDAN)\b/.test(u)) return "SEDAN";
+  if (/\bSUV\b/.test(u)) return "SUV";
+  if (/\b(PICKUP|PICK[-\s]UP|CAMINH\w*)\b/.test(u)) return "PICKUP";
+  return null;
+}
+
+interface ScoredFipe { match: FipeMatch; score: number; }
+
+/**
+ * Escolhe o melhor match FIPE priorizando semântica em cima da similaridade crua da API.
+ * Score composto:
+ *   similaridade (0-100) +
+ *   match de ano_modelo (+30 se exato) +
+ *   match de transmissão (+20 se bate, -50 se conflita) +
+ *   match de carroceria (+15 se bate, -30 se conflita)
+ */
+function escolherMelhorFipe(
+  fipeArr: FipeMatch[],
+  veiculo: { ano_modelo?: string | null; modelo?: string | null; combustivel?: string | null },
+): { recomendado: FipeMatch | null; low_confidence: boolean; top3: FipeMatch[] } {
+  if (fipeArr.length === 0) return { recomendado: null, low_confidence: false, top3: [] };
+
+  const anoAlvo = Number(veiculo.ano_modelo ?? 0) || null;
+  const transmAlvo = detectTransmission(veiculo.modelo);
+  const bodyAlvo = detectBody(veiculo.modelo);
+  const combAlvo = String(veiculo.combustivel ?? "").toUpperCase();
+
+  const scored: ScoredFipe[] = fipeArr.map((f) => {
+    let score = Number(f.similaridade) || 0;
+
+    // Ano
+    if (anoAlvo && f.ano_modelo === anoAlvo) score += 30;
+    else if (anoAlvo && Math.abs(f.ano_modelo - anoAlvo) === 1) score += 10;
+    else if (anoAlvo && Math.abs(f.ano_modelo - anoAlvo) > 3) score -= 10;
+
+    // Transmissão
+    const t = detectTransmission(f.modelo);
+    if (transmAlvo && t) {
+      if (t === transmAlvo) score += 20;
+      else score -= 50; // conflito direto é motivo forte pra descartar
+    }
+
+    // Carroceria
+    const b = detectBody(f.modelo);
+    if (bodyAlvo && b) {
+      if (b === bodyAlvo) score += 15;
+      else score -= 30;
+    }
+
+    // Combustível (bate se contém o mesmo radical, ex: FLEX, DIESEL, GASOLINA)
+    if (combAlvo && f.combustivel) {
+      const c = f.combustivel.toUpperCase();
+      if (combAlvo.includes("DIESEL") && c.includes("DIESEL")) score += 10;
+      else if (combAlvo.includes("FLEX") && c.includes("FLEX")) score += 10;
+      else if (combAlvo.includes("DIESEL") && !c.includes("DIESEL")) score -= 15;
+    }
+
+    return { match: f, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score || b.match.valor - a.match.valor);
+  const top = scored[0]?.match ?? null;
+  // Low confidence: score baixo OU segundo colocado muito próximo (ambíguo)
+  const low_confidence =
+    (scored[0]?.score ?? 0) < 75
+    || (scored.length > 1 && (scored[0].score - scored[1].score) < 10);
+  const top3 = scored.slice(0, 3).map((s) => s.match);
+  return { recomendado: top, low_confidence, top3 };
+}
+
 export async function consultarPlaca(placaRaw: string): Promise<PlacaFipeResult | PlacaFipeError> {
   const placa = cleanPlaca(placaRaw);
   if (!placa) return { ok: false, status: 400, error: "placa_invalida", message: "Formato inválido. Use ABC1D23 ou ABC1234." };
@@ -223,9 +317,14 @@ export async function consultarPlaca(placaRaw: string): Promise<PlacaFipeResult 
           };
         })
       : [];
-    // mais provável = maior similaridade, desempate pelo maior valor
-    const fipe_recomendado =
-      fipeArr.slice().sort((a, b) => b.similaridade - a.similaridade || b.valor - a.valor)[0] ?? null;
+    // Scoring semântico: ano + transmissão + carroceria + combustível em cima da similaridade.
+    // Evita o bug do "desempate pelo maior valor" que puxava versões AUT quando o veículo
+    // era manual, ou SW quando era HB.
+    const { recomendado: fipe_recomendado, low_confidence, top3 } = escolherMelhorFipe(fipeArr, {
+      ano_modelo: info.ano_modelo,
+      modelo: info.modelo,
+      combustivel: info.combustivel,
+    });
 
     return {
       ok: true,
@@ -249,6 +348,8 @@ export async function consultarPlaca(placaRaw: string): Promise<PlacaFipeResult 
       },
       fipe: fipeArr,
       fipe_recomendado,
+      low_confidence,
+      fipe_alternatives: top3,
       upstream_ms: typeof payload.tempo === "number" ? payload.tempo : null,
       aviso: codigo !== 1 && codigo !== 22 ? payload.msg : undefined,
     };
