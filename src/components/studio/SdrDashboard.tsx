@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-type Periodo = "hoje" | "ontem" | "semana" | "mes" | "total";
+type Periodo = "hoje" | "ontem" | "semana" | "mes" | "total" | "data";
 type Secao = "sdr" | "studio";
 
 interface SdrBucket {
@@ -38,11 +38,15 @@ interface StudioMetrics {
   semana: StudioBucket;
   mes: StudioBucket;
   total: StudioBucket;
-  rankings?: { hoje: Consultor[]; ontem: Consultor[]; semana: Consultor[]; mes: Consultor[]; total: Consultor[] };
-  topConsultores: Consultor[]; // fallback
+  data: StudioBucket | null;
+  dataEspecifica: string | null;
+  rankings: {
+    hoje: Consultor[]; ontem: Consultor[]; semana: Consultor[]; mes: Consultor[]; total: Consultor[]; data: Consultor[];
+  };
+  topConsultores: Consultor[]; // compat
 }
 
-const PERIODOS: { k: Periodo; lb: string; full: string }[] = [
+const PERIODOS: { k: Exclude<Periodo, "data">; lb: string; full: string }[] = [
   { k: "hoje", lb: "Hoje", full: "HOJE" },
   { k: "ontem", lb: "Ontem", full: "ONTEM" },
   { k: "semana", lb: "7 dias", full: "ÚLTIMOS 7 DIAS" },
@@ -56,14 +60,18 @@ export function SdrDashboard() {
   const [loading, setLoading] = useState(true);
   const [periodo, setPeriodo] = useState<Periodo>("hoje");
   const [secao, setSecao] = useState<Secao>("sdr");
+  const [dataEspecifica, setDataEspecifica] = useState<string>(""); // YYYY-MM-DD
 
   useEffect(() => {
     let alive = true;
     const load = async () => {
       try {
+        const studioUrl = dataEspecifica
+          ? `/api/sdr/studio-metrics?date=${encodeURIComponent(dataEspecifica)}`
+          : "/api/sdr/studio-metrics";
         const [a, b] = await Promise.all([
           fetch("/api/sdr/metrics").then((r) => (r.ok ? r.json() : null)),
-          fetch("/api/sdr/studio-metrics").then((r) => (r.ok ? r.json() : null)),
+          fetch(studioUrl).then((r) => (r.ok ? r.json() : null)),
         ]);
         if (!alive) return;
         if (a) setSdr(a as SdrMetrics);
@@ -74,7 +82,7 @@ export function SdrDashboard() {
     load();
     const t = setInterval(load, 15_000);
     return () => { alive = false; clearInterval(t); };
-  }, []);
+  }, [dataEspecifica]);
 
   if (loading && !sdr && !studio) {
     return (
@@ -86,6 +94,13 @@ export function SdrDashboard() {
       </div>
     );
   }
+
+  // Quando usuário escolhe data, pula pro período "data"
+  const handlePickDate = (v: string) => {
+    setDataEspecifica(v);
+    if (v) setPeriodo("data");
+    else if (periodo === "data") setPeriodo("hoje");
+  };
 
   return (
     <div className="space-y-5">
@@ -128,7 +143,7 @@ export function SdrDashboard() {
             exit={{ opacity: 0, x: -20 }}
             transition={{ duration: 0.2 }}
           >
-            {sdr ? <SdrSection m={sdr} periodo={periodo} setPeriodo={setPeriodo} /> : <ErroCard />}
+            {sdr ? <SdrSection m={sdr} periodo={periodo === "data" ? "hoje" : periodo} setPeriodo={setPeriodo} /> : <ErroCard />}
           </motion.div>
         ) : (
           <motion.div
@@ -138,7 +153,15 @@ export function SdrDashboard() {
             exit={{ opacity: 0, x: 20 }}
             transition={{ duration: 0.2 }}
           >
-            {studio ? <StudioSection m={studio} periodo={periodo} setPeriodo={setPeriodo} /> : <ErroCard />}
+            {studio
+              ? <StudioSection
+                  m={studio}
+                  periodo={periodo}
+                  setPeriodo={setPeriodo}
+                  dataEspecifica={dataEspecifica}
+                  setDataEspecifica={handlePickDate}
+                />
+              : <ErroCard />}
           </motion.div>
         )}
       </AnimatePresence>
@@ -158,12 +181,11 @@ function ErroCard() {
   );
 }
 
-function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Periodo; setPeriodo: (p: Periodo) => void }) {
+function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Exclude<Periodo, "data">; setPeriodo: (p: Periodo) => void }) {
   const period = m[periodo];
   const label = PERIODOS.find((p) => p.k === periodo)?.full ?? "";
   return (
     <div className="space-y-5">
-      {/* HERO SDR */}
       <div className="relative overflow-hidden rounded-3xl border border-emerald-500/40 bg-gradient-to-br from-emerald-500/20 via-emerald-600/10 to-loog-panel p-5 shadow-[0_0_60px_rgba(16,185,129,0.15)] sm:p-6">
         <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-emerald-400/20 blur-3xl" />
         <div className="relative">
@@ -199,7 +221,6 @@ function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Period
         </div>
       </div>
 
-      {/* CARDS SDR */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard icon="👥" label="Leads" value={period.leads} color="from-blue-500/20 to-blue-500/5" ringColor="border-blue-500/40" textColor="text-blue-300" />
         <MetricCard icon="📄" label="Cotações" value={period.cotacoes} color="from-emerald-500/20 to-emerald-500/5" ringColor="border-emerald-500/40" textColor="text-emerald-300" />
@@ -213,7 +234,6 @@ function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Period
         )}
       </div>
 
-      {/* VISÃO GERAL SDR */}
       <div className="rounded-2xl border border-loog-border bg-loog-panel/40 p-4">
         <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-loog-muted">
           📈 Visão geral SDR (acumulado)
@@ -241,10 +261,37 @@ function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Period
   );
 }
 
-function StudioSection({ m, periodo, setPeriodo }: { m: StudioMetrics; periodo: Periodo; setPeriodo: (p: Periodo) => void }) {
-  const period = m[periodo];
-  const label = PERIODOS.find((p) => p.k === periodo)?.full ?? "";
-  const ranking = m.rankings?.[periodo] ?? m.topConsultores ?? [];
+function StudioSection({ m, periodo, setPeriodo, dataEspecifica, setDataEspecifica }: {
+  m: StudioMetrics;
+  periodo: Periodo;
+  setPeriodo: (p: Periodo) => void;
+  dataEspecifica: string;
+  setDataEspecifica: (v: string) => void;
+}) {
+  const [showAll, setShowAll] = useState(false);
+
+  // Qual bucket + ranking usar baseado no período
+  const period: StudioBucket = useMemo(() => {
+    if (periodo === "data") return m.data ?? { cotacoes: 0, oportunidade: 0, oportunidadeFormatada: "R$ 0,00" };
+    return m[periodo];
+  }, [m, periodo]);
+
+  const ranking: Consultor[] = useMemo(() => {
+    const r = m.rankings?.[periodo as keyof typeof m.rankings] ?? m.topConsultores ?? [];
+    return r as Consultor[];
+  }, [m, periodo]);
+
+  const label = useMemo(() => {
+    if (periodo === "data" && dataEspecifica) {
+      const [y, mo, d] = dataEspecifica.split("-");
+      return `${d}/${mo}/${y.slice(2)}`;
+    }
+    return PERIODOS.find((p) => p.k === periodo)?.full ?? "";
+  }, [periodo, dataEspecifica]);
+
+  const rankingParaMostrar = showAll ? ranking : ranking.slice(0, 5);
+  const topValue = ranking[0]?.oportunidade ?? 0;
+
   return (
     <div className="space-y-5">
       {/* HERO STUDIO */}
@@ -258,7 +305,7 @@ function StudioSection({ m, periodo, setPeriodo }: { m: StudioMetrics; periodo: 
           </div>
           <AnimatePresence mode="wait">
             <motion.div
-              key={periodo}
+              key={`${periodo}-${dataEspecifica}`}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
@@ -271,9 +318,15 @@ function StudioSection({ m, periodo, setPeriodo }: { m: StudioMetrics; periodo: 
           <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-amber-200/80">
             <span>📄 {period.cotacoes} cotação{period.cotacoes === 1 ? "" : "ões"}</span>
             <span>·</span>
-            <span>👥 {m.topConsultores.length} consultor{m.topConsultores.length === 1 ? "" : "es"} ativo{m.topConsultores.length === 1 ? "" : "s"}</span>
+            <span>👥 {ranking.length} consultor{ranking.length === 1 ? "" : "es"} ativo{ranking.length === 1 ? "" : "s"}</span>
           </div>
-          <PeriodoSwitch periodo={periodo} setPeriodo={setPeriodo} tema="amber" />
+          <PeriodoSwitch
+            periodo={periodo}
+            setPeriodo={setPeriodo}
+            tema="amber"
+            dataEspecifica={dataEspecifica}
+            setDataEspecifica={setDataEspecifica}
+          />
         </div>
       </div>
 
@@ -284,20 +337,31 @@ function StudioSection({ m, periodo, setPeriodo }: { m: StudioMetrics; periodo: 
         <MetricCard icon="📊" label="Ticket médio" value={period.cotacoes > 0 ? `R$ ${(period.oportunidade / period.cotacoes / 100).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"} isText color="from-blue-500/20 to-blue-500/5" ringColor="border-blue-500/40" textColor="text-blue-300" />
       </div>
 
-      {/* TOP 5 CONSULTORES */}
-      {m.topConsultores.length > 0 && (
-        <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-loog-panel p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300">
-              🏆 Top 5 consultores · desde 01/out/26
-            </span>
+      {/* RANKING */}
+      <div className="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-loog-panel p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-amber-300">
+            🏆 Ranking · {label}
+          </span>
+          {ranking.length > 5 && (
+            <button
+              type="button"
+              onClick={() => setShowAll((v) => !v)}
+              className="rounded-full border border-amber-500/30 bg-black/30 px-3 py-1 text-[10px] font-bold text-amber-200 transition hover:text-amber-100"
+            >
+              {showAll ? "Ver só top 5" : `Ver todos (${ranking.length})`}
+            </button>
+          )}
+        </div>
+        {ranking.length === 0 ? (
+          <div className="rounded-xl border border-loog-border bg-loog-panel/30 p-6 text-center text-xs text-loog-muted">
+            Nenhuma cotação neste período.
           </div>
+        ) : (
           <div className="space-y-2">
-            {m.topConsultores.map((c, i) => {
+            {rankingParaMostrar.map((c, i) => {
               const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}º`;
-              const barWidth = m.topConsultores[0].oportunidade > 0
-                ? (c.oportunidade / m.topConsultores[0].oportunidade) * 100
-                : 0;
+              const barWidth = topValue > 0 ? (c.oportunidade / topValue) * 100 : 0;
               return (
                 <div key={c.id} className="relative overflow-hidden rounded-xl border border-loog-border bg-loog-panel/60 p-3">
                   <div
@@ -321,13 +385,13 @@ function StudioSection({ m, periodo, setPeriodo }: { m: StudioMetrics; periodo: 
               );
             })}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* VISÃO GERAL STUDIO */}
       <div className="rounded-2xl border border-loog-border bg-loog-panel/40 p-4">
         <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-loog-muted">
-          📈 Visão geral Studio (desde 01/out/26)
+          📈 Visão geral Studio (desde 01/out/26 · só cotações manuais, exclui IA)
         </div>
         <div className="grid grid-cols-2 gap-2 text-center">
           <div>
@@ -344,9 +408,21 @@ function StudioSection({ m, periodo, setPeriodo }: { m: StudioMetrics; periodo: 
   );
 }
 
-function PeriodoSwitch({ periodo, setPeriodo, tema }: { periodo: Periodo; setPeriodo: (p: Periodo) => void; tema: "emerald" | "amber" }) {
+function PeriodoSwitch({ periodo, setPeriodo, tema, dataEspecifica, setDataEspecifica }: {
+  periodo: Periodo;
+  setPeriodo: (p: Periodo) => void;
+  tema: "emerald" | "amber";
+  dataEspecifica?: string;
+  setDataEspecifica?: (v: string) => void;
+}) {
+  const isEmerald = tema === "emerald";
+  const pillActive = isEmerald ? "border-emerald-400 bg-emerald-500 text-black" : "border-amber-400 bg-amber-500 text-black";
+  const pillIdle = isEmerald
+    ? "border-emerald-500/30 bg-black/30 text-emerald-200/60 hover:text-emerald-100"
+    : "border-amber-500/30 bg-black/30 text-amber-200/60 hover:text-amber-100";
+
   return (
-    <div className="mt-4 flex flex-wrap gap-1.5">
+    <div className="mt-4 flex flex-wrap items-center gap-1.5">
       {PERIODOS.map((o) => (
         <button
           key={o.k}
@@ -354,18 +430,37 @@ function PeriodoSwitch({ periodo, setPeriodo, tema }: { periodo: Periodo; setPer
           onClick={() => setPeriodo(o.k)}
           className={cn(
             "rounded-full border px-3 py-1 text-[11px] font-bold transition",
-            periodo === o.k
-              ? tema === "emerald"
-                ? "border-emerald-400 bg-emerald-500 text-black"
-                : "border-amber-400 bg-amber-500 text-black"
-              : tema === "emerald"
-                ? "border-emerald-500/30 bg-black/30 text-emerald-200/60 hover:text-emerald-100"
-                : "border-amber-500/30 bg-black/30 text-amber-200/60 hover:text-amber-100",
+            periodo === o.k ? pillActive : pillIdle,
           )}
         >
           {o.lb}
         </button>
       ))}
+      {setDataEspecifica && (
+        <label className={cn(
+          "flex items-center gap-1 rounded-full border px-3 py-1 text-[11px] font-bold transition cursor-pointer",
+          periodo === "data" ? pillActive : pillIdle,
+        )}>
+          📅
+          <input
+            type="date"
+            value={dataEspecifica ?? ""}
+            onChange={(e) => setDataEspecifica(e.target.value)}
+            className="bg-transparent text-[11px] font-bold uppercase outline-none [color-scheme:dark]"
+            style={{ minWidth: 110 }}
+          />
+          {dataEspecifica && (
+            <button
+              type="button"
+              onClick={(e) => { e.preventDefault(); setDataEspecifica(""); }}
+              className="ml-1 text-[10px] opacity-70 hover:opacity-100"
+              title="Limpar filtro"
+            >
+              ✕
+            </button>
+          )}
+        </label>
+      )}
     </div>
   );
 }

@@ -10,8 +10,11 @@ export const dynamic = "force-dynamic";
  * Agrega as cotações manuais feitas por consultores humanos
  * (via PlacaStudio / CotacaoCompleta → gravadas em crm_interactions).
  * Visão "geral" tipo gestor: só admin + consultant_sdr enxergam.
+ *
+ * Query params opcionais:
+ * - date=YYYY-MM-DD → inclui o período extra "data específica"
  */
-export async function GET() {
+export async function GET(req: Request) {
   const auth = await requireApproved();
   if (!auth.ok) return auth.res;
   if (auth.auth.role !== "admin" && auth.auth.role !== "consultant_sdr") {
@@ -20,7 +23,10 @@ export async function GET() {
   const admin = createSupabaseAdmin();
   if (!admin) return NextResponse.json({ error: "no supabase admin" }, { status: 500 });
 
-  // Puxa cotações manuais desde 2026-10-01 (início do rankingperíodo que o gestor acompanha)
+  const url = new URL(req.url);
+  const dataEspecifica = url.searchParams.get("date"); // YYYY-MM-DD ou null
+
+  // Puxa cotações manuais desde 2026-10-01 (início do período que o gestor acompanha)
   const since = "2026-10-01T00:00:00.000Z";
   const { data: rows, error } = await admin
     .from("crm_interactions")
@@ -49,7 +55,7 @@ export async function GET() {
 
   interface Bucket { cotacoes: number; oportunidade: number; }
   const mk = (): Bucket => ({ cotacoes: 0, oportunidade: 0 });
-  const hoje = mk(), on = mk(), sem = mk(), mes = mk(), total = mk();
+  const hoje = mk(), on = mk(), sem = mk(), mes = mk(), total = mk(), data = mk();
   type OwnerAgg = { nome: string; cotacoes: number; oportunidade: number };
   const mkOwnerMap = () => new Map<string, OwnerAgg>();
   const ownersPorPeriodo = {
@@ -58,6 +64,7 @@ export async function GET() {
     semana: mkOwnerMap(),
     mes: mkOwnerMap(),
     total: mkOwnerMap(),
+    data: mkOwnerMap(),
   };
 
   const addOwner = (map: Map<string, OwnerAgg>, ownerId: string, cents: number) => {
@@ -71,7 +78,6 @@ export async function GET() {
   for (const r of rows ?? []) {
     const metadata = (r.metadata ?? {}) as Record<string, unknown>;
     const fipeRaw = (metadata.valorFipe ?? metadata.fipeValor ?? "0") as string;
-    // "R$ 114.093,00" -> 11409300 cents
     const cents = (() => {
       if (typeof fipeRaw !== "string") return 0;
       const n = fipeRaw.replace(/[^\d,]/g, "").replace(",", ".");
@@ -87,16 +93,18 @@ export async function GET() {
     if (createdDay === ontem) { on.cotacoes++; on.oportunidade += cents; addOwner(ownersPorPeriodo.ontem, ownerId, cents); }
     if (createdAt >= semanaIso) { sem.cotacoes++; sem.oportunidade += cents; addOwner(ownersPorPeriodo.semana, ownerId, cents); }
     if (createdAt >= mesIso) { mes.cotacoes++; mes.oportunidade += cents; addOwner(ownersPorPeriodo.mes, ownerId, cents); }
+    if (dataEspecifica && createdDay === dataEspecifica) {
+      data.cotacoes++; data.oportunidade += cents; addOwner(ownersPorPeriodo.data, ownerId, cents);
+    }
   }
 
   const fmt = (cents: number) => `R$ ${(cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const withFmt = (b: Bucket) => ({ ...b, oportunidadeFormatada: fmt(b.oportunidade) });
 
-  const top5 = (map: Map<string, OwnerAgg>) =>
+  const rankingCompleto = (map: Map<string, OwnerAgg>) =>
     Array.from(map.entries())
       .map(([id, v]) => ({ id, nome: v.nome, cotacoes: v.cotacoes, oportunidade: v.oportunidade, oportunidadeFormatada: fmt(v.oportunidade) }))
-      .sort((a, b) => b.oportunidade - a.oportunidade)
-      .slice(0, 5);
+      .sort((a, b) => b.oportunidade - a.oportunidade);
 
   return NextResponse.json({
     hoje: withFmt(hoje),
@@ -104,14 +112,17 @@ export async function GET() {
     semana: withFmt(sem),
     mes: withFmt(mes),
     total: withFmt(total),
+    data: dataEspecifica ? withFmt(data) : null,
+    dataEspecifica,
     rankings: {
-      hoje: top5(ownersPorPeriodo.hoje),
-      ontem: top5(ownersPorPeriodo.ontem),
-      semana: top5(ownersPorPeriodo.semana),
-      mes: top5(ownersPorPeriodo.mes),
-      total: top5(ownersPorPeriodo.total),
+      hoje: rankingCompleto(ownersPorPeriodo.hoje),
+      ontem: rankingCompleto(ownersPorPeriodo.ontem),
+      semana: rankingCompleto(ownersPorPeriodo.semana),
+      mes: rankingCompleto(ownersPorPeriodo.mes),
+      total: rankingCompleto(ownersPorPeriodo.total),
+      data: dataEspecifica ? rankingCompleto(ownersPorPeriodo.data) : [],
     },
     // mantém backward-compat
-    topConsultores: top5(ownersPorPeriodo.total),
+    topConsultores: rankingCompleto(ownersPorPeriodo.total).slice(0, 5),
   });
 }
