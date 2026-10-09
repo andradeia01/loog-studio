@@ -6,7 +6,7 @@ import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-p
 import { cn } from "@/lib/utils";
 import { registerPush, unregisterPush, isPushEnabled } from "@/lib/push-client";
 
-type Tab = "status" | "chat" | "leads" | "kanban" | "oficial" | "config";
+type Tab = "dash" | "status" | "chat" | "leads" | "kanban" | "oficial" | "config";
 
 interface SdrStatus {
   connected: boolean;
@@ -65,7 +65,7 @@ const KANBAN_META: Record<KanbanStage, { label: string; cls: string; emoji: stri
 };
 
 export function SdrPane() {
-  const [tab, setTab] = useState<Tab>("status");
+  const [tab, setTab] = useState<Tab>("dash");
   const [status, setStatus] = useState<SdrStatus | null>(null);
   const [leads, setLeads] = useState<LeadConversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,6 +152,7 @@ export function SdrPane() {
       {/* TABS */}
       <nav className="flex gap-1 overflow-x-auto border-b border-loog-border/60">
         {([
+          { k: "dash" as const, label: "Dashboard", icon: "📊", badge: undefined as number | undefined },
           { k: "status" as const, label: "Conexão", icon: "📡", badge: undefined as number | undefined },
           { k: "chat" as const, label: "Chat ao vivo", icon: "💬", badge: unreadCount || undefined },
           { k: "leads" as const, label: "Leads", icon: "👥", badge: leads.length || undefined },
@@ -189,6 +190,7 @@ export function SdrPane() {
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.18 }}
         >
+          {tab === "dash" && <DashboardTab />}
           {tab === "status" && (
             <StatusTab
               status={status}
@@ -753,6 +755,181 @@ function KanbanTab({
 // ──────────────────────────────────────────────────────────────────
 // API OFICIAL (Meta Cloud API)
 // ──────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────
+// DASHBOARD — estilo Hotmart, numeros grandes, impactante
+// ──────────────────────────────────────────────────────────────────
+interface Metrics {
+  hoje: { leads: number; cotacoes: number; valorCotado: number; valorCotadoFormatado: string; handoffs: number; negociando: number };
+  semana: { leads: number; cotacoes: number; valorCotado: number; valorCotadoFormatado: string; handoffs: number };
+  total: { leads: number; cotacoes: number; valorCotado: number; valorCotadoFormatado: string; handoffs: number; ganhos: number };
+  taxaConversao: number;
+  tempoMedioAteCotarMin: number;
+}
+
+function DashboardTab() {
+  const [m, setM] = useState<Metrics | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [periodo, setPeriodo] = useState<"hoje" | "semana" | "total">("hoje");
+
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const r = await fetch("/api/sdr/metrics");
+        if (!r.ok) return;
+        const data = (await r.json()) as Metrics;
+        if (alive) setM(data);
+      } catch { /* silencioso */ }
+      finally { if (alive) setLoading(false); }
+    };
+    load();
+    const t = setInterval(load, 15_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  if (loading && !m) return <SkeletonCard label="Carregando dashboard..." />;
+  if (!m) return <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-xs text-red-200">Não foi possível carregar as métricas.</div>;
+
+  const period = m[periodo];
+  const periodLabel = periodo === "hoje" ? "HOJE" : periodo === "semana" ? "ÚLTIMOS 7 DIAS" : "TOTAL";
+
+  return (
+    <div className="space-y-5">
+      {/* HERO — valor cotado grandao estilo Hotmart */}
+      <div className="relative overflow-hidden rounded-3xl border border-emerald-500/40 bg-gradient-to-br from-emerald-500/20 via-emerald-600/10 to-loog-panel p-6 shadow-[0_0_60px_rgba(16,185,129,0.15)]">
+        <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-emerald-400/20 blur-3xl" />
+        <div className="relative">
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-300">
+              💰 Faturamento potencial · {periodLabel}
+            </span>
+            <PeriodSwitch value={periodo} onChange={setPeriodo} />
+          </div>
+          <div className="font-display text-4xl font-black leading-none text-white sm:text-5xl md:text-6xl">
+            {period.valorCotadoFormatado}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-emerald-200/80">
+            <span>📄 {period.cotacoes} cotação{period.cotacoes === 1 ? "" : "ões"}</span>
+            <span>·</span>
+            <span>👥 {period.leads} lead{period.leads === 1 ? "" : "s"}</span>
+            {m.taxaConversao > 0 && (
+              <>
+                <span>·</span>
+                <span>⚡ {m.taxaConversao}% conversão</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* GRID DE CARDS — números grandes impactantes */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MetricCard icon="👥" label="Leads" value={period.leads} color="from-blue-500/20 to-blue-500/5" ringColor="border-blue-500/40" textColor="text-blue-300" />
+        <MetricCard icon="📄" label="Cotações" value={period.cotacoes} color="from-emerald-500/20 to-emerald-500/5" ringColor="border-emerald-500/40" textColor="text-emerald-300" />
+        <MetricCard icon="🚨" label="Pra fechar" value={period.handoffs} color="from-rose-500/20 to-rose-500/5" ringColor="border-rose-500/40" textColor="text-rose-300" highlight={period.handoffs > 0} />
+        {periodo === "hoje" ? (
+          <MetricCard icon="💬" label="Negociando" value={m.hoje.negociando} color="from-amber-500/20 to-amber-500/5" ringColor="border-amber-500/40" textColor="text-amber-300" />
+        ) : periodo === "total" ? (
+          <MetricCard icon="🏆" label="Fechados" value={m.total.ganhos} color="from-yellow-500/20 to-yellow-500/5" ringColor="border-yellow-500/40" textColor="text-yellow-300" />
+        ) : (
+          <MetricCard icon="⚡" label="Conversão" value={m.taxaConversao} suffix="%" color="from-purple-500/20 to-purple-500/5" ringColor="border-purple-500/40" textColor="text-purple-300" />
+        )}
+      </div>
+
+      {/* RODAPÉ — tempo médio + mini stats */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-2xl border border-loog-border bg-loog-panel/40 p-4">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-loog-muted">
+            ⏱️ Tempo médio até cotar
+          </div>
+          <div className="mt-1 flex items-baseline gap-1">
+            <span className="font-display text-3xl font-black text-white">{m.tempoMedioAteCotarMin}</span>
+            <span className="text-sm text-loog-muted">min</span>
+          </div>
+          <div className="mt-1 text-[11px] text-loog-muted">
+            Do primeiro oi até a cotação sair.
+          </div>
+        </div>
+        <div className="rounded-2xl border border-loog-border bg-loog-panel/40 p-4">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-loog-muted">
+            📈 Visão geral (sempre)
+          </div>
+          <div className="mt-1 grid grid-cols-3 gap-2 text-center">
+            <div>
+              <div className="font-display text-xl font-black text-white">{m.total.leads}</div>
+              <div className="text-[10px] text-loog-muted">leads</div>
+            </div>
+            <div>
+              <div className="font-display text-xl font-black text-emerald-300">{m.total.cotacoes}</div>
+              <div className="text-[10px] text-loog-muted">cotações</div>
+            </div>
+            <div>
+              <div className="font-display text-xl font-black text-yellow-300">{m.total.ganhos}</div>
+              <div className="text-[10px] text-loog-muted">fechados</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-loog-border bg-loog-panel/30 p-3 text-center text-[10px] text-loog-muted">
+        🔄 Atualiza a cada 15 segundos · dados em tempo real do Hub LOOG
+      </div>
+    </div>
+  );
+}
+
+function PeriodSwitch({ value, onChange }: { value: "hoje" | "semana" | "total"; onChange: (v: "hoje" | "semana" | "total") => void }) {
+  const opts = [
+    { k: "hoje" as const, lb: "Hoje" },
+    { k: "semana" as const, lb: "7d" },
+    { k: "total" as const, lb: "Total" },
+  ];
+  return (
+    <div className="flex gap-0.5 rounded-full border border-emerald-500/30 bg-black/30 p-0.5">
+      {opts.map((o) => (
+        <button
+          key={o.k}
+          type="button"
+          onClick={() => onChange(o.k)}
+          className={cn(
+            "rounded-full px-2.5 py-0.5 text-[10px] font-bold transition",
+            value === o.k ? "bg-emerald-500 text-black" : "text-emerald-200/60 hover:text-emerald-100",
+          )}
+        >
+          {o.lb}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MetricCard({ icon, label, value, suffix, color, ringColor, textColor, highlight }: {
+  icon: string;
+  label: string;
+  value: number;
+  suffix?: string;
+  color: string;
+  ringColor: string;
+  textColor: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div className={cn(
+      "relative overflow-hidden rounded-2xl border bg-gradient-to-br p-4 transition",
+      ringColor, color,
+      highlight && "animate-pulse",
+    )}>
+      <div className="text-2xl">{icon}</div>
+      <div className={cn("mt-2 font-display text-3xl font-black leading-none", textColor)}>
+        {value}{suffix ?? ""}
+      </div>
+      <div className="mt-1 text-[10px] font-bold uppercase tracking-widest text-loog-muted">
+        {label}
+      </div>
+    </div>
+  );
+}
+
 function OficialTab() {
   const [cfg, setCfg] = useState({
     metaAccessToken: "",
