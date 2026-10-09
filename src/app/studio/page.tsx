@@ -111,6 +111,7 @@ export default async function StudioPage() {
       consultantSeed={consultantSeed}
       authEnabled={supabaseConfigured()}
       userId={userAuth?.userId ?? null}
+      userRole={userAuth?.role ?? null}
     />
   );
 }

@@ -50,12 +50,15 @@ interface Props {
   consultantSeed: { fullName?: string; phone?: string; instagram?: string; city?: string } | null;
   authEnabled: boolean;
   userId?: string | null;
+  userRole?: "admin" | "gestor" | "consultant" | "consultant_sdr" | null;
 }
 
 export function StudioApp({
   initialTemplates, readyArts, readyFolders = [], readyVideos = [],
   readyVideoFolders = [], consultantSeed, authEnabled, userId = null,
+  userRole = null,
 }: Props) {
+  const canSeeSdr = userRole === "admin" || userRole === "consultant_sdr";
   const [activeMundo, setActiveMundo] = useState<MundoKey>("home");
   const [activeSub, setActiveSub] = useState<string | null>(null);
 
@@ -113,7 +116,7 @@ export function StudioApp({
         { key: "placa", label: "Cotação Rápida", icon: "⚡" },
         { key: "completa", label: "Cotação Completa", icon: "📄" },
         { key: "simulador", label: "Simulador", icon: "🧮" },
-        { key: "sdr", label: "SDR WhatsApp", icon: "💬" },
+        ...(canSeeSdr ? [{ key: "sdr", label: "SDR WhatsApp", icon: "💬" }] : []),
         { key: "crm", label: "CRM / Leads", icon: "👥" },
         { key: "pipeline", label: "Pipeline", icon: "📈" },
         { key: "followups", label: "Follow-ups", icon: "🔔" },
@@ -211,7 +214,7 @@ export function StudioApp({
         consultant, setConsultant, dataOk,
         category, setCategory, filtered,
         readyArts, readyFolders, readyVideos, readyVideoFolders,
-        userId, onNavigate: handleNavigate,
+        userId, canSeeSdr, onNavigate: handleNavigate,
       })}
     </StudioShell>
   );
@@ -233,11 +236,12 @@ interface RenderOpts {
   readyVideos: ReadyVideo[];
   readyVideoFolders: VideoFolder[];
   userId: string | null;
+  canSeeSdr: boolean;
   onNavigate: (m: MundoKey, s?: string | null) => void;
 }
 
 function renderConteudo(opts: RenderOpts) {
-  const { activeMundo, activeSub } = opts;
+  const { activeMundo, activeSub, canSeeSdr } = opts;
 
   if (activeMundo === "home") {
     return (
@@ -266,7 +270,17 @@ function renderConteudo(opts: RenderOpts) {
         { icon: "🔀", title: "Converter em cotação real", desc: "1 clique: envia pro Hub e grava proposta no SIVIS." },
       ]}
     />;
-    if (activeSub === "sdr") return <SdrPane />;
+    if (activeSub === "sdr") {
+      if (!canSeeSdr) {
+        return (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 text-center text-sm text-amber-200">
+            🔒 Aba exclusiva pros perfis <b>Consultor + SDR</b> e <b>Administrador</b>.
+            Fala com o administrador se precisar de acesso.
+          </div>
+        );
+      }
+      return <SdrPane />;
+    }
     if (activeSub === "crm") return <CrmLeads />;
     if (activeSub === "pipeline") return <MundoPane
       icon="📈"

@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServer } from "./supabase/server";
 
+export type UserRole = "admin" | "gestor" | "consultant" | "consultant_sdr";
+
 export interface AuthContext {
   userId: string;
   email: string;
-  role: "admin" | "gestor" | "consultant";
+  role: UserRole;
   status: "pending" | "approved" | "rejected";
   groupId?: string | null;
+}
+
+/** Papéis que podem ver a aba SDR WhatsApp. */
+export function canSeeSdr(role: UserRole): boolean {
+  return role === "admin" || role === "consultant_sdr";
 }
 
 /**
@@ -31,7 +38,7 @@ export async function currentUser(): Promise<AuthContext | null> {
   return {
     userId: user.id,
     email: profile.email ?? user.email ?? "",
-    role: (profile.role as "admin" | "gestor" | "consultant") ?? "consultant",
+    role: (profile.role as UserRole) ?? "consultant",
     status: (profile.status as "pending" | "approved" | "rejected") ?? "pending",
     groupId: (profile.group_id as string | null | undefined) ?? null,
   };

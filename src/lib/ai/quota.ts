@@ -15,12 +15,15 @@ export function roleKey(role: "admin" | "gestor" | "consultant"): Role {
  */
 export async function checkQuota(
   profileId: string,
-  role: "admin" | "gestor" | "consultant",
+  role: "admin" | "gestor" | "consultant" | "consultant_sdr",
   kind: QuotaKind,
   amount = 1,
 ): Promise<{ ok: true; limit: number; used: number; remaining: number } | { ok: false; reason: string; limit: number; used: number }> {
   const quotas = await getQuotas();
-  const limit = quotas[roleKey(role)][kind];
+  // consultant_sdr herda a quota do consultant comum
+  const effectiveRole: "admin" | "gestor" | "consultant" =
+    role === "consultant_sdr" ? "consultant" : role;
+  const limit = quotas[roleKey(effectiveRole)][kind];
   if (limit < 0) return { ok: true, limit: -1, used: 0, remaining: -1 };
   const used = await quotaUsedThisMonth(profileId, kind === "voice_chars" ? "voice" : kind === "transcribe_min" ? "transcribe" : kind);
   if (used + amount > limit) {
