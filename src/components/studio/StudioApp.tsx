@@ -24,6 +24,7 @@ import { CotacaoCompleta } from "./CotacaoCompleta";
 import { CrmLeads } from "./CrmLeads";
 import { SdrPane } from "./SdrPane";
 import { SdrDashboard } from "./SdrDashboard";
+import { InspectionPane } from "@/components/inspection/InspectionPane";
 import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
 import { StudioHome } from "./StudioHome";
 import { MundoPane } from "./MundoPane";
@@ -115,6 +116,14 @@ export function StudioApp({
       color: "from-emerald-500/20 to-amber-500/5",
       subs: [],
     }] : []),
+    {
+      key: "vistoria" as MundoKey,
+      label: "Vistoria",
+      icon: "🎥",
+      short: "Vistoria por vídeo — IA faz a aprovação na hora",
+      color: "from-purple-500/20 to-fuchsia-500/5",
+      subs: [],
+    },
     {
       key: "vendas",
       label: "Vendas",
@@ -276,6 +285,10 @@ function renderConteudo(opts: RenderOpts) {
       );
     }
     return <SdrDashboard />;
+  }
+
+  if (activeMundo === "vistoria") {
+    return <InspectionPane />;
   }
 
   if (activeMundo === "vendas") {
