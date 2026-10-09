@@ -1,0 +1,28 @@
+{
+  "name": "LOOG Studio",
+  "short_name": "LOOG",
+  "description": "Studio oficial dos consultores LOOG Proteção Veicular",
+  "start_url": "/studio?mundo=home",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "icons": [
+    { "src": "/icon-96.png", "sizes": "96x96", "type": "image/png" },
+    { "src": "/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "SDR WhatsApp",
+      "url": "/studio?mundo=vendas&sub=sdr",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Cotação Rápida",
+      "url": "/studio?mundo=vendas&sub=placa",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}
