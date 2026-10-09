@@ -22,6 +22,7 @@ import { TweetStudio } from "./TweetStudio";
 import { PlacaStudio } from "./PlacaStudio";
 import { CotacaoCompleta } from "./CotacaoCompleta";
 import { CrmLeads } from "./CrmLeads";
+import { CrmPipeline } from "./CrmPipeline";
 import { SdrPane } from "./SdrPane";
 import { SdrDashboard } from "./SdrDashboard";
 import { InspectionPane } from "@/components/inspection/InspectionPane";
@@ -328,18 +329,7 @@ function renderConteudo(opts: RenderOpts) {
       return <SdrDashboard />;
     }
     if (activeSub === "crm") return <CrmLeads />;
-    if (activeSub === "pipeline") return <MundoPane
-      icon="📈"
-      title="Pipeline de vendas"
-      subtitle="Kanban visual do seu funil: novo lead → contactado → negociando → fechado."
-      heroColor="from-blue-500/20 via-indigo-500/10 to-transparent"
-      features={[
-        { icon: "🗂️", title: "Kanban drag-and-drop", desc: "Arraste cards entre colunas pra mudar o status." },
-        { icon: "📊", title: "Taxa de conversão", desc: "Veja quantos % passam de cada etapa." },
-        { icon: "⏱️", title: "Tempo médio por etapa", desc: "Identifique gargalos no seu funil." },
-        { icon: "🔔", title: "Alerta de leads parados", desc: "Lead sem contato há X dias? Vira notificação." },
-      ]}
-    />;
+    if (activeSub === "pipeline") return <CrmPipeline />;
     if (activeSub === "followups") return <MundoPane
       icon="🔔"
       title="Follow-ups automáticos"
