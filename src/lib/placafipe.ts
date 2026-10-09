@@ -127,14 +127,40 @@ export function antigaParaMercosul(placa: string): string | null {
  *
  * Retorna null se não conseguir inferir (consultor confirma manualmente).
  */
+/**
+ * Modelos famosos de pickup/van/furgão/caminhão leve que a SIVIS cobra na tabela
+ * "utilitario" (prêmio diferente). Checagem é feita contra o texto completo do modelo
+ * em uppercase, com word boundary, pra não casar "RAM" em "RAMONA".
+ */
+const UTILITARIO_MODELS = [
+  // Pickup leve/média
+  "HILUX", "STRADA", "SAVEIRO", "MONTANA", "OROCH", "RANGER", "AMAROK",
+  "FRONTIER", "DAKOTA", "COURIER", "L200", "TRITON", "TORO", "MARUTI",
+  "RAM", "F-?250", "F-?350", "F-?1000", "F-?4000",
+  // SIVIS/LOOG também trata S10 como pickup
+  "S-?10", "SILVERADO", "D-?20", "D-?10", "CHEYENNE", "D-?MAX",
+  // Pickup pesada/comercial
+  "BONGO", "HR\\b", "K-?2500", "ACCELO", "ATEGO", "AXOR", "ATRON", "VW\\s*\\d+",
+  // Van / Furgão / Micro-ônibus leve
+  "MASTER", "DUCATO", "SCUDO", "BOXER", "SPRINTER", "DAILY", "TRAFIC", "JUMPY",
+  "JUMPER", "KANGOO", "PARTNER", "BERLINGO", "DOBLO", "DOBL[ÒÓO]", "FIORINO",
+  "COMBI", "TRANSIT", "EXPRESS", "VITO", "VIANO", "H100", "H1\\b", "STARIA",
+  "EXPERT", "TOURAN\\s*CARGO", "CARGO\\s*BUS", "CITRINE",
+  // Caminhões / Caminhonetes identificadas pelo sufixo
+  "CARGO", "FURG[AÃ]O", "CHASSI", "TB\\s*DIESEL",
+];
+const UTILITARIO_RE = new RegExp("\\b(" + UTILITARIO_MODELS.join("|") + ")\\b", "i");
+
 export function inferirTipoVeiculo(input: {
   segmento?: string | null;
   sub_segmento?: string | null;
   combustivel?: string | null;
+  modelo?: string | null;
 }): "carro" | "moto" | "utilitario" | "eletrico" | null {
   const seg = (input.segmento ?? "").toLowerCase();
   const sub = (input.sub_segmento ?? "").toLowerCase();
   const comb = (input.combustivel ?? "").toLowerCase();
+  const modelo = (input.modelo ?? "").toUpperCase();
 
   // Elétrico (precedência sobre tipo)
   if (/el[eé]tric|battery|ev\b|bev\b/.test(comb)) return "eletrico";
@@ -142,9 +168,13 @@ export function inferirTipoVeiculo(input: {
   // Moto
   if (/motoci|motocicleta|moto|triciclo|ciclomoto|scooter/.test(seg + " " + sub)) return "moto";
 
-  // Utilitário / Diesel / Caminhão (SIVIS cobra à parte)
+  // Utilitário por segmento (vai ser raro — PlacaFIPE devolve segmento="AUTOMOVEL" na maioria)
   if (/caminh|utilit[aá]r|van\b|furg[aã]o|pick[-\s]?up|caminhonete/.test(seg + " " + sub)) return "utilitario";
+  // Utilitário por combustível (DIESEL sempre vai pra tabela utilitário na SIVIS)
   if (/diesel/.test(comb)) return "utilitario";
+  // Utilitário por MODELO — captura Bongo, Master, Hilux, Strada, Toro etc
+  // mesmo quando segmento vem genérico e combustível não foi informado
+  if (modelo && UTILITARIO_RE.test(modelo)) return "utilitario";
 
   // Automóvel = carro
   if (/autom[oó]v|carro|sed[aã]|hatch|suv|cup[eê]/.test(seg + " " + sub)) return "carro";

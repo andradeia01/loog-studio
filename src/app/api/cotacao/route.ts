@@ -90,9 +90,15 @@ export async function POST(req: NextRequest) {
         viaPrimario = "placafipe";
         const placaPraHub = placafipe.veiculo.placa_alternativa ?? parsed.data.placa;
 
-        // Tipo de veículo: usuário manda explícito OU inferimos do segmento/combustível
+        // Tipo de veículo: usuário manda explícito OU inferimos do segmento/combustível/MODELO.
+        // Passar modelo é fundamental — PlacaFIPE devolve segmento genérico ("AUTOMOVEL")
+        // mesmo pra pickup/van/caminhão leve, então sem modelo o Bongo/Master/Toro iam
+        // parar na tabela errada ("carro") com prêmio mais baixo que o devido.
         const tipoInferido = inferirTipoVeiculo({
-          segmento: v.segmento, sub_segmento: v.sub_segmento, combustivel: fipe?.combustivel ?? v.combustivel,
+          segmento: v.segmento,
+          sub_segmento: v.sub_segmento,
+          combustivel: fipe?.combustivel ?? v.combustivel,
+          modelo: modeloFinal,
         });
         const vehicleTypeFinal = parsed.data.tipo_veiculo ?? tipoInferido ?? "carro";
 
