@@ -229,28 +229,37 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
   error: string | null;
 }) {
   const [autoFillLoading, setAutoFillLoading] = useState(false);
+  const [autoFillMsg, setAutoFillMsg] = useState<string | null>(null);
 
   const tryAutoFill = async () => {
-    if (!vehicle.placa || vehicle.placa.length < 6) return;
+    if (!vehicle.placa || vehicle.placa.length < 6) {
+      setAutoFillMsg("Digita a placa completa (7 caracteres).");
+      return;
+    }
     setAutoFillLoading(true);
+    setAutoFillMsg(null);
     try {
-      // Reaproveita a resolução FIPE via /api/sivis/cotacao se possível
-      const r = await fetch(`/api/sivis/cotacao?placa=${encodeURIComponent(vehicle.placa)}&dryRun=1`);
-      if (r.ok) {
-        const j = await r.json();
-        if (j.vehicle) {
-          setVehicle({
-            ...vehicle,
-            marca: j.vehicle.brand ?? vehicle.marca,
-            modelo: j.vehicle.model ?? vehicle.modelo,
-            ano: j.vehicle.year ?? vehicle.ano,
-            cor: j.vehicle.color ?? vehicle.cor,
-            fipeValor: j.vehicle.fipeFormatted ?? vehicle.fipeValor,
-            fipeCodigo: j.vehicle.fipeCode ?? vehicle.fipeCodigo,
-          });
-        }
+      const r = await fetch(`/api/vehicle/lookup?placa=${encodeURIComponent(vehicle.placa)}`);
+      const j = await r.json();
+      if (!r.ok) {
+        setAutoFillMsg(j.message ?? j.error ?? "não achamos essa placa — preencha manualmente");
+        return;
       }
-    } catch { /* silencioso — user preenche manual */ }
+      if (j.vehicle) {
+        setVehicle({
+          ...vehicle,
+          marca: j.vehicle.brand ?? vehicle.marca,
+          modelo: j.vehicle.model ?? vehicle.modelo,
+          ano: j.vehicle.year ?? vehicle.ano,
+          cor: j.vehicle.color ?? vehicle.cor,
+          fipeValor: j.vehicle.fipeFormatted ?? vehicle.fipeValor,
+          fipeCodigo: j.vehicle.fipeCode ?? vehicle.fipeCodigo,
+        });
+        setAutoFillMsg(`✓ ${j.vehicle.brand} ${j.vehicle.model} ${j.vehicle.year ?? ""}`);
+      }
+    } catch (err) {
+      setAutoFillMsg(`erro: ${(err as Error).message}`);
+    }
     finally { setAutoFillLoading(false); }
   };
 
@@ -280,6 +289,16 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
             {autoFillLoading ? "…" : "🔍 Buscar"}
           </button>
         </div>
+        {autoFillMsg && (
+          <div className={cn(
+            "mt-2 rounded-lg border px-3 py-1.5 text-[11px]",
+            autoFillMsg.startsWith("✓")
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+              : "border-amber-500/30 bg-amber-500/10 text-amber-200",
+          )}>
+            {autoFillMsg}
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3">
