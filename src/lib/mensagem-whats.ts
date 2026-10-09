@@ -73,7 +73,13 @@ export function montarMensagemWhats(input: MontarMensagemInput): string {
     // capitaliza
     .replace(/^(.)/, (c) => c.toUpperCase());
 
-  const marcaModelo = `${input.veiculo.brand} - ${input.veiculo.model}`.trim();
+  // Sivisweb/FIPE devolvem a marca com prefixo da sigla ("VW - VolksWagen",
+  // "GM - CHEVROLET"), o que ficaria "VW - VolksWagen - Nivus..." no template.
+  // Mantemos só a parte depois do " - " quando existir.
+  const brandClean = input.veiculo.brand.includes(" - ")
+    ? input.veiculo.brand.split(" - ").slice(1).join(" - ").trim()
+    : input.veiculo.brand.trim();
+  const marcaModelo = `${brandClean} - ${input.veiculo.model}`.trim();
   const adicionaisAtivos = input.coberturas.filter((c) => c.ligado);
 
   // Monta emojis em runtime via fromCodePoint — imune a corrupção de build.
@@ -100,7 +106,7 @@ export function montarMensagemWhats(input: MontarMensagemInput): string {
     `Valor FIPE: ${input.veiculo.fipeFormatted}`,
     ``,
     `Investimento inicial: *${input.valores.investimentoInicialFormatted}*`,
-    `Valor Total do Plano: *${input.valores.mensalidadeFormatted}*`,
+    `Valor Mensal do Plano: *${input.valores.mensalidadeFormatted}*`,
     ``,
     `Veja os Benefícios já *inclusos* no seu plano:`,
     ``,
@@ -120,7 +126,9 @@ export function montarMensagemWhats(input: MontarMensagemInput): string {
     `*DIFERENCIAIS DA LOOG*`,
     ...DIFERENCIAIS,
     ``,
-    `Validade da Proposta: ${input.validadeDias} dias.`,
+    // Validade padrão LOOG = 24h (urgência de fechamento, não 5 dias).
+    // Ignora input.validadeDias e usa texto fixo.
+    `Validade da Proposta: 24 HORAS`,
   );
 
   return linhas.join("\n");
