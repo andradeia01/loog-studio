@@ -12,7 +12,7 @@ const CreateSchema = z.object({
   full_name: z.string().trim().min(2).max(120),
   phone: z.string().trim().max(24).optional().nullable(),
   city: z.string().trim().max(80).optional().nullable(),
-  role: z.enum(["admin", "gestor", "consultant"]).default("gestor"),
+  role: z.enum(["admin", "gestor", "consultant", "consultant_sdr"]).default("gestor"),
   group_id: z.string().uuid().nullable().optional(),
 });
 
@@ -73,7 +73,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("profiles")
     .select("id, email, full_name, phone, city, role, status, group_id, created_at, groups(name)")
-    .in("role", ["admin", "gestor", "consultant"])
+    .in("role", ["admin", "gestor", "consultant", "consultant_sdr"])
     .order("role")
     .order("created_at", { ascending: false });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
