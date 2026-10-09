@@ -15,6 +15,7 @@ export type CaptureKind =
   | "FRAME"
   | "ODOMETER_PHOTO"
   | "CHASSIS_PHOTO"
+  | "ENGINE_PHOTO"
   | "DAMAGE_PHOTO";
 
 export interface Inspection {
@@ -70,7 +71,15 @@ export interface AiResult {
   plateMatches: boolean | null; // bate com placa cadastrada?
   odometerKm: number | null;
   odometerReadable: boolean;
+  // Chassi
   chassisVisible: boolean;
+  chassisNumber: string | null;      // VIN de 17 chars quando legível
+  chassisReadable: boolean;
+  // Cofre do motor
+  engineBayVisible: boolean;         // capô aberto + motor visível
+  engineBayCondition: "normal" | "reparos" | "irregularidades" | "unknown";
+  engineBayObservations: string[];   // ex: "soldagem recente perto do bloco", "etiqueta de identificação legível"
+  // Avarias
   damages: Array<{
     description: string;
     severity: "minor" | "moderate" | "severe";

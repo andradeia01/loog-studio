@@ -30,10 +30,15 @@ do $$ begin
     'VIDEO',             -- gravação principal 360º
     'FRAME',             -- frame extraído do vídeo
     'ODOMETER_PHOTO',    -- foto extra do painel ligado
-    'CHASSIS_PHOTO',     -- foto do chassi (opcional)
+    'CHASSIS_PHOTO',     -- foto do número do chassi (grav.ante-cabine ou motor)
+    'ENGINE_PHOTO',      -- foto do cofre do motor (capô aberto)
     'DAMAGE_PHOTO'       -- foto extra de avaria apontada pela IA
   );
 exception when duplicate_object then null; end $$;
+
+-- Caso o enum já existisse sem ENGINE_PHOTO (migration rodada antes dessa alteração),
+-- adiciona o valor idempotente:
+alter type capture_kind add value if not exists 'ENGINE_PHOTO';
 
 -- ============== Tabela principal ==============
 create table if not exists public.inspections (

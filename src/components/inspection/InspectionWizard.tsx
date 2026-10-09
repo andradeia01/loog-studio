@@ -13,6 +13,8 @@ type Step =
   | "selfie"          // foto do operador
   | "record"          // gravação principal
   | "odometer"        // foto extra do odômetro
+  | "chassis"         // foto do número do chassi (VIN)
+  | "engine"          // foto do cofre do motor (capô aberto)
   | "uploading"       // enviando pro servidor
   | "processing"      // IA analisando
   | "done";           // resultado
@@ -128,8 +130,41 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
             )}
 
             {step === "odometer" && inspectionId && (
-              <OdometerStep
+              <PhotoCaptureStep
+                key="odometer"
                 inspectionId={inspectionId}
+                kind="ODOMETER_PHOTO"
+                title="Foto do odômetro"
+                subtitle={<>Painel <b className="text-amber-300">ligado</b> — tira uma foto chapada do km total.</>}
+                ctaLabel="Enviar e seguir"
+                onNext={() => setStep("chassis")}
+                onError={(msg) => setErrorMsg(msg)}
+                error={errorMsg}
+              />
+            )}
+
+            {step === "chassis" && inspectionId && (
+              <PhotoCaptureStep
+                key="chassis"
+                inspectionId={inspectionId}
+                kind="CHASSIS_PHOTO"
+                title="Foto do chassi (VIN)"
+                subtitle={<>Número de <b className="text-amber-300">17 caracteres</b>, gravado na soleira da porta do motorista, parede corta-fogo do motor, longarina ou vidro. Chega bem perto pra ficar legível.</>}
+                ctaLabel="Enviar e seguir"
+                onNext={() => setStep("engine")}
+                onError={(msg) => setErrorMsg(msg)}
+                error={errorMsg}
+              />
+            )}
+
+            {step === "engine" && inspectionId && (
+              <PhotoCaptureStep
+                key="engine"
+                inspectionId={inspectionId}
+                kind="ENGINE_PHOTO"
+                title="Foto do cofre do motor"
+                subtitle={<><b className="text-amber-300">Capô aberto</b> — foto do motor inteiro. A IA vai checar adulterações, soldagem recente e etiqueta de identificação.</>}
+                ctaLabel="Enviar e analisar"
                 onNext={async () => {
                   setStep("processing");
                   setErrorMsg(null);
@@ -171,13 +206,15 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
 
 function stepLabel(s: Step): string {
   return {
-    form: "1/6 Dados do veículo",
-    permissions: "2/6 Permissões",
-    selfie: "3/6 Foto do operador",
-    record: "4/6 Gravação",
-    odometer: "5/6 Odômetro",
+    form: "1/8 Dados do veículo",
+    permissions: "2/8 Permissões",
+    selfie: "3/8 Foto do operador",
+    record: "4/8 Gravação",
+    odometer: "5/8 Odômetro",
+    chassis: "6/8 Chassi",
+    engine: "7/8 Cofre do motor",
     uploading: "Enviando…",
-    processing: "6/6 IA analisando",
+    processing: "8/8 IA analisando",
     done: "Resultado",
   }[s];
 }
@@ -630,11 +667,15 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
 }
 
 // ============================================================
-// ODOMETER STEP — foto extra do painel ligado
+// PHOTO CAPTURE STEP — reutilizável (odômetro, chassi, cofre do motor)
 // ============================================================
-function OdometerStep({ inspectionId, onNext, onError, error }: {
+function PhotoCaptureStep({ inspectionId, kind, title, subtitle, ctaLabel, onNext, onError, error }: {
   inspectionId: string;
-  onNext: () => void;
+  kind: "ODOMETER_PHOTO" | "CHASSIS_PHOTO" | "ENGINE_PHOTO";
+  title: string;
+  subtitle: React.ReactNode;
+  ctaLabel: string;
+  onNext: () => void | Promise<void>;
   onError: (msg: string) => void;
   error: string | null;
 }) {
@@ -676,12 +717,12 @@ function OdometerStep({ inspectionId, onNext, onError, error }: {
     setUploading(true);
     try {
       const f = new FormData();
-      f.append("kind", "ODOMETER_PHOTO");
-      f.append("file", captured, "odometer.jpg");
+      f.append("kind", kind);
+      f.append("file", captured, `${kind.toLowerCase()}.jpg`);
       const r = await fetch(`/api/inspection/${inspectionId}/upload`, { method: "POST", body: f });
       if (!r.ok) throw new Error((await r.json()).error ?? "upload falhou");
       streamRef.current?.getTracks().forEach((t) => t.stop());
-      onNext();
+      await onNext();
     } catch (err) { onError((err as Error).message); }
     finally { setUploading(false); }
   };
@@ -689,12 +730,12 @@ function OdometerStep({ inspectionId, onNext, onError, error }: {
   return (
     <div className="space-y-3">
       <div className="text-center">
-        <h3 className="font-display text-lg font-black text-white">Foto do odômetro</h3>
-        <p className="text-xs text-loog-muted">Painel <b className="text-amber-300">ligado</b> — tira uma foto chapada do km total.</p>
+        <h3 className="font-display text-lg font-black text-white">{title}</h3>
+        <p className="text-xs text-loog-muted">{subtitle}</p>
       </div>
       <div className="relative mx-auto aspect-video w-full max-w-md overflow-hidden rounded-2xl border border-loog-border bg-black">
         {captured ? (
-          <img src={URL.createObjectURL(captured)} alt="odômetro" className="h-full w-full object-cover" />
+          <img src={URL.createObjectURL(captured)} alt={title} className="h-full w-full object-cover" />
         ) : (
           <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
         )}
@@ -705,7 +746,7 @@ function OdometerStep({ inspectionId, onNext, onError, error }: {
           <>
             <button type="button" onClick={() => setCaptured(null)} className="flex-1 rounded-xl border border-loog-border bg-loog-panel/60 py-3 text-xs text-white">Refazer</button>
             <button type="button" onClick={confirm} disabled={uploading} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 text-xs font-bold text-black disabled:opacity-40">
-              {uploading ? "Enviando…" : "✓ Enviar e analisar"}
+              {uploading ? "Enviando…" : `✓ ${ctaLabel}`}
             </button>
           </>
         ) : (
@@ -778,9 +819,19 @@ function DoneStep({ resultado, error, onClose }: { resultado: AiResult | null; e
         <Row label="Placa detectada" ok={!!resultado.detectedPlate} extra={resultado.detectedPlate ?? "—"} />
         <Row label="Placa bate" ok={resultado.plateMatches ?? false} />
         <Row label="Odômetro legível" ok={resultado.odometerReadable} extra={resultado.odometerKm ? `${resultado.odometerKm} km` : undefined} />
+        <Row label="Chassi legível" ok={resultado.chassisReadable} extra={resultado.chassisNumber ?? "—"} />
+        <Row label="Cofre do motor" ok={resultado.engineBayVisible && resultado.engineBayCondition !== "irregularidades"} extra={resultado.engineBayCondition} />
         <Row label="Ângulos capturados" ok={resultado.anglesCaptured.length >= 6} extra={`${resultado.anglesCaptured.length}/8`} />
         <Row label="Qualidade geral" ok={["excellent", "good"].includes(resultado.overallQuality)} extra={resultado.overallQuality} />
       </div>
+      {resultado.engineBayObservations.length > 0 && (
+        <div className="mx-auto max-w-sm rounded-xl border border-blue-500/30 bg-blue-500/5 p-3 text-left text-[11px] text-blue-200/80">
+          <b>Observações do motor:</b>
+          <ul className="mt-1 list-disc pl-4 space-y-0.5">
+            {resultado.engineBayObservations.map((o, i) => <li key={i}>{o}</li>)}
+          </ul>
+        </div>
+      )}
       {resultado.damages.length > 0 && (
         <div className="mx-auto max-w-sm rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-left text-xs text-amber-200">
           <b>Avarias detectadas:</b>
