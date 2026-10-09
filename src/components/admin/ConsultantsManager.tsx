@@ -11,7 +11,7 @@ export interface ConsultantRow {
   instagram: string | null;
   city: string | null;
   photo_url: string | null;
-  role: "admin" | "consultant";
+  role: "admin" | "consultant" | "consultant_sdr" | "gestor";
   status: "pending" | "approved" | "rejected";
   created_at: string;
   approved_at: string | null;
@@ -39,7 +39,7 @@ export function ConsultantsManager({ initial }: { initial: ConsultantRow[] }) {
     [filter, rows],
   );
 
-  async function act(id: string, action: "approve" | "reject" | "revoke" | "promote" | "demote", reason?: string) {
+  async function act(id: string, action: "approve" | "reject" | "revoke" | "promote" | "demote" | "enable_sdr" | "disable_sdr", reason?: string) {
     setBusyId(id);
     try {
       const res = await fetch(`/api/consultants/${id}`, {
@@ -112,6 +112,9 @@ export function ConsultantsManager({ initial }: { initial: ConsultantRow[] }) {
                       {r.role === "admin" && (
                         <span className="ml-2 rounded-full border border-loog-brand2/40 bg-loog-brand/15 px-2 py-0.5 text-[10px] font-bold uppercase text-loog-brand2">admin</span>
                       )}
+                      {r.role === "consultant_sdr" && (
+                        <span className="ml-2 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-300">+ SDR</span>
+                      )}
                     </div>
                     <div className="truncate text-xs text-loog-muted">
                       {r.email} · {r.phone ? formatPhoneBR(r.phone) : "—"}
@@ -148,9 +151,19 @@ export function ConsultantsManager({ initial }: { initial: ConsultantRow[] }) {
                   {r.status === "approved" && (
                     <button className="btn-ghost !py-2 !text-xs" onClick={() => act(r.id, "revoke")} disabled={busy}>Suspender</button>
                   )}
-                  {r.role === "consultant" ? (
-                    <button className="btn-ghost !py-2 !text-xs" onClick={() => act(r.id, "promote")} disabled={busy}>Promover a admin</button>
-                  ) : (
+                  {r.role === "consultant" && (
+                    <>
+                      <button className="btn-ghost !py-2 !text-xs !text-emerald-300" onClick={() => act(r.id, "enable_sdr")} disabled={busy}>+ SDR</button>
+                      <button className="btn-ghost !py-2 !text-xs" onClick={() => act(r.id, "promote")} disabled={busy}>Promover a admin</button>
+                    </>
+                  )}
+                  {r.role === "consultant_sdr" && (
+                    <>
+                      <button className="btn-ghost !py-2 !text-xs" onClick={() => act(r.id, "disable_sdr")} disabled={busy}>Remover SDR</button>
+                      <button className="btn-ghost !py-2 !text-xs" onClick={() => act(r.id, "promote")} disabled={busy}>Promover a admin</button>
+                    </>
+                  )}
+                  {r.role === "admin" && (
                     <button className="btn-ghost !py-2 !text-xs" onClick={() => act(r.id, "demote")} disabled={busy}>Rebaixar</button>
                   )}
                   <button className="btn-ghost !py-2 !text-xs !text-red-400" onClick={() => remove(r.id, r.full_name || r.email)} disabled={busy}>Excluir</button>

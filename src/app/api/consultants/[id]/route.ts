@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const PatchSchema = z.object({
-  action: z.enum(["approve", "reject", "revoke", "promote", "demote"]),
+  action: z.enum(["approve", "reject", "revoke", "promote", "demote", "enable_sdr", "disable_sdr"]),
   reason: z.string().max(300).optional(),
 });
 
@@ -47,6 +47,12 @@ export async function PATCH(
       patch.role = "admin";
       break;
     case "demote":
+      patch.role = "consultant";
+      break;
+    case "enable_sdr":
+      patch.role = "consultant_sdr";
+      break;
+    case "disable_sdr":
       patch.role = "consultant";
       break;
   }
