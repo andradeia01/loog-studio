@@ -107,6 +107,14 @@ export function StudioApp({
       color: "from-loog-brand/20 to-transparent",
       subs: [],
     },
+    ...(canSeeSdr ? [{
+      key: "dashboard" as MundoKey,
+      label: "Dashboard",
+      icon: "📊",
+      short: "SDR e Studio Geral — ranking e oportunidades em tempo real",
+      color: "from-emerald-500/20 to-amber-500/5",
+      subs: [],
+    }] : []),
     {
       key: "vendas",
       label: "Vendas",
@@ -257,6 +265,17 @@ function renderConteudo(opts: RenderOpts) {
         stats={{ artesCount: opts.readyArts.length }}
       />
     );
+  }
+
+  if (activeMundo === "dashboard") {
+    if (!canSeeSdr) {
+      return (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 text-center text-sm text-amber-200">
+          🔒 Aba exclusiva pros perfis <b>Consultor + SDR</b> e <b>Administrador</b>.
+        </div>
+      );
+    }
+    return <SdrDashboard />;
   }
 
   if (activeMundo === "vendas") {

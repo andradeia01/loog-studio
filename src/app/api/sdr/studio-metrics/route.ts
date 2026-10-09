@@ -50,7 +50,23 @@ export async function GET() {
   interface Bucket { cotacoes: number; oportunidade: number; }
   const mk = (): Bucket => ({ cotacoes: 0, oportunidade: 0 });
   const hoje = mk(), on = mk(), sem = mk(), mes = mk(), total = mk();
-  const porOwner = new Map<string, { nome: string; cotacoes: number; oportunidade: number }>();
+  type OwnerAgg = { nome: string; cotacoes: number; oportunidade: number };
+  const mkOwnerMap = () => new Map<string, OwnerAgg>();
+  const ownersPorPeriodo = {
+    hoje: mkOwnerMap(),
+    ontem: mkOwnerMap(),
+    semana: mkOwnerMap(),
+    mes: mkOwnerMap(),
+    total: mkOwnerMap(),
+  };
+
+  const addOwner = (map: Map<string, OwnerAgg>, ownerId: string, cents: number) => {
+    if (!ownerId) return;
+    const existing = map.get(ownerId) ?? { nome: ownersMap.get(ownerId) ?? "sem nome", cotacoes: 0, oportunidade: 0 };
+    existing.cotacoes++;
+    existing.oportunidade += cents;
+    map.set(ownerId, existing);
+  };
 
   for (const r of rows ?? []) {
     const metadata = (r.metadata ?? {}) as Record<string, unknown>;
@@ -64,27 +80,23 @@ export async function GET() {
     })();
     const createdAt = r.created_at as string;
     const createdDay = createdAt.slice(0, 10);
-    total.cotacoes++; total.oportunidade += cents;
-    if (createdDay === todayIso) { hoje.cotacoes++; hoje.oportunidade += cents; }
-    if (createdDay === ontem) { on.cotacoes++; on.oportunidade += cents; }
-    if (createdAt >= semanaIso) { sem.cotacoes++; sem.oportunidade += cents; }
-    if (createdAt >= mesIso) { mes.cotacoes++; mes.oportunidade += cents; }
     const ownerId = r.owner_id as string;
-    if (ownerId) {
-      const existing = porOwner.get(ownerId) ?? { nome: ownersMap.get(ownerId) ?? "sem nome", cotacoes: 0, oportunidade: 0 };
-      existing.cotacoes++;
-      existing.oportunidade += cents;
-      porOwner.set(ownerId, existing);
-    }
+    total.cotacoes++; total.oportunidade += cents;
+    addOwner(ownersPorPeriodo.total, ownerId, cents);
+    if (createdDay === todayIso) { hoje.cotacoes++; hoje.oportunidade += cents; addOwner(ownersPorPeriodo.hoje, ownerId, cents); }
+    if (createdDay === ontem) { on.cotacoes++; on.oportunidade += cents; addOwner(ownersPorPeriodo.ontem, ownerId, cents); }
+    if (createdAt >= semanaIso) { sem.cotacoes++; sem.oportunidade += cents; addOwner(ownersPorPeriodo.semana, ownerId, cents); }
+    if (createdAt >= mesIso) { mes.cotacoes++; mes.oportunidade += cents; addOwner(ownersPorPeriodo.mes, ownerId, cents); }
   }
 
   const fmt = (cents: number) => `R$ ${(cents / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   const withFmt = (b: Bucket) => ({ ...b, oportunidadeFormatada: fmt(b.oportunidade) });
 
-  const topConsultores = Array.from(porOwner.entries())
-    .map(([id, v]) => ({ id, nome: v.nome, cotacoes: v.cotacoes, oportunidade: v.oportunidade, oportunidadeFormatada: fmt(v.oportunidade) }))
-    .sort((a, b) => b.oportunidade - a.oportunidade)
-    .slice(0, 5);
+  const top5 = (map: Map<string, OwnerAgg>) =>
+    Array.from(map.entries())
+      .map(([id, v]) => ({ id, nome: v.nome, cotacoes: v.cotacoes, oportunidade: v.oportunidade, oportunidadeFormatada: fmt(v.oportunidade) }))
+      .sort((a, b) => b.oportunidade - a.oportunidade)
+      .slice(0, 5);
 
   return NextResponse.json({
     hoje: withFmt(hoje),
@@ -92,6 +104,14 @@ export async function GET() {
     semana: withFmt(sem),
     mes: withFmt(mes),
     total: withFmt(total),
-    topConsultores,
+    rankings: {
+      hoje: top5(ownersPorPeriodo.hoje),
+      ontem: top5(ownersPorPeriodo.ontem),
+      semana: top5(ownersPorPeriodo.semana),
+      mes: top5(ownersPorPeriodo.mes),
+      total: top5(ownersPorPeriodo.total),
+    },
+    // mantém backward-compat
+    topConsultores: top5(ownersPorPeriodo.total),
   });
 }

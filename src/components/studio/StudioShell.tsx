@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { LoogLogo } from "@/components/ui/LoogMark";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 
-export type MundoKey = "home" | "vendas" | "conteudo" | "ia" | "academia" | "agenda" | "producao" | "fidelidade";
+export type MundoKey = "home" | "dashboard" | "vendas" | "conteudo" | "ia" | "academia" | "agenda" | "producao" | "fidelidade";
 
 export interface SubTab {
   key: string;

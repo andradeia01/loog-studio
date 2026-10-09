@@ -31,13 +31,15 @@ interface StudioBucket {
   oportunidadeFormatada: string;
 }
 
+interface Consultor { id: string; nome: string; cotacoes: number; oportunidade: number; oportunidadeFormatada: string }
 interface StudioMetrics {
   hoje: StudioBucket;
   ontem: StudioBucket;
   semana: StudioBucket;
   mes: StudioBucket;
   total: StudioBucket;
-  topConsultores: { id: string; nome: string; cotacoes: number; oportunidade: number; oportunidadeFormatada: string }[];
+  rankings?: { hoje: Consultor[]; ontem: Consultor[]; semana: Consultor[]; mes: Consultor[]; total: Consultor[] };
+  topConsultores: Consultor[]; // fallback
 }
 
 const PERIODOS: { k: Periodo; lb: string; full: string }[] = [
@@ -242,6 +244,7 @@ function SdrSection({ m, periodo, setPeriodo }: { m: SdrMetrics; periodo: Period
 function StudioSection({ m, periodo, setPeriodo }: { m: StudioMetrics; periodo: Periodo; setPeriodo: (p: Periodo) => void }) {
   const period = m[periodo];
   const label = PERIODOS.find((p) => p.k === periodo)?.full ?? "";
+  const ranking = m.rankings?.[periodo] ?? m.topConsultores ?? [];
   return (
     <div className="space-y-5">
       {/* HERO STUDIO */}
