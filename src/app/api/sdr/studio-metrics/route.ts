@@ -75,8 +75,25 @@ export async function GET(req: Request) {
     map.set(ownerId, existing);
   };
 
-  for (const r of rows ?? []) {
+  // Dedup: mesma placa cotada N vezes pelo mesmo consultor no mesmo dia conta 1x
+  const normPlaca = (p: unknown) => String(p ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const vistos = new Set<string>();
+
+  // Iterar do mais ANTIGO pro mais NOVO garante que a 1a cotação do dia é a que fica.
+  // (rows vem ordenado desc por created_at — invertemos aqui.)
+  const ordered = [...(rows ?? [])].reverse();
+
+  for (const r of ordered) {
     const metadata = (r.metadata ?? {}) as Record<string, unknown>;
+    const placa = normPlaca(metadata.placa);
+    const createdAt = r.created_at as string;
+    const createdDay = createdAt.slice(0, 10);
+    const ownerId = r.owner_id as string;
+    const dedupKey = `${ownerId}|${placa}|${createdDay}`;
+    // Se já contei (owner+placa+dia), pula — sem incrementar nada
+    if (placa && vistos.has(dedupKey)) continue;
+    if (placa) vistos.add(dedupKey);
+
     const fipeRaw = (metadata.valorFipe ?? metadata.fipeValor ?? "0") as string;
     const cents = (() => {
       if (typeof fipeRaw !== "string") return 0;
@@ -84,9 +101,6 @@ export async function GET(req: Request) {
       const v = parseFloat(n);
       return Number.isFinite(v) ? Math.round(v * 100) : 0;
     })();
-    const createdAt = r.created_at as string;
-    const createdDay = createdAt.slice(0, 10);
-    const ownerId = r.owner_id as string;
     total.cotacoes++; total.oportunidade += cents;
     addOwner(ownersPorPeriodo.total, ownerId, cents);
     if (createdDay === todayIso) { hoje.cotacoes++; hoje.oportunidade += cents; addOwner(ownersPorPeriodo.hoje, ownerId, cents); }
