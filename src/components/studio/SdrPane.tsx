@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { cn } from "@/lib/utils";
+import { registerPush, unregisterPush, isPushEnabled } from "@/lib/push-client";
 
 type Tab = "status" | "chat" | "leads" | "kanban" | "oficial" | "config";
 
@@ -349,7 +350,58 @@ function StatusTab({
             <li>⏳ ElevenLabs · <span className="text-amber-300">aguardando API key</span></li>
           </ul>
         </div>
+        <div className="mt-4 border-t border-loog-border/50 pt-3">
+          <PushNotificationCard />
+        </div>
       </div>
+    </div>
+  );
+}
+
+function PushNotificationCard() {
+  const [enabled, setEnabled] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  useEffect(() => { isPushEnabled().then(setEnabled); }, []);
+  async function toggle() {
+    setBusy(true); setMsg(null);
+    try {
+      if (enabled) {
+        await unregisterPush();
+        setEnabled(false);
+        setMsg("Notificações desligadas.");
+      } else {
+        const r = await registerPush();
+        if (r.ok) { setEnabled(true); setMsg("🔔 Notificações ativas neste aparelho!"); }
+        else setMsg(`❌ ${r.reason}`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div>
+      <h4 className="mb-2 text-xs font-semibold uppercase tracking-widest text-loog-muted">
+        Notificações Push
+      </h4>
+      <p className="mb-2 text-[11px] text-loog-muted">
+        Recebe alertas ao vivo de <b>cotação enviada</b> e <b>lead precisa de você</b> neste dispositivo —
+        funciona com o app LOOG Studio instalado como app no celular (PWA).
+      </p>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        className={cn(
+          "w-full rounded-lg border px-3 py-2 text-xs font-bold transition disabled:opacity-50",
+          enabled
+            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+            : "border-loog-brand/40 bg-loog-brand/10 text-loog-brand hover:bg-loog-brand/20"
+        )}
+      >
+        {busy ? "..." : enabled ? "🔔 Ativado neste dispositivo — clique pra desligar" : "🔕 Ativar notificações push"}
+      </button>
+      {msg && <div className="mt-2 text-[11px] text-loog-muted">{msg}</div>}
     </div>
   );
 }
