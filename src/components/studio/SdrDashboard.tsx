@@ -323,7 +323,7 @@ function StudioSection({ m, periodo, setPeriodo, dataEspecifica, setDataEspecifi
         <div className="relative">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
             <span className="text-[10px] font-bold uppercase tracking-widest text-amber-300">
-              💎 Oportunidade total · {label}
+              💰 Faturamento potencial Studio · {label}
             </span>
           </div>
           <AnimatePresence mode="wait">
@@ -356,7 +356,7 @@ function StudioSection({ m, periodo, setPeriodo, dataEspecifica, setDataEspecifi
       {/* CARDS STUDIO */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <MetricCard icon="📄" label="Cotações" value={period.cotacoes} color="from-amber-500/20 to-amber-500/5" ringColor="border-amber-500/40" textColor="text-amber-300" />
-        <MetricCard icon="💰" label="Oportunidade" value={period.oportunidadeFormatada} isText color="from-emerald-500/20 to-emerald-500/5" ringColor="border-emerald-500/40" textColor="text-emerald-300" />
+        <MetricCard icon="💰" label="Faturamento potencial" value={period.oportunidadeFormatada} isText color="from-emerald-500/20 to-emerald-500/5" ringColor="border-emerald-500/40" textColor="text-emerald-300" />
         <MetricCard icon="📊" label="Ticket médio" value={period.cotacoes > 0 ? `R$ ${(period.oportunidade / period.cotacoes / 100).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : "—"} isText color="from-blue-500/20 to-blue-500/5" ringColor="border-blue-500/40" textColor="text-blue-300" />
       </div>
 
@@ -401,7 +401,7 @@ function StudioSection({ m, periodo, setPeriodo, dataEspecifica, setDataEspecifi
                     </div>
                     <div className="text-right">
                       <div className="font-display font-black text-amber-300">{c.oportunidadeFormatada}</div>
-                      <div className="text-[10px] text-loog-muted">em oportunidade</div>
+                      <div className="text-[10px] text-loog-muted">em faturamento potencial</div>
                     </div>
                   </div>
                 </div>
@@ -423,7 +423,7 @@ function StudioSection({ m, periodo, setPeriodo, dataEspecifica, setDataEspecifi
           </div>
           <div>
             <div className="font-display text-xl font-black text-emerald-300 sm:text-2xl">{m.total.oportunidadeFormatada}</div>
-            <div className="text-[10px] text-loog-muted">oportunidade</div>
+            <div className="text-[10px] text-loog-muted">faturamento potencial</div>
           </div>
         </div>
       </div>

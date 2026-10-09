@@ -130,6 +130,8 @@ export async function POST(req: NextRequest) {
               vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
               valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? fipe?.valor_formatado ?? null,
               quoteId: (result as { quoteId?: string }).quoteId ?? null,
+              monthlyValueCents: (result as { monthlyValueCents?: number }).monthlyValueCents ?? null,
+              whatsappMessage: (result as { whatsappMessage?: string }).whatsappMessage ?? null,
             },
           });
         }
@@ -176,6 +178,8 @@ export async function POST(req: NextRequest) {
             vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
             valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? null,
             quoteId: (result as { quoteId?: string }).quoteId ?? null,
+            monthlyValueCents: (result as { monthlyValueCents?: number }).monthlyValueCents ?? null,
+            whatsappMessage: (result as { whatsappMessage?: string }).whatsappMessage ?? null,
           },
         });
       }

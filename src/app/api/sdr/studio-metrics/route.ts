@@ -94,12 +94,30 @@ export async function GET(req: Request) {
     if (placa && vistos.has(dedupKey)) continue;
     if (placa) vistos.add(dedupKey);
 
-    const fipeRaw = (metadata.valorFipe ?? metadata.fipeValor ?? "0") as string;
+    // Valor da oportunidade = valor MENSAL da cotação (não o FIPE do veículo).
+    // Ordem de preferência:
+    // 1) monthlyValueCents salvo direto no metadata (cotações novas)
+    // 2) extraído por regex do whatsappMessage armazenado (igual ao SDR)
+    // 3) fallback: 1% do valor FIPE (padrão aproximado proteção veicular)
     const cents = (() => {
+      const direct = metadata.monthlyValueCents;
+      if (typeof direct === "number" && direct > 0) return direct;
+
+      const msg = metadata.whatsappMessage;
+      if (typeof msg === "string") {
+        const match = msg.match(/Valor (?:Mensal|Total) do Plano:\s*\*?R\$\s*([\d.,]+)/i);
+        if (match && match[1]) {
+          const v = parseFloat(match[1].replace(/\./g, "").replace(",", "."));
+          if (Number.isFinite(v) && v > 0) return Math.round(v * 100);
+        }
+      }
+
+      // Fallback: 1% do FIPE
+      const fipeRaw = (metadata.valorFipe ?? metadata.fipeValor ?? "0") as unknown;
       if (typeof fipeRaw !== "string") return 0;
       const n = fipeRaw.replace(/[^\d,]/g, "").replace(",", ".");
-      const v = parseFloat(n);
-      return Number.isFinite(v) ? Math.round(v * 100) : 0;
+      const fipe = parseFloat(n);
+      return Number.isFinite(fipe) && fipe > 0 ? Math.round(fipe * 100 * 0.01) : 0;
     })();
     total.cotacoes++; total.oportunidade += cents;
     addOwner(ownersPorPeriodo.total, ownerId, cents);
