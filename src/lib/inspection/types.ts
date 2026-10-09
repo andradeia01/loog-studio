@@ -9,6 +9,8 @@ export type InspectionStatus =
 
 export type InspectionMode = "PRESENCIAL" | "REMOTE";
 
+export type InspectionTipo = "NOVA" | "MIGRACAO";
+
 export type CaptureKind =
   | "OPERATOR_SELFIE"
   | "VIDEO"
@@ -30,6 +32,8 @@ export interface Inspection {
   fipe_codigo: string | null;
   nome_associado: string | null;
   telefone_associado: string | null;
+  tipo_vistoria: InspectionTipo;
+  migracao_origem: string | null;
   mode: InspectionMode;
   status: InspectionStatus;
   gps_lat: number | null;

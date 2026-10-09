@@ -20,6 +20,19 @@ export async function POST(req: Request) {
   const placa = typeof body.placa === "string" ? body.placa.toUpperCase().replace(/[^A-Z0-9]/g, "") : "";
   if (!placa || placa.length < 6) return NextResponse.json({ error: "placa inválida" }, { status: 400 });
 
+  const nome = toStr(body.nomeAssociado);
+  const telefone = toStr(body.telefoneAssociado);
+  if (!nome) return NextResponse.json({ error: "nome do associado obrigatório" }, { status: 400 });
+  if (!telefone || telefone.replace(/\D/g, "").length < 10) {
+    return NextResponse.json({ error: "telefone do associado obrigatório (DDD + número)" }, { status: 400 });
+  }
+
+  const tipoVistoria = body.tipoVistoria === "MIGRACAO" ? "MIGRACAO" : "NOVA";
+  const migracaoOrigem = tipoVistoria === "MIGRACAO" ? toStr(body.migracaoOrigem) : null;
+  if (tipoVistoria === "MIGRACAO" && !migracaoOrigem) {
+    return NextResponse.json({ error: "informe de onde o associado está migrando" }, { status: 400 });
+  }
+
   const insert = {
     owner_id: auth.auth.userId,
     placa,
@@ -29,8 +42,10 @@ export async function POST(req: Request) {
     cor: toStr(body.cor),
     fipe_valor: toStr(body.fipeValor),
     fipe_codigo: toStr(body.fipeCodigo),
-    nome_associado: toStr(body.nomeAssociado),
-    telefone_associado: toStr(body.telefoneAssociado),
+    nome_associado: nome,
+    telefone_associado: telefone,
+    tipo_vistoria: tipoVistoria,
+    migracao_origem: migracaoOrigem,
     mode: body.mode === "REMOTE" ? "REMOTE" : "PRESENCIAL",
     status: "DRAFT",
   };

@@ -54,9 +54,14 @@ create table if not exists public.inspections (
   fipe_valor      text,       -- "R$ 114.093,00" (string pra manter formato)
   fipe_codigo     text,
 
-  -- Dados do associado
+  -- Dados do associado (obrigatórios no insert via API)
   nome_associado  text,
   telefone_associado text,
+
+  -- Tipo da vistoria: NOVA (primeira vez) ou MIGRACAO (vinha de outra proteção/seguradora)
+  tipo_vistoria   text not null default 'NOVA' check (tipo_vistoria in ('NOVA','MIGRACAO')),
+  -- Se MIGRACAO, qual seguradora/associação o lead está deixando
+  migracao_origem text,
 
   -- Modo + status
   mode            inspection_mode not null default 'PRESENCIAL',
@@ -92,6 +97,14 @@ create index if not exists inspections_status_idx on public.inspections(status);
 create index if not exists inspections_placa_idx on public.inspections(placa);
 create index if not exists inspections_created_idx on public.inspections(created_at desc);
 create index if not exists inspections_remote_token_idx on public.inspections(remote_token) where remote_token is not null;
+
+-- Backfill idempotente pra quem rodou a versão anterior da migration (sem tipo_vistoria/migracao_origem):
+alter table public.inspections add column if not exists tipo_vistoria text not null default 'NOVA';
+alter table public.inspections add column if not exists migracao_origem text;
+-- Garante o CHECK mesmo após o add column:
+do $$ begin
+  alter table public.inspections add constraint inspections_tipo_vistoria_check check (tipo_vistoria in ('NOVA','MIGRACAO'));
+exception when duplicate_object then null; when others then null; end $$;
 
 -- ============== Capturas (vídeo + fotos + frames) ==============
 create table if not exists public.inspection_captures (

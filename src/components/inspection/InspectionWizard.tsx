@@ -34,6 +34,8 @@ interface VehicleData {
   fipeCodigo: string;
   nomeAssociado: string;
   telefoneAssociado: string;
+  tipoVistoria: "NOVA" | "MIGRACAO";
+  migracaoOrigem: string;
 }
 
 const RECORD_SECONDS = 60;
@@ -45,6 +47,7 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
     placa: "", marca: "", modelo: "", ano: null, cor: "",
     fipeValor: "", fipeCodigo: "",
     nomeAssociado: "", telefoneAssociado: "",
+    tipoVistoria: "NOVA", migracaoOrigem: "",
   });
   const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
   const [transcript, setTranscript] = useState("");
@@ -263,7 +266,12 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
     finally { setAutoFillLoading(false); }
   };
 
-  const canProceed = vehicle.placa.length >= 6;
+  const telDigits = vehicle.telefoneAssociado.replace(/\D/g, "");
+  const canProceed =
+    vehicle.placa.length >= 6
+    && vehicle.nomeAssociado.trim().length >= 2
+    && telDigits.length >= 10
+    && (vehicle.tipoVistoria === "NOVA" || vehicle.migracaoOrigem.trim().length >= 2);
 
   return (
     <div className="space-y-4">
@@ -310,12 +318,38 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
 
       <div className="rounded-xl border border-loog-border bg-loog-panel/30 p-3">
         <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-loog-muted">
-          Dados do associado (opcional)
+          Dados do associado <span className="text-rose-400">*</span>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Nome" value={vehicle.nomeAssociado} onChange={(v) => setVehicle({ ...vehicle, nomeAssociado: v })} />
-          <Field label="Telefone" value={vehicle.telefoneAssociado} onChange={(v) => setVehicle({ ...vehicle, telefoneAssociado: v })} />
+          <Field label="Nome *" value={vehicle.nomeAssociado} onChange={(v) => setVehicle({ ...vehicle, nomeAssociado: v })} />
+          <Field label="Telefone *" value={vehicle.telefoneAssociado} onChange={(v) => setVehicle({ ...vehicle, telefoneAssociado: v })} />
         </div>
+      </div>
+
+      <div className="rounded-xl border border-loog-border bg-loog-panel/30 p-3">
+        <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-loog-muted">
+          Tipo da vistoria <span className="text-rose-400">*</span>
+        </div>
+        <select
+          value={vehicle.tipoVistoria}
+          onChange={(e) => setVehicle({ ...vehicle, tipoVistoria: e.target.value as "NOVA" | "MIGRACAO" })}
+          className="w-full rounded-xl border border-loog-border bg-loog-panel/60 px-3 py-2 text-sm text-white outline-none focus:border-purple-500/60"
+        >
+          <option value="NOVA">🆕 Nova vistoria (primeira adesão)</option>
+          <option value="MIGRACAO">🔄 Migração (vem de outra proteção/seguradora)</option>
+        </select>
+        {vehicle.tipoVistoria === "MIGRACAO" && (
+          <div className="mt-3">
+            <Field
+              label="De onde está migrando *"
+              value={vehicle.migracaoOrigem}
+              onChange={(v) => setVehicle({ ...vehicle, migracaoOrigem: v })}
+            />
+            <p className="mt-1 text-[10px] text-loog-muted">
+              Nome da seguradora ou associação de origem (ex: Porto Seguro, APVS, Nexus, CMP, Imperium...)
+            </p>
+          </div>
+        )}
       </div>
 
       {error && (
