@@ -85,6 +85,10 @@ export async function GET(req: Request) {
 
   for (const r of ordered) {
     const metadata = (r.metadata ?? {}) as Record<string, unknown>;
+    // Cotações flaggadas como tipo_errado (utilitário/diesel cotado como carro)
+    // ficam fora do dashboard até o consultor refazer manualmente — senão
+    // o faturamento potencial fica subestimado.
+    if (metadata.tipo_errado === true) continue;
     const placa = normPlaca(metadata.placa);
     const createdAt = r.created_at as string;
     const createdDay = createdAt.slice(0, 10);
