@@ -6,7 +6,7 @@ import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-p
 import { cn } from "@/lib/utils";
 import { registerPush, unregisterPush, isPushEnabled } from "@/lib/push-client";
 
-type Tab = "dash" | "status" | "chat" | "leads" | "kanban" | "oficial" | "config";
+type Tab = "status" | "chat" | "leads" | "kanban" | "oficial" | "config";
 
 interface SdrStatus {
   connected: boolean;
@@ -65,7 +65,7 @@ const KANBAN_META: Record<KanbanStage, { label: string; cls: string; emoji: stri
 };
 
 export function SdrPane() {
-  const [tab, setTab] = useState<Tab>("dash");
+  const [tab, setTab] = useState<Tab>("status");
   const [status, setStatus] = useState<SdrStatus | null>(null);
   const [leads, setLeads] = useState<LeadConversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,7 +152,6 @@ export function SdrPane() {
       {/* TABS */}
       <nav className="flex gap-1 overflow-x-auto border-b border-loog-border/60">
         {([
-          { k: "dash" as const, label: "Dashboard", icon: "📊", badge: undefined as number | undefined },
           { k: "status" as const, label: "Conexão", icon: "📡", badge: undefined as number | undefined },
           { k: "chat" as const, label: "Chat ao vivo", icon: "💬", badge: unreadCount || undefined },
           { k: "leads" as const, label: "Leads", icon: "👥", badge: leads.length || undefined },
@@ -190,7 +189,6 @@ export function SdrPane() {
           exit={{ opacity: 0, y: -4 }}
           transition={{ duration: 0.18 }}
         >
-          {tab === "dash" && <DashboardTab />}
           {tab === "status" && (
             <StatusTab
               status={status}

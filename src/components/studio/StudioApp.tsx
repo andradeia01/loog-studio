@@ -23,6 +23,7 @@ import { PlacaStudio } from "./PlacaStudio";
 import { CotacaoCompleta } from "./CotacaoCompleta";
 import { CrmLeads } from "./CrmLeads";
 import { SdrPane } from "./SdrPane";
+import { SdrDashboard } from "./SdrDashboard";
 import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
 import { StudioHome } from "./StudioHome";
 import { MundoPane } from "./MundoPane";
@@ -116,7 +117,10 @@ export function StudioApp({
         { key: "placa", label: "Cotação Rápida", icon: "⚡" },
         { key: "completa", label: "Cotação Completa", icon: "📄" },
         { key: "simulador", label: "Simulador", icon: "🧮" },
-        ...(canSeeSdr ? [{ key: "sdr", label: "SDR WhatsApp", icon: "💬" }] : []),
+        ...(canSeeSdr ? [
+          { key: "dashboard", label: "Dashboard", icon: "📊" },
+          { key: "sdr", label: "SDR WhatsApp", icon: "💬" },
+        ] : []),
         { key: "crm", label: "CRM / Leads", icon: "👥" },
         { key: "pipeline", label: "Pipeline", icon: "📈" },
         { key: "followups", label: "Follow-ups", icon: "🔔" },
@@ -280,6 +284,16 @@ function renderConteudo(opts: RenderOpts) {
         );
       }
       return <SdrPane />;
+    }
+    if (activeSub === "dashboard") {
+      if (!canSeeSdr) {
+        return (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-6 text-center text-sm text-amber-200">
+            🔒 Aba exclusiva pros perfis <b>Consultor + SDR</b> e <b>Administrador</b>.
+          </div>
+        );
+      }
+      return <SdrDashboard />;
     }
     if (activeSub === "crm") return <CrmLeads />;
     if (activeSub === "pipeline") return <MundoPane
