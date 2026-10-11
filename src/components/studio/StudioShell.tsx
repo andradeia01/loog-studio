@@ -50,8 +50,17 @@ export function StudioShell({
 
   return (
     <div className="min-h-screen bg-loog-bg text-loog-text">
-      {/* TOP BAR (sempre visível, compacta) */}
-      <header className="sticky top-0 z-40 border-b border-loog-border/60 bg-loog-bg/85 backdrop-blur-md">
+      {/* TOP BAR (sempre visível, compacta)
+          iOS fix: paddingTop + paddingLeft/Right usam safe-area pra evitar que
+          o logo e o botão "Sair" fiquem atrás do notch em landscape iPhone. */}
+      <header
+        className="sticky top-0 z-40 border-b border-loog-border/60 bg-loog-bg/85 backdrop-blur-md"
+        style={{
+          paddingTop: "env(safe-area-inset-top)",
+          paddingLeft: "env(safe-area-inset-left)",
+          paddingRight: "env(safe-area-inset-right)",
+        }}
+      >
         <div className="flex items-center justify-between px-4 py-3 lg:px-6">
           <div className="flex items-center gap-3">
             {/* burger mobile */}
@@ -126,8 +135,13 @@ export function StudioShell({
           )}
         </AnimatePresence>
 
-        {/* CONTEÚDO — min-w-0 crítico pra evitar que flex-child estoure lateralmente */}
-        <main className="min-w-0 max-w-full flex-1 overflow-x-hidden px-4 pb-24 pt-6 lg:px-8 lg:pb-10">
+        {/* CONTEÚDO — min-w-0 crítico pra evitar que flex-child estoure lateralmente.
+            pb-24 + safe-area-inset-bottom garante que o último item do scroll não
+            fique coberto pela bottom nav em iPhone com home indicator. */}
+        <main
+          className="min-w-0 max-w-full flex-1 overflow-x-hidden px-4 pt-6 lg:px-8 lg:pb-10"
+          style={{ paddingBottom: "calc(6rem + env(safe-area-inset-bottom))" }}
+        >
           {/* Breadcrumb do mundo + sub-tabs */}
           {current && current.key !== "home" && (
             <div className="mb-6">
@@ -179,8 +193,20 @@ export function StudioShell({
         </main>
       </div>
 
-      {/* BOTTOM NAV mobile: 4 principais + "Mais" (abre drawer) */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-loog-border/60 bg-loog-bg/95 backdrop-blur-md lg:hidden">
+      {/* BOTTOM NAV mobile: 4 principais + "Mais" (abre drawer)
+          iOS fix: paddingBottom + paddingLeft/Right usam safe-area pra tirar os
+          botões de baixo do home indicator E longe do notch lateral em landscape.
+          Sem isso, em iPhone deitado os cliques eram capturados pelo próprio iOS
+          (zona do home indicator abre app switcher). min-h-[52px] garante tap
+          target >= 44pt do HIG mesmo com safe-area reduzindo o espaço útil. */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 border-t border-loog-border/60 bg-loog-bg/95 backdrop-blur-md lg:hidden"
+        style={{
+          paddingBottom: "env(safe-area-inset-bottom)",
+          paddingLeft: "env(safe-area-inset-left)",
+          paddingRight: "env(safe-area-inset-right)",
+        }}
+      >
         <div className="mx-auto flex max-w-xl items-stretch">
           {mundos.slice(0, 4).map((m) => (
             <button
@@ -188,7 +214,7 @@ export function StudioShell({
               type="button"
               onClick={() => onNavigate(m.key, m.subs[0]?.key ?? null)}
               className={cn(
-                "flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] transition",
+                "flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] transition active:bg-white/5",
                 activeMundo === m.key ? "text-loog-brand" : "text-loog-muted",
               )}
             >
@@ -200,7 +226,7 @@ export function StudioShell({
             type="button"
             onClick={() => setSidebarOpen(true)}
             className={cn(
-              "flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] transition",
+              "flex min-h-[52px] flex-1 flex-col items-center justify-center gap-1 py-2 text-[10px] transition active:bg-white/5",
               mundos.slice(4).some((m) => m.key === activeMundo) ? "text-loog-brand" : "text-loog-muted",
             )}
           >
