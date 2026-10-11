@@ -63,7 +63,11 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
         <div className="relative flex min-h-[100dvh] w-full flex-col bg-loog-bg shadow-2xl sm:min-h-0 sm:w-auto sm:max-w-xl sm:rounded-3xl sm:border sm:border-loog-border">
           <div
             className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-loog-border bg-loog-bg/95 p-3 backdrop-blur sm:p-4"
-            style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
+            style={{
+              paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+              paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+              paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+            }}
           >
             <div className="flex min-w-0 items-center gap-2">
               <span className="text-xl">🎥</span>
@@ -90,7 +94,11 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
               className="flex-1 p-4 sm:p-5"
-              style={{ paddingBottom: "max(1rem, env(safe-area-inset-bottom))" }}
+              style={{
+                paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+                paddingLeft: "max(1rem, env(safe-area-inset-left))",
+                paddingRight: "max(1rem, env(safe-area-inset-right))",
+              }}
             >
             {step === "form" && (
               <FormStep
@@ -753,67 +761,89 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
     );
   }
 
-  return (
-    <div className="space-y-3">
-      <div className="text-center">
-        <h3 className="font-display text-lg font-black text-white">Gravação da vistoria</h3>
-        <p className="text-xs text-loog-muted">
-          Veículo <b className="text-amber-300">LIGADO</b> · dá uma volta completa · até {RECORD_SECONDS}s
-        </p>
-      </div>
-      <div className="relative mx-auto aspect-video w-full max-w-md overflow-hidden rounded-2xl border border-loog-border bg-black">
-        {recordedBlob ? (
-          <video src={URL.createObjectURL(recordedBlob)} className="h-full w-full object-cover" controls playsInline />
-        ) : cameraOn ? (
-          <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center text-loog-muted">
-            <div className="text-5xl opacity-50">📹</div>
-            <p className="text-xs">Câmera desligada</p>
-          </div>
-        )}
-        {recording && (
-          <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-red-500/90 px-2 py-1 text-[11px] font-bold text-white">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-            REC {elapsed}s / {RECORD_SECONDS}s
-          </div>
-        )}
-      </div>
-      {liveTranscript && (
-        <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-2 text-[11px] text-blue-200/80">
-          🎤 {liveTranscript.slice(-200)}
+  // Botão de ação (varia conforme estado)
+  const ActionButton = recordedBlob ? (
+    <div className="flex gap-2">
+      <button type="button" onClick={() => { setRecordedBlob(null); setElapsed(0); }} className="flex-1 rounded-xl border border-loog-border bg-loog-panel/60 py-3 text-xs font-bold text-white active:scale-95">
+        Refazer
+      </button>
+      <button type="button" onClick={confirm} disabled={uploading} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 text-xs font-bold text-black disabled:opacity-40 active:scale-95">
+        {uploading ? "Enviando…" : "✓ Enviar"}
+      </button>
+    </div>
+  ) : recording ? (
+    <button type="button" onClick={stopRecording} className="w-full rounded-xl bg-red-500 py-3 text-sm font-bold text-white active:scale-95">
+      ⏹ Parar gravação
+    </button>
+  ) : !cameraOn ? (
+    <button
+      type="button"
+      onClick={activateCamera}
+      disabled={cameraLoading}
+      className="w-full rounded-xl bg-gradient-to-r from-sky-500 to-blue-500 py-4 text-sm font-bold text-white disabled:opacity-40 active:scale-95"
+    >
+      {cameraLoading ? "Ativando câmera..." : "📷 Ativar câmera"}
+    </button>
+  ) : (
+    <button type="button" onClick={startRecording} className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-4 text-sm font-bold text-white active:scale-95">
+      🔴 Iniciar gravação
+    </button>
+  );
+
+  // Preview da câmera (vídeo element OU placeholder)
+  const CameraPreview = (
+    <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-loog-border bg-black">
+      {recordedBlob ? (
+        <video src={URL.createObjectURL(recordedBlob)} className="h-full w-full object-cover" controls playsInline />
+      ) : cameraOn ? (
+        <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
+      ) : (
+        <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center text-loog-muted">
+          <div className="text-5xl opacity-50">📹</div>
+          <p className="text-xs">Câmera desligada — aperte &ldquo;Ativar câmera&rdquo;</p>
         </div>
       )}
-      {uploadProgress && <div className="text-center text-[11px] text-amber-300">{uploadProgress}</div>}
-      {error && <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">{error}</div>}
-      <div className="flex gap-2">
-        {recordedBlob ? (
-          <>
-            <button type="button" onClick={() => { setRecordedBlob(null); setElapsed(0); }} className="flex-1 rounded-xl border border-loog-border bg-loog-panel/60 py-3 text-xs text-white">
-              Refazer
-            </button>
-            <button type="button" onClick={confirm} disabled={uploading} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 text-xs font-bold text-black disabled:opacity-40">
-              {uploading ? "Enviando…" : "✓ Enviar"}
-            </button>
-          </>
-        ) : recording ? (
-          <button type="button" onClick={stopRecording} className="flex-1 rounded-xl bg-red-500 py-3 text-sm font-bold text-white">
-            ⏹ Parar
-          </button>
-        ) : !cameraOn ? (
-          <button
-            type="button"
-            onClick={activateCamera}
-            disabled={cameraLoading}
-            className="flex-1 rounded-xl bg-gradient-to-r from-sky-500 to-blue-500 py-3 text-sm font-bold text-white disabled:opacity-40"
-          >
-            {cameraLoading ? "Ativando câmera..." : "📷 Ativar câmera"}
-          </button>
-        ) : (
-          <button type="button" onClick={startRecording} className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-3 text-sm font-bold text-white">
-            🔴 Iniciar gravação
-          </button>
+      {recording && (
+        <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-red-500/90 px-2 py-1 text-[11px] font-bold text-white">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+          REC {elapsed}s / {RECORD_SECONDS}s
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    // Layout responsivo: landscape = row (vídeo esq | controles dir), portrait = col.
+    // paddingBottom respeita safe-area-inset-bottom pra não cair atrás do home
+    // indicator do iPhone em landscape.
+    <div
+      className="flex flex-col gap-3 landscape:flex-row landscape:items-stretch"
+      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+    >
+      {/* Coluna 1: preview da câmera */}
+      <div className="landscape:w-3/5 landscape:shrink-0">
+        {CameraPreview}
+      </div>
+
+      {/* Coluna 2: título + controles + botão */}
+      <div className="flex flex-col gap-2 landscape:flex-1 landscape:min-w-0 landscape:justify-between">
+        <div className="text-center landscape:text-left">
+          <h3 className="font-display text-base font-black text-white landscape:text-lg">Gravação da vistoria</h3>
+          <p className="text-[11px] text-loog-muted">
+            Veículo <b className="text-amber-300">LIGADO</b> · dá uma volta completa · até {RECORD_SECONDS}s
+          </p>
+        </div>
+
+        {liveTranscript && (
+          <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-2 text-[11px] text-blue-200/80 landscape:max-h-24 landscape:overflow-y-auto">
+            🎤 {liveTranscript.slice(-200)}
+          </div>
         )}
+        {uploadProgress && <div className="text-center text-[11px] text-amber-300">{uploadProgress}</div>}
+        {error && <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-2 text-[11px] text-rose-200">{error}</div>}
+
+        {/* Botão de ação — sticky no fim pra garantir que fica visível */}
+        {ActionButton}
       </div>
     </div>
   );
