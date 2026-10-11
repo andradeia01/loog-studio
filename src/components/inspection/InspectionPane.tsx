@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { InspectionStatus, InspectionMode } from "@/lib/inspection/types";
 import { InspectionWizard } from "./InspectionWizard";
+import { useVisibilityInterval } from "@/lib/hooks/use-visibility-interval";
 
 interface ListItem {
   id: string;
@@ -43,11 +44,10 @@ export function InspectionPane() {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 10_000); // atualiza pra pegar PROCESSING → APPROVED
-    return () => clearInterval(t);
-  }, []);
+  // Carrega 1x no mount
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Polling 10s pra pegar PROCESSING → APPROVED — pausa quando aba oculta
+  useVisibilityInterval(load, 10_000);
 
   return (
     <div className="space-y-5">

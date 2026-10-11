@@ -1,38 +1,34 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import { useVisibilityInterval } from "@/lib/hooks/use-visibility-interval";
 
 /**
  * Toast flutuante que aparece quando sai uma versão nova do app.
- * Faz polling leve de /api/version a cada 2min; se o commit mudou,
- * mostra o toast com botão "Atualizar". Click = reload hard (limpa
- * cache do service worker junto).
+ * Polling de /api/version a cada 2min via useVisibilityInterval — pausa
+ * quando a aba fica oculta (economia de bateria em PWA mobile).
  */
 export function UpdateToast() {
   const [newVersion, setNewVersion] = useState<string | null>(null);
   const initial = useRef<string | null>(null);
 
-  useEffect(() => {
-    let alive = true;
-    const check = async () => {
-      try {
-        const r = await fetch("/api/version", { cache: "no-store" });
-        if (!r.ok) return;
-        const data = (await r.json()) as { commit?: string };
-        const commit = data.commit ?? null;
-        if (!alive || !commit) return;
-        if (initial.current === null) {
-          initial.current = commit;
-        } else if (commit !== initial.current && commit !== "dev") {
-          setNewVersion(commit);
-        }
-      } catch { /* silencioso */ }
-    };
-    check();
-    const t = setInterval(check, 2 * 60 * 1000); // 2min
-    return () => { alive = false; clearInterval(t); };
+  const check = useCallback(async () => {
+    try {
+      const r = await fetch("/api/version", { cache: "no-store" });
+      if (!r.ok) return;
+      const data = (await r.json()) as { commit?: string };
+      const commit = data.commit ?? null;
+      if (!commit) return;
+      if (initial.current === null) {
+        initial.current = commit;
+      } else if (commit !== initial.current && commit !== "dev") {
+        setNewVersion(commit);
+      }
+    } catch { /* silencioso */ }
   }, []);
+
+  useVisibilityInterval(check, 2 * 60 * 1000);
 
   const handleUpdate = async () => {
     // Tenta mandar o SW atualizar antes do reload

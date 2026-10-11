@@ -115,16 +115,6 @@ export const TemplateSchema = z.object({
 export type Template = z.infer<typeof TemplateSchema>;
 
 // ============================================================================
-// Generation Request
-// ============================================================================
-
-export const GenerateRequestSchema = z.object({
-  templateSlug: z.string(),
-  consultant: ConsultantSchema,
-});
-export type GenerateRequest = z.infer<typeof GenerateRequestSchema>;
-
-// ============================================================================
 // Helpers
 // ============================================================================
 

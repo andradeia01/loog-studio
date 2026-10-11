@@ -419,7 +419,11 @@ function PushNotificationCard() {
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  useEffect(() => { isPushEnabled().then(setEnabled); }, []);
+  useEffect(() => {
+    let alive = true;
+    isPushEnabled().then((v) => { if (alive) setEnabled(v); });
+    return () => { alive = false; };
+  }, []);
   async function toggle() {
     setBusy(true); setMsg(null);
     try {
