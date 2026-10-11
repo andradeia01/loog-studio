@@ -560,6 +560,7 @@ function SelfieStep({ inspectionId, onNext, onError, error }: {
 
 // ============================================================
 // RECORD STEP — gravação principal com câmera traseira
+// Landscape obrigatório + câmera só após tap (iOS exige user gesture)
 // ============================================================
 function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
   inspectionId: string;
@@ -579,28 +580,79 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
   const [liveTranscript, setLiveTranscript] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
+  const [cameraOn, setCameraOn] = useState(false);        // true após user tap "Ativar câmera"
+  const [cameraLoading, setCameraLoading] = useState(false);
+  const [isLandscape, setIsLandscape] = useState<boolean | null>(null);
 
+  // Detecta orientação
   useEffect(() => {
-    (async () => {
+    if (typeof window === "undefined") return;
+    const check = () => setIsLandscape(window.innerWidth > window.innerHeight);
+    check();
+    window.addEventListener("resize", check);
+    window.addEventListener("orientationchange", check);
+    return () => {
+      window.removeEventListener("resize", check);
+      window.removeEventListener("orientationchange", check);
+    };
+  }, []);
+
+  // Para o stream se usuário desrotacionar (evita travar o browser)
+  useEffect(() => {
+    if (isLandscape === false && cameraOn && !recording && !recordedBlob) {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      setCameraOn(false);
+    }
+  }, [isLandscape, cameraOn, recording, recordedBlob]);
+
+  // Cleanup geral ao desmontar
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+      speechRef.current?.stop();
+    };
+  }, []);
+
+  // Ativa câmera (chamado APÓS user tap em landscape — satisfaz user gesture iOS)
+  const activateCamera = async () => {
+    if (cameraOn || cameraLoading) return;
+    setCameraLoading(true);
+    onError(""); // limpa erros antigos
+    try {
+      // Tenta primeiro câmera traseira; se falhar, tenta qualquer câmera
+      let stream: MediaStream;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: true,
         });
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
-      } catch (err) {
-        onError(`câmera traseira: ${(err as Error).message}`);
+      } catch {
+        // fallback: qualquer câmera
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       }
-    })();
-    return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      speechRef.current?.stop();
-    };
-  }, [onError]);
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        try { await videoRef.current.play(); } catch { /* alguns browsers autoplay bloqueado */ }
+      }
+      setCameraOn(true);
+    } catch (err) {
+      const msg = (err as Error).message || String(err);
+      // "The operation was aborted" ou "NotAllowedError" ou "NotFoundError"
+      const user = /abort/i.test(msg)
+        ? "Câmera não respondeu. Toque em 'Ativar câmera' de novo (iOS às vezes cancela a 1ª tentativa)."
+        : /notallowed|permission/i.test(msg)
+        ? "Permissão da câmera negada. Vá nas configurações do site e permita câmera + microfone."
+        : /notfound|device/i.test(msg)
+        ? "Nenhuma câmera encontrada neste aparelho."
+        : `Câmera: ${msg}`;
+      onError(user);
+    } finally {
+      setCameraLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!recording) return;
@@ -679,6 +731,28 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
     } finally { setUploading(false); }
   };
 
+  // Portrait: bloqueia a tela
+  if (!recordedBlob && !recording && isLandscape === false) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-10 text-center">
+        <motion.div
+          className="text-7xl"
+          animate={{ rotate: [0, 90, 90, 0], scale: [1, 0.9, 0.9, 1] }}
+          transition={{ duration: 2.2, repeat: Infinity, times: [0, 0.3, 0.7, 1] }}
+        >
+          📱
+        </motion.div>
+        <div>
+          <h3 className="font-display text-xl font-black text-amber-100">Gire o celular</h3>
+          <p className="mt-2 text-sm text-amber-200/90">
+            A vistoria exige o celular na HORIZONTAL<br />pra captar o veículo inteiro.
+          </p>
+        </div>
+        <p className="text-xs text-amber-200/70">Assim que girar, aperta pra ativar a câmera</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="text-center">
@@ -690,8 +764,13 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
       <div className="relative mx-auto aspect-video w-full max-w-md overflow-hidden rounded-2xl border border-loog-border bg-black">
         {recordedBlob ? (
           <video src={URL.createObjectURL(recordedBlob)} className="h-full w-full object-cover" controls playsInline />
+        ) : cameraOn ? (
+          <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
         ) : (
-          <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center text-loog-muted">
+            <div className="text-5xl opacity-50">📹</div>
+            <p className="text-xs">Câmera desligada</p>
+          </div>
         )}
         {recording && (
           <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-red-500/90 px-2 py-1 text-[11px] font-bold text-white">
@@ -720,6 +799,15 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
         ) : recording ? (
           <button type="button" onClick={stopRecording} className="flex-1 rounded-xl bg-red-500 py-3 text-sm font-bold text-white">
             ⏹ Parar
+          </button>
+        ) : !cameraOn ? (
+          <button
+            type="button"
+            onClick={activateCamera}
+            disabled={cameraLoading}
+            className="flex-1 rounded-xl bg-gradient-to-r from-sky-500 to-blue-500 py-3 text-sm font-bold text-white disabled:opacity-40"
+          >
+            {cameraLoading ? "Ativando câmera..." : "📷 Ativar câmera"}
           </button>
         ) : (
           <button type="button" onClick={startRecording} className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-3 text-sm font-bold text-white">
