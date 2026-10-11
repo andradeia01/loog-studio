@@ -23,6 +23,7 @@ import { PlacaStudio } from "./PlacaStudio";
 import { CotacaoCompleta } from "./CotacaoCompleta";
 import { CrmLeads } from "./CrmLeads";
 import { CrmPipeline } from "./CrmPipeline";
+import { useAndroidBack } from "@/lib/hooks/use-android-back";
 import { SdrPane } from "./SdrPane";
 import { SdrDashboard } from "./SdrDashboard";
 import { InspectionPane } from "@/components/inspection/InspectionPane";
@@ -221,6 +222,16 @@ export function StudioApp({
     setActiveMundo(m);
     setActiveSub(s ?? null);
   }, []);
+
+  // Back-button Android (só PWA standalone):
+  //  - se em sub-página  → volta pra raiz do mundo (ex: Vendas > CRM → Vendas)
+  //  - se em mundo != home → volta pra home
+  //  - se já na home → não faz nada (comportamento Instagram)
+  useAndroidBack(useCallback(() => {
+    if (activeSub) { setActiveSub(null); return true; }
+    if (activeMundo !== "home") { setActiveMundo("home"); setActiveSub(null); return true; }
+    return true; // mesmo na home, consome: evita fechar o app por engano
+  }, [activeMundo, activeSub]));
 
   return (
     <StudioShell

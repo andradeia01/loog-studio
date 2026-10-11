@@ -169,17 +169,13 @@ export function StudioShell({
             </div>
           )}
 
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={`${activeMundo}-${activeSub ?? ""}`}
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.18, ease: "easeOut" }}
-            >
-              {children}
-            </motion.div>
-          </AnimatePresence>
+          {/* Content container: key estável evita que o wrapper remonte;
+              o React ainda reconcilia os children diferentes de cada mundo/sub,
+              mas sem a camada do framer-motion com `mode="wait"` que bloqueava
+              paint e amplificava o custo no PWA mobile. Fade sutil via CSS puro. */}
+          <div key={`${activeMundo}-${activeSub ?? ""}`} className="animate-in fade-in duration-150">
+            {children}
+          </div>
         </main>
       </div>
 

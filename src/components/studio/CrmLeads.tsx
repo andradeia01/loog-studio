@@ -90,16 +90,24 @@ export function CrmLeads() {
     return () => clearTimeout(t);
   }, [search, fetchAll]);
 
-  // realtime: refetch quando qualquer tabela CRM muda
+  // Ref pattern: fetchAll muda a cada tecla no filtro, mas o subscribe só pode
+  // acontecer UMA vez. Guardamos a última versão num ref e o canal chama ela
+  // via ref — evita derrubar/recriar websocket a cada letra digitada.
+  const fetchAllRef = useRef(fetchAll);
+  useEffect(() => { fetchAllRef.current = fetchAll; }, [fetchAll]);
+
+  // realtime: 1 subscribe pela vida do componente (dep vazia é intencional)
   useEffect(() => {
     const sb = createSupabaseBrowser();
+    const bump = () => { void fetchAllRef.current(); };
     const ch = sb.channel("crm-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_contacts" }, () => { void fetchAll(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_interactions" }, () => { void fetchAll(); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_followups" }, () => { void fetchAll(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_contacts" }, bump)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_interactions" }, bump)
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_followups" }, bump)
       .subscribe();
     return () => { void sb.removeChannel(ch); };
-  }, [fetchAll]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // insights derivados
   const insights = useMemo(() => {

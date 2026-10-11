@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
@@ -57,14 +57,20 @@ export function CrmPipeline() {
 
   useEffect(() => { void fetchPipeline(); }, [fetchPipeline]);
 
-  // realtime: refetch quando algo mudar no CRM
+  // Ref pattern: fetchPipeline referência estável mas via ref evita recriar
+  // o canal Supabase se o callback mudar.
+  const fetchPipelineRef = useRef(fetchPipeline);
+  useEffect(() => { fetchPipelineRef.current = fetchPipeline; }, [fetchPipeline]);
+
+  // realtime: 1 subscribe pela vida do componente
   useEffect(() => {
     const sb = createSupabaseBrowser();
     const ch = sb.channel("crm-pipeline-live")
-      .on("postgres_changes", { event: "*", schema: "public", table: "crm_contacts" }, () => { void fetchPipeline(); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "crm_contacts" }, () => { void fetchPipelineRef.current(); })
       .subscribe();
     return () => { void sb.removeChannel(ch); };
-  }, [fetchPipeline]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const moveTo = useCallback(async (contactId: string, newStage: Stage) => {
     // Optimistic UI: tira do stage antigo, bota no novo
