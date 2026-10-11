@@ -61,11 +61,21 @@ export function getStoredTracking(): TrackingInfo | null {
   } catch { return null; }
 }
 
-/** Devolve só os campos relevantes pro backend (omite captured_at). */
-export function trackingForBackend(): Omit<TrackingInfo, "captured_at"> | null {
+/** Devolve só os campos relevantes pro backend (omite captured_at), inclui fbp/fbc + event_id. */
+export function trackingForBackend(eventId?: string): (Omit<TrackingInfo, "captured_at"> & { fbp?: string | null; fbc?: string | null; event_id?: string }) | null {
   const info = captureTracking();
-  if (!info) return null;
-  const { captured_at: _ca, ...rest } = info;
-  void _ca;
-  return rest;
+  const fb = readFbCookies();
+  // Se não tem UTM nem cookie FB, retorna null
+  if (!info && !fb.fbp && !fb.fbc && !eventId) return null;
+  const base = info ? (() => { const { captured_at: _ca, ...rest } = info; void _ca; return rest; })() : { utm_source: null, utm_medium: null, utm_campaign: null, utm_content: null, utm_term: null, fbclid: null, gclid: null, referrer: null, landing_url: typeof window !== "undefined" ? window.location.href : null };
+  return { ...base, fbp: fb.fbp, fbc: fb.fbc, event_id: eventId };
+}
+
+function readFbCookies(): { fbp: string | null; fbc: string | null } {
+  if (typeof document === "undefined") return { fbp: null, fbc: null };
+  const read = (name: string) => {
+    const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]+)`));
+    return m ? decodeURIComponent(m[1]) : null;
+  };
+  return { fbp: read("_fbp"), fbc: read("_fbc") };
 }

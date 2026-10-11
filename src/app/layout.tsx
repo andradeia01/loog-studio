@@ -3,6 +3,7 @@ import "./globals.css";
 import { UpdateToast } from "@/components/UpdateToast";
 import { DebugOverlay } from "@/components/DebugOverlay";
 import { ServiceWorkerBoot } from "@/components/ServiceWorkerBoot";
+import { MetaPixel } from "@/components/MetaPixel";
 
 export const metadata: Metadata = {
   title: "LOOG Studio",
@@ -48,6 +49,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR" className="dark">
       <body>
         {children}
+        <MetaPixel />
         <ServiceWorkerBoot />
         <UpdateToast />
         <DebugOverlay />

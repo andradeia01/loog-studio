@@ -5,6 +5,7 @@ import { supabaseConfigured } from "@/lib/supabase/server";
 import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placafipe";
+import { sendCAPIEvent, newEventId } from "@/lib/meta-capi";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,9 @@ const TrackingSchema = z.object({
   gclid: z.string().max(300).nullable().optional(),
   referrer: z.string().max(500).nullable().optional(),
   landing_url: z.string().max(500).nullable().optional(),
+  fbp: z.string().max(300).nullable().optional(),
+  fbc: z.string().max(300).nullable().optional(),
+  event_id: z.string().max(100).nullable().optional(),
 }).optional();
 
 const Body = z.object({
@@ -156,7 +160,34 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        return NextResponse.json({ ok: true, via: "placafipe", ...result });
+        // Meta CAPI — evento Lead server-side (dedup com browser pelo event_id)
+        const eventId = parsed.data.tracking?.event_id ?? newEventId();
+        const monthly = (result as { plan?: { monthlyValueCents?: number } }).plan?.monthlyValueCents;
+        void sendCAPIEvent({
+          eventName: "Lead",
+          eventId,
+          eventSourceUrl: parsed.data.tracking?.landing_url ?? undefined,
+          user: {
+            phone: parsed.data.cliente.telefone,
+            firstName: parsed.data.cliente.nome.split(" ")[0],
+            lastName: parsed.data.cliente.nome.split(" ").slice(1).join(" ") || null,
+            city: v.municipio ?? undefined,
+            state: v.uf ?? undefined,
+            country: "br",
+            fbp: parsed.data.tracking?.fbp ?? undefined,
+            fbc: parsed.data.tracking?.fbc ?? undefined,
+            clientIp: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
+            userAgent: req.headers.get("user-agent") ?? undefined,
+          },
+          custom: {
+            value: monthly ? monthly / 100 : undefined,
+            currency: "BRL",
+            content_name: `${marcaFinal} ${modeloFinal}`,
+            content_category: "cotacao_rapida",
+          },
+        });
+
+        return NextResponse.json({ ok: true, via: "placafipe", eventId, ...result });
       }
     } else if (!placafipe.ok) {
       // Log só pra observabilidade — não derruba, cai no fallback
@@ -205,7 +236,32 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      return NextResponse.json({ ok: true, via: "hub-from-plate", placaUsada: placaVariante, ...result });
+      // Meta CAPI — evento Lead server-side (fallback hub path)
+      const eventId = parsed.data.tracking?.event_id ?? newEventId();
+      const monthly = (result as { plan?: { monthlyValueCents?: number } }).plan?.monthlyValueCents;
+      void sendCAPIEvent({
+        eventName: "Lead",
+        eventId,
+        eventSourceUrl: parsed.data.tracking?.landing_url ?? undefined,
+        user: {
+          phone: parsed.data.cliente.telefone,
+          firstName: parsed.data.cliente.nome.split(" ")[0],
+          lastName: parsed.data.cliente.nome.split(" ").slice(1).join(" ") || null,
+          country: "br",
+          fbp: parsed.data.tracking?.fbp ?? undefined,
+          fbc: parsed.data.tracking?.fbc ?? undefined,
+          clientIp: req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? undefined,
+          userAgent: req.headers.get("user-agent") ?? undefined,
+        },
+        custom: {
+          value: monthly ? monthly / 100 : undefined,
+          currency: "BRL",
+          content_name: "cotacao_rapida",
+          content_category: "cotacao_rapida",
+        },
+      });
+
+      return NextResponse.json({ ok: true, via: "hub-from-plate", eventId, placaUsada: placaVariante, ...result });
     } catch (err) {
       ultimoErro = err;
       // Se for 404 (placa não encontrada), vale tentar a próxima variante.

@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { loadConsultant } from "@/lib/storage";
 import { montarMensagemWhats, type CoberturaItem } from "@/lib/mensagem-whats";
 import { trackingForBackend } from "@/lib/tracking";
+import { trackMetaEvent } from "@/components/MetaPixel";
 
 interface HubPlan {
   productId: string | number;
@@ -145,7 +146,7 @@ export function PlacaStudio() {
           placa: raw,
           tipo_veiculo: tipoVeiculo,
           cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
-          tracking: trackingForBackend(),
+          tracking: trackingForBackend(crypto.randomUUID()),
         }),
       });
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
@@ -157,8 +158,18 @@ export function PlacaStudio() {
         }
         throw new Error(msg);
       }
-      const r = data as HubResult;
+      const r = data as HubResult & { eventId?: string };
       setResult(r);
+      // Meta Pixel browser — dedup com CAPI pelo mesmo eventId
+      try {
+        const monthly = r.plan?.monthlyValueCents;
+        trackMetaEvent("Lead", {
+          value: monthly ? monthly / 100 : undefined,
+          currency: "BRL",
+          content_name: r.vehicle ? `${r.vehicle.brand} ${r.vehicle.model}` : "cotacao_rapida",
+          content_category: "cotacao_rapida",
+        }, r.eventId);
+      } catch { /* silencioso */ }
       if (r.vehicle) {
         const next: HistItem[] = [
           { placa: r.vehicle.plate, marca: r.vehicle.brand, modelo: r.vehicle.model, ano: String(r.vehicle.modelYear), at: Date.now() },
