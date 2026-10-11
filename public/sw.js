@@ -1,10 +1,37 @@
-/* LOOG Studio Service Worker — Web Push notifications */
+/* LOOG Studio Service Worker — Web Push + força atualização agressiva.
+ *
+ * SW_VERSION bump a cada deploy que precisa forçar refresh em TODOS os PWAs
+ * instalados. Quando o browser detecta este arquivo mudou (byte-diff), ativa
+ * o novo SW → activate limpa caches + manda "RELOAD" pros clients → cliente
+ * recarrega sozinho, sem o usuário precisar desinstalar.
+ */
+const SW_VERSION = '2026-10-12-force-dashboard-fix';
+
 self.addEventListener('install', (e) => {
+  // skipWaiting = NÃO espera abas antigas fecharem pra ativar — ativa já
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
-  e.waitUntil(self.clients.claim());
+  e.waitUntil((async () => {
+    // Limpa TODOS os caches antigos — garante que nada ficou preso
+    try {
+      const names = await caches.keys();
+      await Promise.all(names.map((n) => caches.delete(n)));
+    } catch { /* silencioso */ }
+    // claim: assume controle das abas abertas AGORA
+    await self.clients.claim();
+    // Dispara reload em cada cliente — eles pegam a nova versão do app
+    try {
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      clients.forEach((c) => c.postMessage({ type: 'LOOG_SW_UPDATED', version: SW_VERSION }));
+    } catch { /* silencioso */ }
+  })());
+});
+
+// Permite que o cliente peça skipWaiting via postMessage (fallback)
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('push', (event) => {

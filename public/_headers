@@ -1,0 +1,13 @@
+# Netlify custom headers — crítico pra PWA atualizar em todos os usuários
+# Docs: https://docs.netlify.com/routing/headers/
+
+# Service worker: NUNCA cachear. Browser deve re-baixar a cada abertura
+# pra detectar nova versão. Sem isso, Chrome pode manter o SW em cache
+# por até 24h, prendendo o PWA em versão antiga.
+/sw.js
+  Cache-Control: public, max-age=0, must-revalidate
+  Service-Worker-Allowed: /
+
+# Manifest também sem cache — mudanças de ícones/nome/shortcuts aparecem na hora
+/manifest.json
+  Cache-Control: public, max-age=0, must-revalidate
