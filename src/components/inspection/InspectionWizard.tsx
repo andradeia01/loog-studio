@@ -6,12 +6,14 @@ import { cn } from "@/lib/utils";
 import { extractFrames } from "@/lib/inspection/frame-extractor";
 import { startSpeechRecognition, type SpeechSession } from "@/lib/inspection/speech";
 import type { AiResult } from "@/lib/inspection/types";
+import { AngleCaptureStep } from "./AngleCaptureStep";
 
 type Step =
   | "form"            // placa + dados
   | "permissions"     // pedir câmera/mic/localização
   | "selfie"          // foto do operador
-  | "record"          // gravação principal
+  | "angles"          // captura passo-a-passo dos 6 ângulos (landscape forçado)
+  | "record"          // gravação de vídeo + narração (opcional, serve como áudio extra)
   | "odometer"        // foto extra do odômetro
   | "chassis"         // foto do número do chassi (VIN)
   | "engine"          // foto do cofre do motor (capô aberto)
@@ -127,9 +129,17 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
             {step === "selfie" && inspectionId && (
               <SelfieStep
                 inspectionId={inspectionId}
-                onNext={() => setStep("record")}
+                onNext={() => setStep("angles")}
                 onError={(msg) => setErrorMsg(msg)}
                 error={errorMsg}
+              />
+            )}
+
+            {step === "angles" && inspectionId && (
+              <AngleCaptureStep
+                inspectionId={inspectionId}
+                onNext={() => setStep("record")}
+                onError={(msg) => setErrorMsg(msg)}
               />
             )}
 
@@ -221,15 +231,16 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
 
 function stepLabel(s: Step): string {
   return {
-    form: "1/8 Dados do veículo",
-    permissions: "2/8 Permissões",
-    selfie: "3/8 Foto do operador",
-    record: "4/8 Gravação",
-    odometer: "5/8 Odômetro",
-    chassis: "6/8 Chassi",
-    engine: "7/8 Cofre do motor",
+    form: "1/9 Dados do veículo",
+    permissions: "2/9 Permissões",
+    selfie: "3/9 Foto do operador",
+    angles: "4/9 Ângulos do veículo",
+    record: "5/9 Gravação com áudio",
+    odometer: "6/9 Odômetro",
+    chassis: "7/9 Chassi",
+    engine: "8/9 Cofre do motor",
     uploading: "Enviando…",
-    processing: "8/8 IA analisando",
+    processing: "9/9 IA analisando",
     done: "Resultado",
   }[s];
 }

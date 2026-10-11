@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AiResult } from "./types";
+import { getAnthropic } from "@/lib/ai/anthropic";
 
 /**
  * Analisa frames extraídos de uma gravação de vistoria.
@@ -21,15 +22,20 @@ export async function analyzeInspection(opts: {
   modelo?: string | null;
   audioTranscript?: string | null;
 }): Promise<AiResult> {
+  // Prioridade: env ANTHROPIC_API_KEY → fallback admin_settings.api_keys.anthropic
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("ANTHROPIC_API_KEY ausente");
-
-  const client = new Anthropic({
-    apiKey,
-    defaultHeaders: process.env.ANTHROPIC_WORKSPACE_ID
-      ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID }
-      : undefined,
-  });
+  let client: Anthropic | null = null;
+  if (apiKey) {
+    client = new Anthropic({
+      apiKey,
+      defaultHeaders: process.env.ANTHROPIC_WORKSPACE_ID
+        ? { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID }
+        : undefined,
+    });
+  } else {
+    client = await getAnthropic();
+  }
+  if (!client) throw new Error("Anthropic não configurado (sem ANTHROPIC_API_KEY nem admin_settings.api_keys.anthropic)");
 
   const systemPrompt = `Você é um inspetor veicular rigoroso trabalhando numa empresa de PROTEÇÃO VEICULAR (LOOG). Essa vistoria é a prova pericial de que o veículo entrou coberto, íntegro, sem fraudes. Sua missão é aprovar ou reprovar com rigor de perito.
 
