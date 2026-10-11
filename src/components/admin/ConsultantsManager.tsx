@@ -58,6 +58,27 @@ export function ConsultantsManager({ initial }: { initial: ConsultantRow[] }) {
     }
   }
 
+  async function resetPassword(email: string) {
+    if (!confirm(`Gerar nova senha pra ${email}?\nA senha vai aparecer uma única vez — anote antes de fechar.`)) return;
+    try {
+      const r = await fetch("/api/admin/users/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, generate: true }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.message || j.error);
+      // Mostra em prompt pra o admin copiar
+      window.prompt(
+        `✅ Senha gerada pra ${email}\n\nCopie agora (não vai aparecer de novo):`,
+        j.password,
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Falha ao resetar senha: " + (err instanceof Error ? err.message : String(err)));
+    }
+  }
+
   async function remove(id: string, name: string) {
     if (!confirm(`Excluir permanentemente ${name}? Essa ação não pode ser desfeita.`)) return;
     setBusyId(id);
@@ -166,6 +187,7 @@ export function ConsultantsManager({ initial }: { initial: ConsultantRow[] }) {
                   {r.role === "admin" && (
                     <button className="btn-ghost !py-2 !text-xs" onClick={() => act(r.id, "demote")} disabled={busy}>Rebaixar</button>
                   )}
+                  <button className="btn-ghost !py-2 !text-xs !text-amber-300" onClick={() => resetPassword(r.email)} disabled={busy}>🔑 Nova senha</button>
                   <button className="btn-ghost !py-2 !text-xs !text-red-400" onClick={() => remove(r.id, r.full_name || r.email)} disabled={busy}>Excluir</button>
                 </div>
               </div>

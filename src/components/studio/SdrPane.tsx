@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable, type DropResult } from "@hello-pangea/dnd";
 import { cn } from "@/lib/utils";
 import { registerPush, unregisterPush, isPushEnabled } from "@/lib/push-client";
+import { SdrLeadAssign, type SdrConsultor, type SdrAssignment } from "./SdrLeadAssign";
 
 type Tab = "status" | "chat" | "leads" | "kanban" | "oficial" | "config";
 
@@ -72,6 +73,38 @@ export function SdrPane() {
   const [generatingQr, setGeneratingQr] = useState(false);
   const [resetting, setResetting] = useState(false);
 
+  // Atribuição de leads (admin distribui pros consultores):
+  const [me, setMe] = useState<{ userId: string; isAdmin: boolean } | null>(null);
+  const [consultores, setConsultores] = useState<SdrConsultor[]>([]);
+  const [assignments, setAssignments] = useState<SdrAssignment[]>([]);
+  const [filterMine, setFilterMine] = useState(false);
+
+  // carrega 1x: who am I + lista de consultores
+  useEffect(() => {
+    (async () => {
+      try {
+        const [m, c] = await Promise.all([
+          fetch("/api/me").then((r) => r.json()),
+          fetch("/api/sdr/consultores").then((r) => r.json()),
+        ]);
+        if (m.ok) setMe({ userId: m.userId, isAdmin: !!m.isAdmin });
+        if (c.ok) setConsultores(c.data || []);
+        // Consultor comum já abre em "Meus leads" por default
+        if (m.ok && !m.isAdmin) setFilterMine(true);
+      } catch { /* silencioso */ }
+    })();
+  }, []);
+
+  const reloadAssignments = useCallback(async () => {
+    try {
+      const r = await fetch("/api/sdr/assignments", { cache: "no-store" });
+      const j = await r.json();
+      if (j.ok) setAssignments(j.data || []);
+    } catch { /* silencioso */ }
+  }, []);
+
+  useEffect(() => { void reloadAssignments(); }, [reloadAssignments]);
+
   // Polling simples: refaz status a cada 8s pra pegar QR → conectado
   useEffect(() => {
     let alive = true;
@@ -127,6 +160,19 @@ export function SdrPane() {
   };
 
   const unreadCount = leads.reduce((s, l) => s + (l.unread || 0), 0);
+
+  // Mapa lead_id → assignment (O(1) lookup no render)
+  const assignmentByLead = useMemo(() => {
+    const map = new Map<string, SdrAssignment>();
+    assignments.forEach((a) => map.set(a.lead_id, a));
+    return map;
+  }, [assignments]);
+
+  // Filtra leads conforme toggle "Meus leads" (ou pra consultor sempre filtra)
+  const visibleLeads = useMemo(() => {
+    if (!filterMine || !me) return leads;
+    return leads.filter((l) => assignmentByLead.get(l.id)?.consultant_id === me.userId);
+  }, [filterMine, leads, assignmentByLead, me]);
 
   return (
     <div className="space-y-6">
@@ -199,10 +245,21 @@ export function SdrPane() {
               onReset={handleReset}
             />
           )}
-          {tab === "chat" && <ChatTab leads={leads} />}
-          {tab === "leads" && <LeadsTab leads={leads} loading={loading} />}
+          {tab === "chat" && <ChatTab leads={visibleLeads} />}
+          {tab === "leads" && (
+            <LeadsTab
+              leads={visibleLeads}
+              loading={loading}
+              consultores={consultores}
+              assignmentByLead={assignmentByLead}
+              isAdmin={me?.isAdmin ?? false}
+              filterMine={filterMine}
+              onToggleFilter={() => setFilterMine((v) => !v)}
+              onAssignChange={reloadAssignments}
+            />
+          )}
           {tab === "kanban" && (
-            <KanbanTab leads={leads} onLeadsChange={setLeads} />
+            <KanbanTab leads={visibleLeads} onLeadsChange={setLeads} />
           )}
           {tab === "oficial" && <OficialTab />}
           {tab === "config" && <ConfigTab />}
@@ -593,35 +650,91 @@ function StageBadge({ stage }: { stage: KanbanStage }) {
 // ──────────────────────────────────────────────────────────────────
 // LEADS
 // ──────────────────────────────────────────────────────────────────
-function LeadsTab({ leads, loading }: { leads: LeadConversation[]; loading: boolean }) {
+function LeadsTab({
+  leads, loading, consultores, assignmentByLead, isAdmin, filterMine, onToggleFilter, onAssignChange,
+}: {
+  leads: LeadConversation[];
+  loading: boolean;
+  consultores: SdrConsultor[];
+  assignmentByLead: Map<string, SdrAssignment>;
+  isAdmin: boolean;
+  filterMine: boolean;
+  onToggleFilter: () => void;
+  onAssignChange: () => void;
+}) {
   if (loading) return <SkeletonCard label="Carregando conversas..." />;
+
+  // Toggle "Meus leads" / "Todos" (consultor comum sempre em Meus, admin alterna)
+  const toggle = (
+    <div className="mb-3 flex items-center justify-between">
+      <div className="flex gap-1 rounded-xl border border-loog-border bg-loog-panel/60 p-1">
+        <button
+          type="button"
+          onClick={() => filterMine && onToggleFilter()}
+          className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+            !filterMine ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white")}
+        >Todos ({leads.length})</button>
+        <button
+          type="button"
+          onClick={() => !filterMine && onToggleFilter()}
+          className={cn("rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+            filterMine ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white")}
+        >👤 Meus</button>
+      </div>
+      {isAdmin && (
+        <span className="text-[10px] text-loog-muted">
+          {consultores.length} consultor{consultores.length !== 1 ? "es" : ""} disponíveis
+        </span>
+      )}
+    </div>
+  );
+
   if (leads.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-loog-border p-10 text-center">
-        <div className="text-4xl">💬</div>
-        <h3 className="mt-3 font-display text-lg font-bold">Nenhum lead ainda</h3>
-        <p className="mt-1 text-sm text-loog-muted">Quando um lead chamar no WhatsApp, aparece aqui em tempo real.</p>
+      <div>
+        {toggle}
+        <div className="rounded-2xl border border-dashed border-loog-border p-10 text-center">
+          <div className="text-4xl">💬</div>
+          <h3 className="mt-3 font-display text-lg font-bold">
+            {filterMine ? "Nenhum lead atribuído a você" : "Nenhum lead ainda"}
+          </h3>
+          <p className="mt-1 text-sm text-loog-muted">
+            {filterMine
+              ? "Quando o admin te atribuir um lead, ele aparece aqui."
+              : "Quando um lead chamar no WhatsApp, aparece aqui em tempo real."}
+          </p>
+        </div>
       </div>
     );
   }
   return (
-    <div className="divide-y divide-loog-border/50 rounded-2xl border border-loog-border bg-loog-panel/60">
-      {leads.map((l) => (
-        <div key={l.id} className="flex items-start gap-3 p-4">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 font-bold text-emerald-300">
-            {l.name.slice(0, 1).toUpperCase()}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate font-bold text-loog-text">{l.name}</span>
-              <span className="font-mono text-xs text-loog-muted">{l.phone}</span>
-              <StageBadge stage={l.stage} />
+    <div>
+      {toggle}
+      <div className="divide-y divide-loog-border/50 rounded-2xl border border-loog-border bg-loog-panel/60">
+        {leads.map((l) => (
+          <div key={l.id} className="flex items-start gap-3 p-4">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 font-bold text-emerald-300">
+              {l.name.slice(0, 1).toUpperCase()}
             </div>
-            <p className="mt-0.5 truncate text-sm text-loog-muted">{l.lastMessage}</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="truncate font-bold text-loog-text">{l.name}</span>
+                <span className="font-mono text-xs text-loog-muted">{l.phone}</span>
+                <StageBadge stage={l.stage} />
+                <SdrLeadAssign
+                  leadId={l.id}
+                  assignment={assignmentByLead.get(l.id) ?? null}
+                  consultores={consultores}
+                  isAdmin={isAdmin}
+                  onChange={onAssignChange}
+                />
+              </div>
+              <p className="mt-0.5 truncate text-sm text-loog-muted">{l.lastMessage}</p>
+            </div>
+            <div className="shrink-0 text-xs text-loog-muted">{l.lastAt}</div>
           </div>
-          <div className="shrink-0 text-xs text-loog-muted">{l.lastAt}</div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
