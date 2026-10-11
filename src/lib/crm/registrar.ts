@@ -1,6 +1,18 @@
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { normTelefone } from "./schemas";
 
+export interface TrackingInfo {
+  utm_source?: string | null;
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  utm_content?: string | null;
+  utm_term?: string | null;
+  fbclid?: string | null;
+  gclid?: string | null;
+  referrer?: string | null;
+  landing_url?: string | null;
+}
+
 export interface RegistrarArgs {
   ownerId: string;
   groupId?: string | null;
@@ -9,6 +21,7 @@ export interface RegistrarArgs {
   telefone?: string | null;
   email?: string | null;
   cidade?: string | null;
+  tracking?: TrackingInfo | null;
   payload?: Record<string, unknown>; // placa, veiculo, valorFipe, mensalidade, quoteId...
 }
 
@@ -54,7 +67,8 @@ export async function registrarInteracaoCRM(args: RegistrarArgs): Promise<{ ok: 
         })
         .eq("id", contactId);
     } else {
-      // 2) cria novo contato
+      // 2) cria novo contato (inclui tracking de tráfego quando disponível)
+      const trk = args.tracking ?? {};
       const { data: created, error: insErr } = await supabase
         .from("crm_contacts")
         .insert({
@@ -64,9 +78,18 @@ export async function registrarInteracaoCRM(args: RegistrarArgs): Promise<{ ok: 
           telefone: args.telefone ?? null,
           email: args.email ?? null,
           cidade: args.cidade ?? null,
-          origem: args.tipo,
+          origem: trk.utm_source ?? args.tipo,
           temperatura: "morno",
           status_ciclo: "ativo",
+          utm_source: trk.utm_source ?? null,
+          utm_medium: trk.utm_medium ?? null,
+          utm_campaign: trk.utm_campaign ?? null,
+          utm_content: trk.utm_content ?? null,
+          utm_term: trk.utm_term ?? null,
+          fbclid: trk.fbclid ?? null,
+          gclid: trk.gclid ?? null,
+          referrer: trk.referrer ?? null,
+          landing_url: trk.landing_url ?? null,
         })
         .select("id")
         .single();

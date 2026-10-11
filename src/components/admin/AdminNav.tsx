@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-type Key = "templates" | "consultores" | "artes-prontas" | "videos-prontos" | "fidelidade" | "config";
+type Key = "templates" | "consultores" | "artes-prontas" | "videos-prontos" | "fidelidade" | "leads-trafego" | "config";
 
 const TABS: { key: Key; label: string; href: string }[] = [
   { key: "templates", label: "Templates", href: "/admin" },
@@ -9,10 +9,11 @@ const TABS: { key: Key; label: string; href: string }[] = [
   { key: "artes-prontas", label: "Artes prontas", href: "/admin/artes-prontas" },
   { key: "videos-prontos", label: "Vídeos prontos", href: "/admin/videos-prontos" },
   { key: "fidelidade", label: "Fidelidade 🔥", href: "/admin/fidelidade" },
+  { key: "leads-trafego", label: "Tráfego 📊", href: "/admin/leads-trafego" },
   { key: "config", label: "Configurações", href: "/admin/config" },
 ];
 
-export function AdminNav({ active, pendingCount }: { active: Key; pendingCount?: number }) {
+export function AdminNav({ active, pendingCount }: { active?: Key; pendingCount?: number }) {
   return (
     <nav className="mt-6 inline-flex rounded-2xl border border-loog-border bg-loog-panel p-1">
       {TABS.map((t) => {

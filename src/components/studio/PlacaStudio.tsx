@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { loadConsultant } from "@/lib/storage";
 import { montarMensagemWhats, type CoberturaItem } from "@/lib/mensagem-whats";
+import { trackingForBackend } from "@/lib/tracking";
 
 interface HubPlan {
   productId: string | number;
@@ -144,6 +145,7 @@ export function PlacaStudio() {
           placa: raw,
           tipo_veiculo: tipoVeiculo,
           cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
+          tracking: trackingForBackend(),
         }),
       });
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
@@ -287,6 +289,7 @@ export function PlacaStudio() {
           tipo_veiculo: tipoVeiculo,
           placa: placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || undefined,
           cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
+          tracking: trackingForBackend(),
         }),
       });
       const data = await res.json().catch(() => ({} as Record<string, unknown>));

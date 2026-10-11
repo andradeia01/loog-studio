@@ -245,7 +245,13 @@ export function SdrPane() {
               onReset={handleReset}
             />
           )}
-          {tab === "chat" && <ChatTab leads={visibleLeads} />}
+          {tab === "chat" && (
+            <ChatTab
+              leads={visibleLeads}
+              isAdmin={me?.isAdmin ?? false}
+              assignmentByLead={assignmentByLead}
+            />
+          )}
           {tab === "leads" && (
             <LeadsTab
               leads={visibleLeads}
@@ -494,127 +500,251 @@ function Stat({ label, value }: { label: string; value: number }) {
 // ──────────────────────────────────────────────────────────────────
 // CHAT AO VIVO
 // ──────────────────────────────────────────────────────────────────
-function ChatTab({ leads }: { leads: LeadConversation[] }) {
+function ChatTab({
+  leads, isAdmin, assignmentByLead,
+}: {
+  leads: LeadConversation[];
+  isAdmin: boolean;
+  assignmentByLead: Map<string, SdrAssignment>;
+}) {
   const [selected, setSelected] = useState<string | null>(leads[0]?.id ?? null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
+  // Mobile: alterna entre lista e chat (quando selected, esconde lista)
+  const [mobileView, setMobileView] = useState<"list" | "chat">("list");
+  useEffect(() => { if (selected) setMobileView("chat"); }, [selected]);
+
+  // Polling: pausa quando aba oculta (document.hidden)
   useEffect(() => {
     if (!selected) { setMessages([]); return; }
     let alive = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+
     const load = async () => {
-      setLoading(true);
+      if (document.hidden) return;
       try {
-        const res = await fetch(`/api/sdr/messages?leadId=${selected}`);
+        const res = await fetch(`/api/sdr/messages?leadId=${selected}`, { cache: "no-store" });
         if (res.ok && alive) setMessages(await res.json());
-      } finally {
+      } catch { /* silencioso */ } finally {
         if (alive) setLoading(false);
       }
     };
+    setLoading(true);
     load();
-    const t = setInterval(load, 5_000);
-    return () => { alive = false; clearInterval(t); };
+    const start = () => { if (!timer) timer = setInterval(load, 5_000); };
+    const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+    const onVis = () => { if (document.hidden) stop(); else { load(); start(); } };
+    start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      alive = false; stop();
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [selected]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const handleSend = async () => {
-    if (!draft.trim() || !selected) return;
-    const text = draft.trim();
+  const handleSend = async (textRaw?: string) => {
+    const text = (textRaw ?? draft).trim();
+    if (!text || !selected || sending) return;
+    setSending(true);
     setDraft("");
-    await fetch("/api/sdr/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leadId: selected, text }),
-    });
+    setShowTemplates(false);
     // Otimista: adiciona a mensagem na UI
-    setMessages((m) => [...m, { id: `tmp-${Date.now()}`, from: "sdr", text, at: new Date().toISOString() }]);
+    const optimistic: ChatMessage = { id: `tmp-${Date.now()}`, from: "sdr", text, at: new Date().toISOString() };
+    setMessages((m) => [...m, optimistic]);
+    try {
+      await fetch("/api/sdr/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ leadId: selected, text }),
+      });
+    } catch { /* polling vai reconciliar */ } finally { setSending(false); }
   };
+
+  // Templates rápidos pro consultor
+  const quickTemplates = useMemo(() => {
+    const activeLead = leads.find((l) => l.id === selected);
+    const nome = activeLead?.name?.split(" ")[0] ?? "amigo";
+    return [
+      { label: "👋 Oi", text: `Oi ${nome}, tudo bem? Aqui é da LOOG, tô te atendendo agora!` },
+      { label: "⏳ Momento", text: "Um momentinho, já volto com a resposta pra ti!" },
+      { label: "💰 Fechou?", text: `${nome}, consegue me confirmar se podemos fechar? Qualquer dúvida me chama 👊` },
+      { label: "📄 Docs", text: `${nome}, pra avançar preciso de 3 fotos: CNH, CRLV do veículo e um comprovante de residência recente. Pode me mandar?` },
+      { label: "🙏 Obrigado", text: `Perfeito, ${nome}! Qualquer coisa estou à disposição 🙏` },
+    ];
+  }, [leads, selected]);
 
   if (leads.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-loog-border p-10 text-center">
         <div className="text-4xl">💬</div>
         <h3 className="mt-3 font-display text-lg font-bold">Nenhuma conversa ativa</h3>
-        <p className="mt-1 text-sm text-loog-muted">Quando um lead chamar no WhatsApp, abre aqui.</p>
+        <p className="mt-1 text-sm text-loog-muted">
+          {isAdmin
+            ? "Quando um lead chamar o Tavinho, abre aqui."
+            : "Quando o admin te atribuir um lead, abre aqui."}
+        </p>
       </div>
     );
   }
 
   const activeLead = leads.find((l) => l.id === selected);
+  // Privacidade: consultor comum NÃO vê o número do lead — só o admin vê
+  const canSeePhone = isAdmin;
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[300px_1fr]" style={{ minHeight: 520 }}>
-      {/* Lista de conversas */}
-      <div className="divide-y divide-loog-border/50 overflow-y-auto rounded-2xl border border-loog-border bg-loog-panel/60">
-        {leads.map((l) => (
-          <button
-            key={l.id}
-            type="button"
-            onClick={() => setSelected(l.id)}
-            className={cn(
-              "flex w-full items-start gap-2 p-3 text-left transition hover:bg-loog-brand/5",
-              selected === l.id && "bg-loog-brand/10"
-            )}
-          >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 font-bold text-emerald-300">
-              {l.name.slice(0, 1).toUpperCase()}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center justify-between">
-                <span className="truncate text-sm font-bold text-loog-text">{l.name}</span>
-                {l.unread > 0 && (
-                  <span className="rounded-full bg-emerald-500 px-1.5 py-px text-[10px] font-bold text-white">
-                    {l.unread}
+    <div
+      className={cn(
+        "grid gap-3 lg:grid-cols-[300px_1fr]",
+      )}
+      style={{ minHeight: "min(80vh, 640px)" }}
+    >
+      {/* Lista de conversas — esconde em mobile quando chat tá aberto */}
+      <div className={cn(
+        "divide-y divide-loog-border/50 overflow-y-auto rounded-2xl border border-loog-border bg-loog-panel/60",
+        mobileView === "chat" && selected ? "hidden lg:block" : "block",
+      )}>
+        {leads.map((l) => {
+          const assign = assignmentByLead.get(l.id);
+          return (
+            <button
+              key={l.id}
+              type="button"
+              onClick={() => setSelected(l.id)}
+              className={cn(
+                "flex w-full items-start gap-2 p-3 text-left transition hover:bg-loog-brand/5",
+                selected === l.id && "bg-loog-brand/10"
+              )}
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 font-bold text-emerald-300">
+                {l.name.slice(0, 1).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-bold text-loog-text">{l.name}</span>
+                  {l.unread > 0 && (
+                    <span className="rounded-full bg-emerald-500 px-1.5 py-px text-[10px] font-bold text-white">
+                      {l.unread}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-0.5 truncate text-xs text-loog-muted">{l.lastMessage}</p>
+                {assign?.consultant && (
+                  <span className="mt-0.5 inline-block rounded-full border border-sky-500/40 bg-sky-500/10 px-1.5 py-0 text-[9px] font-bold text-sky-300">
+                    👤 {(assign.consultant.full_name || assign.consultant.email || "").split(" ")[0]}
                   </span>
                 )}
               </div>
-              <p className="mt-0.5 truncate text-xs text-loog-muted">{l.lastMessage}</p>
-            </div>
-          </button>
-        ))}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Painel de mensagens */}
-      <div className="flex flex-col rounded-2xl border border-loog-border bg-loog-panel/60">
+      {/* Painel de mensagens — fullscreen em mobile */}
+      <div className={cn(
+        "flex flex-col rounded-2xl border border-loog-border bg-loog-panel/60",
+        mobileView === "list" && !selected ? "hidden lg:flex" : "flex",
+      )}>
         {activeLead && (
-          <div className="flex items-center justify-between border-b border-loog-border/50 p-3">
-            <div>
-              <div className="font-bold text-loog-text">{activeLead.name}</div>
-              <div className="font-mono text-xs text-loog-muted">{activeLead.phone}</div>
+          <div className="flex items-center gap-2 border-b border-loog-border/50 p-3">
+            <button
+              type="button"
+              onClick={() => { setSelected(null); setMobileView("list"); }}
+              className="rounded-md p-1.5 text-loog-muted hover:bg-white/5 hover:text-white lg:hidden"
+              aria-label="Voltar"
+            >
+              ←
+            </button>
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 font-bold text-emerald-300">
+              {activeLead.name.slice(0, 1).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-bold text-loog-text">{activeLead.name}</div>
+              {canSeePhone ? (
+                <div className="truncate font-mono text-xs text-loog-muted">{activeLead.phone}</div>
+              ) : (
+                <div className="text-[10px] text-loog-muted">🔒 Telefone protegido pela empresa</div>
+              )}
             </div>
             <StageBadge stage={activeLead.stage} />
           </div>
         )}
         <div className="flex-1 space-y-2 overflow-y-auto p-3">
           {loading && messages.length === 0 && (
-            <p className="text-center text-xs text-loog-muted">Carregando...</p>
+            <p className="text-center text-xs text-loog-muted">Carregando mensagens...</p>
+          )}
+          {messages.length === 0 && !loading && (
+            <p className="text-center text-xs text-loog-muted">Sem mensagens anteriores. Comece a conversa!</p>
           )}
           {messages.map((m) => (
             <ChatBubble key={m.id} msg={m} />
           ))}
           <div ref={endRef} />
         </div>
+
+        {/* Barra de templates rápidos (abre acima do input) */}
+        <AnimatePresence>
+          {showTemplates && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden border-t border-loog-border/50 bg-loog-panel/80"
+            >
+              <div className="flex gap-1 overflow-x-auto p-2" style={{ touchAction: "pan-x" }}>
+                {quickTemplates.map((t) => (
+                  <button
+                    key={t.label}
+                    type="button"
+                    onClick={() => handleSend(t.text)}
+                    className="shrink-0 whitespace-nowrap rounded-md border border-loog-border bg-loog-bg px-3 py-1.5 text-xs text-loog-muted hover:border-loog-brand/60 hover:text-white"
+                    title={t.text}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <div className="flex gap-2 border-t border-loog-border/50 p-3">
+          <button
+            type="button"
+            onClick={() => setShowTemplates((v) => !v)}
+            className={cn(
+              "shrink-0 rounded-md border px-2 py-2 text-xs transition",
+              showTemplates
+                ? "border-loog-brand bg-loog-brand/15 text-loog-brand"
+                : "border-loog-border text-loog-muted hover:text-white",
+            )}
+            title="Templates rápidos"
+          >
+            ⚡
+          </button>
           <input
             type="text"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-            placeholder="Mensagem como consultor (vai pelo Tavinho)"
+            onKeyDown={(e) => { if (e.key === "Enter") void handleSend(); }}
+            placeholder={isAdmin ? "Mensagem (vai pelo Tavinho)" : "Escreva ao lead..."}
             className="flex-1 rounded-lg border border-loog-border bg-loog-bg px-3 py-2 text-sm text-loog-text placeholder:text-loog-muted focus:border-loog-brand focus:outline-none"
           />
           <button
             type="button"
-            onClick={handleSend}
-            disabled={!draft.trim()}
+            onClick={() => void handleSend()}
+            disabled={!draft.trim() || sending}
             className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-400 disabled:opacity-50"
           >
-            Enviar
+            {sending ? "..." : "Enviar"}
           </button>
         </div>
       </div>

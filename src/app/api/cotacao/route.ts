@@ -20,6 +20,18 @@ function rateLimited(ip: string) {
   return rec.count > LIMIT;
 }
 
+const TrackingSchema = z.object({
+  utm_source: z.string().max(120).nullable().optional(),
+  utm_medium: z.string().max(120).nullable().optional(),
+  utm_campaign: z.string().max(200).nullable().optional(),
+  utm_content: z.string().max(200).nullable().optional(),
+  utm_term: z.string().max(200).nullable().optional(),
+  fbclid: z.string().max(300).nullable().optional(),
+  gclid: z.string().max(300).nullable().optional(),
+  referrer: z.string().max(500).nullable().optional(),
+  landing_url: z.string().max(500).nullable().optional(),
+}).optional();
+
 const Body = z.object({
   placa: z.string().min(7).max(10),
   tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico"]).optional(),
@@ -27,6 +39,7 @@ const Body = z.object({
     nome: z.string().min(2).max(120),
     telefone: z.string().min(8).max(20),
   }),
+  tracking: TrackingSchema,
   leadId: z.string().optional(),
 });
 
@@ -124,6 +137,7 @@ export async function POST(req: NextRequest) {
             tipo: "cotacao_rapida",
             nome: parsed.data.cliente.nome,
             telefone: parsed.data.cliente.telefone,
+            tracking: parsed.data.tracking ?? null,
             payload: {
               via: "placafipe+from-text",
               placa: parsed.data.placa,
@@ -177,6 +191,7 @@ export async function POST(req: NextRequest) {
           tipo: "cotacao_rapida",
           nome: parsed.data.cliente.nome,
           telefone: parsed.data.cliente.telefone,
+          tracking: parsed.data.tracking ?? null,
           payload: {
             via: placaVariante !== parsed.data.placa ? "hub-from-plate+variant" : "hub-from-plate",
             placa: parsed.data.placa,
