@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { UpdateToast } from "@/components/UpdateToast";
+import { DebugOverlay } from "@/components/DebugOverlay";
 
 export const metadata: Metadata = {
   title: "LOOG Studio",
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         {children}
         <UpdateToast />
+        <DebugOverlay />
       </body>
     </html>
   );

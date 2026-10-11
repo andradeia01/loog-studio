@@ -24,12 +24,19 @@ export function useAndroidBack(onBack: () => boolean | void) {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Só ativa quando o app está rodando como PWA standalone
+    // iOS tem comportamento bugado com history.pushState + popstate em PWA
+    // standalone (listener fantasma após orientation change). Restringimos
+    // o hook a ANDROID standalone, que é onde ele realmente ajuda — iOS PWA
+    // depende da bottom nav interna pra navegação.
     const isStandalone =
       window.matchMedia?.("(display-mode: standalone)")?.matches ||
       (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
 
     if (!isStandalone) return;
+
+    const ua = window.navigator.userAgent || "";
+    const isIOS = /iPad|iPhone|iPod/.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
+    if (isIOS) return;
 
     const SENTINEL = { loogShell: true, t: Date.now() };
 

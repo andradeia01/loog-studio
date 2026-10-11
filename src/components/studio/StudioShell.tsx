@@ -42,9 +42,31 @@ export function StudioShell({
   consultantName, authEnabled, children,
 }: StudioShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [orientTick, setOrientTick] = useState(0);
 
   // fecha drawer ao mudar de aba
   useEffect(() => { setSidebarOpen(false); }, [activeMundo, activeSub]);
+
+  // iOS fix: força relayout quando o device gira ou a visualViewport muda
+  // (teclado abre/fecha). Sem isso, iOS Safari às vezes mantém o layout antigo
+  // e os cliques caem em posições erradas de elementos.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const bump = () => {
+      // trigger relayout sintético + state tick pro React re-renderizar
+      void document.body.offsetHeight;
+      setOrientTick((n) => n + 1);
+      // garante que o drawer feche se ficou "fantasma" após rotation
+      setSidebarOpen(false);
+    };
+    window.addEventListener("orientationchange", bump);
+    window.visualViewport?.addEventListener("resize", bump);
+    return () => {
+      window.removeEventListener("orientationchange", bump);
+      window.visualViewport?.removeEventListener("resize", bump);
+    };
+  }, []);
+  void orientTick;
 
   const current = mundos.find((m) => m.key === activeMundo);
 
