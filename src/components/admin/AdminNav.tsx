@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-type Key = "templates" | "consultores" | "artes-prontas" | "videos-prontos" | "fidelidade" | "leads-trafego" | "config";
+type Key = "templates" | "consultores" | "artes-prontas" | "videos-prontos" | "fidelidade" | "leads-trafego" | "vistorias" | "config";
 
 const TABS: { key: Key; label: string; href: string }[] = [
   { key: "templates", label: "Templates", href: "/admin" },
@@ -10,6 +10,7 @@ const TABS: { key: Key; label: string; href: string }[] = [
   { key: "videos-prontos", label: "Vídeos prontos", href: "/admin/videos-prontos" },
   { key: "fidelidade", label: "Fidelidade 🔥", href: "/admin/fidelidade" },
   { key: "leads-trafego", label: "Tráfego 📊", href: "/admin/leads-trafego" },
+  { key: "vistorias", label: "Vistorias 🎥", href: "/admin/vistorias" },
   { key: "config", label: "Configurações", href: "/admin/config" },
 ];
 
