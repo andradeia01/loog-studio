@@ -5,7 +5,7 @@
  * o novo SW → activate limpa caches + manda "RELOAD" pros clients → cliente
  * recarrega sozinho, sem o usuário precisar desinstalar.
  */
-const SW_VERSION = '2026-10-12-vistoria-landscape-safeare-fix';
+const SW_VERSION = '2026-10-13-vistoria-fullscreen-hud';
 
 self.addEventListener('install', (e) => {
   // skipWaiting = NÃO espera abas antigas fecharem pra ativar — ativa já

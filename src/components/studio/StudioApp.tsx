@@ -26,6 +26,7 @@ import { CrmPipeline } from "./CrmPipeline";
 import { useAndroidBack } from "@/lib/hooks/use-android-back";
 import { SdrPane } from "./SdrPane";
 import { SdrDashboard } from "./SdrDashboard";
+import { FunilDashboard } from "./FunilDashboard";
 import { InspectionPane } from "@/components/inspection/InspectionPane";
 import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
 import { StudioHome } from "./StudioHome";
@@ -136,6 +137,8 @@ export function StudioApp({
         { key: "placa", label: "Cotação Rápida", icon: "⚡" },
         { key: "completa", label: "Cotação Completa", icon: "📄" },
         { key: "simulador", label: "Simulador", icon: "🧮" },
+        // v0: aba Funil visível pra todos (conteúdo tem guard próprio); abas sdr/dashboard mantém guard
+        { key: "funil", label: "Funil", icon: "🔁" },
         ...(canSeeSdr ? [
           { key: "dashboard", label: "Dashboard", icon: "📊" },
           { key: "sdr", label: "SDR WhatsApp", icon: "💬" },
@@ -338,6 +341,10 @@ function renderConteudo(opts: RenderOpts) {
         );
       }
       return <SdrDashboard />;
+    }
+    if (activeSub === "funil") {
+      // v0: liberado pra visualização por qualquer perfil; v0.1 vai respeitar canSeeSdr
+      return <FunilDashboard />;
     }
     if (activeSub === "crm") return <CrmLeads />;
     if (activeSub === "pipeline") return <CrmPipeline />;

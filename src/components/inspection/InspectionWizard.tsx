@@ -567,9 +567,21 @@ function SelfieStep({ inspectionId, onNext, onError, error }: {
 }
 
 // ============================================================
-// RECORD STEP — gravação principal com câmera traseira
-// Landscape obrigatório + câmera só após tap (iOS exige user gesture)
+// RECORD STEP — gravação FULLSCREEN imersiva com câmera traseira
+// 6 fases de 10s cada (frontal → lateral esq → traseira → lateral dir → teto → motor)
+// Guia visual com HUD por cima do vídeo + progress bar + instruções animadas
 // ============================================================
+
+interface Fase { emoji: string; label: string; instrucao: string; inicio: number; fim: number }
+const FASES: Fase[] = [
+  { emoji: "🚗⬆️", label: "FRONTAL",         instrucao: "Fique de FRENTE pro carro. Enquadre o parachoque, faróis e placa.", inicio: 0,  fim: 10 },
+  { emoji: "🚗⬅️", label: "LATERAL ESQUERDA", instrucao: "Vá pra lateral ESQUERDA. Capture do farol até a lanterna traseira.", inicio: 10, fim: 20 },
+  { emoji: "🚗⬇️", label: "TRASEIRA",        instrucao: "Fique ATRÁS do carro. Enquadre o parachoque, lanternas e placa.",   inicio: 20, fim: 30 },
+  { emoji: "🚗➡️", label: "LATERAL DIREITA",  instrucao: "Vá pra lateral DIREITA. Capture do farol até a lanterna traseira.", inicio: 30, fim: 40 },
+  { emoji: "🚗",   label: "TETO",             instrucao: "Suba a câmera e capture o TETO do veículo (dê um passo pra trás).", inicio: 40, fim: 50 },
+  { emoji: "🔧",   label: "MOTOR",            instrucao: "Abra o CAPÔ. Enquadre o motor inteiro e narre o que ver.",          inicio: 50, fim: 60 },
+];
+
 function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
   inspectionId: string;
   onTranscript: (text: string) => void;
@@ -588,9 +600,10 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
   const [liveTranscript, setLiveTranscript] = useState("");
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState("");
-  const [cameraOn, setCameraOn] = useState(false);        // true após user tap "Ativar câmera"
+  const [cameraOn, setCameraOn] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [isLandscape, setIsLandscape] = useState<boolean | null>(null);
+  const [fullscreenMode, setFullscreenMode] = useState(false); // TRUE = modal fullscreen aberto
 
   // Detecta orientação
   useEffect(() => {
@@ -611,6 +624,7 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       setCameraOn(false);
+      setFullscreenMode(false);
     }
   }, [isLandscape, cameraOn, recording, recordedBlob]);
 
@@ -623,34 +637,63 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
     };
   }, []);
 
-  // Ativa câmera (chamado APÓS user tap em landscape — satisfaz user gesture iOS)
+  // Attach stream ao video element quando ambos estiverem prontos (fix tela preta)
+  // Esse padrão evita race condition: às vezes srcObject é setado antes do <video>
+  // existir no DOM, ou play() é chamado antes do stream ter frames.
+  useEffect(() => {
+    const vid = videoRef.current;
+    const stream = streamRef.current;
+    if (!cameraOn || !vid || !stream) return;
+
+    // Reset limpo
+    vid.srcObject = null;
+    vid.srcObject = stream;
+    vid.muted = true;
+    vid.playsInline = true;
+    // @ts-expect-error webkit property pra iOS
+    vid.webkitPlaysInline = true;
+
+    const tryPlay = async () => {
+      try { await vid.play(); } catch (e) {
+        console.warn("[vistoria] vid.play falhou:", (e as Error).message);
+      }
+    };
+
+    // Tenta play em múltiplos eventos pra garantir
+    const onLoadedMeta = () => void tryPlay();
+    const onCanPlay = () => void tryPlay();
+    vid.addEventListener("loadedmetadata", onLoadedMeta);
+    vid.addEventListener("canplay", onCanPlay);
+    void tryPlay(); // tenta já de cara também
+
+    return () => {
+      vid.removeEventListener("loadedmetadata", onLoadedMeta);
+      vid.removeEventListener("canplay", onCanPlay);
+    };
+  }, [cameraOn, fullscreenMode]);
+
+  // Ativa câmera (APÓS user tap em landscape — satisfaz user gesture iOS)
   const activateCamera = async () => {
     if (cameraOn || cameraLoading) return;
     setCameraLoading(true);
-    onError(""); // limpa erros antigos
+    onError("");
     try {
-      // Tenta primeiro câmera traseira; se falhar, tenta qualquer câmera
       let stream: MediaStream;
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } },
           audio: true,
         });
       } catch {
-        // fallback: qualquer câmera
         stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
       }
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        try { await videoRef.current.play(); } catch { /* alguns browsers autoplay bloqueado */ }
-      }
       setCameraOn(true);
+      setFullscreenMode(true); // abre modal fullscreen imediatamente
     } catch (err) {
       const msg = (err as Error).message || String(err);
-      // "The operation was aborted" ou "NotAllowedError" ou "NotFoundError"
       const user = /abort/i.test(msg)
-        ? "Câmera não respondeu. Toque em 'Ativar câmera' de novo (iOS às vezes cancela a 1ª tentativa)."
+        ? "Câmera não respondeu. Toque de novo em 'Ativar câmera' (iOS às vezes cancela a 1ª tentativa)."
         : /notallowed|permission/i.test(msg)
         ? "Permissão da câmera negada. Vá nas configurações do site e permita câmera + microfone."
         : /notfound|device/i.test(msg)
@@ -661,6 +704,10 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
       setCameraLoading(false);
     }
   };
+
+  // Fase atual baseada no tempo decorrido
+  const faseAtual = FASES.find((f) => elapsed >= f.inicio && elapsed < f.fim) ?? FASES[FASES.length - 1];
+  const faseIndex = FASES.indexOf(faseAtual);
 
   useEffect(() => {
     if (!recording) return;
@@ -739,112 +786,213 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
     } finally { setUploading(false); }
   };
 
-  // Portrait: bloqueia a tela
-  if (!recordedBlob && !recording && isLandscape === false) {
+  // Portrait + sem câmera ativa + sem vídeo pronto: bloqueia a tela
+  if (!recordedBlob && !recording && !cameraOn && isLandscape === false) {
     return (
       <div className="flex flex-col items-center justify-center gap-5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-10 text-center">
         <motion.div
           className="text-7xl"
           animate={{ rotate: [0, 90, 90, 0], scale: [1, 0.9, 0.9, 1] }}
           transition={{ duration: 2.2, repeat: Infinity, times: [0, 0.3, 0.7, 1] }}
-        >
-          📱
-        </motion.div>
+        >📱</motion.div>
         <div>
           <h3 className="font-display text-xl font-black text-amber-100">Gire o celular</h3>
-          <p className="mt-2 text-sm text-amber-200/90">
-            A vistoria exige o celular na HORIZONTAL<br />pra captar o veículo inteiro.
-          </p>
+          <p className="mt-2 text-sm text-amber-200/90">A vistoria exige o celular na HORIZONTAL<br />pra captar o veículo inteiro.</p>
         </div>
         <p className="text-xs text-amber-200/70">Assim que girar, aperta pra ativar a câmera</p>
       </div>
     );
   }
 
-  // Botão de ação (varia conforme estado)
-  const ActionButton = recordedBlob ? (
-    <div className="flex gap-2">
-      <button type="button" onClick={() => { setRecordedBlob(null); setElapsed(0); }} className="flex-1 rounded-xl border border-loog-border bg-loog-panel/60 py-3 text-xs font-bold text-white active:scale-95">
-        Refazer
-      </button>
-      <button type="button" onClick={confirm} disabled={uploading} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 text-xs font-bold text-black disabled:opacity-40 active:scale-95">
-        {uploading ? "Enviando…" : "✓ Enviar"}
-      </button>
-    </div>
-  ) : recording ? (
-    <button type="button" onClick={stopRecording} className="w-full rounded-xl bg-red-500 py-3 text-sm font-bold text-white active:scale-95">
-      ⏹ Parar gravação
-    </button>
-  ) : !cameraOn ? (
-    <button
-      type="button"
-      onClick={activateCamera}
-      disabled={cameraLoading}
-      className="w-full rounded-xl bg-gradient-to-r from-sky-500 to-blue-500 py-4 text-sm font-bold text-white disabled:opacity-40 active:scale-95"
-    >
-      {cameraLoading ? "Ativando câmera..." : "📷 Ativar câmera"}
-    </button>
-  ) : (
-    <button type="button" onClick={startRecording} className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-4 text-sm font-bold text-white active:scale-95">
-      🔴 Iniciar gravação
-    </button>
-  );
+  // ╔═══════════════════════════════════════════════════════════╗
+  // ║ MODO FULLSCREEN: câmera on OU gravando OU vídeo pronto     ║
+  // ║ Ocupa tela inteira com HUD por cima — imersivo             ║
+  // ╚═══════════════════════════════════════════════════════════╝
+  if (fullscreenMode || recordedBlob) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+        className="fixed inset-0 z-[70] flex flex-col bg-black"
+        style={{ height: "100dvh" }}
+      >
+        {/* VÍDEO FULLSCREEN (preview da câmera OU preview gravado) */}
+        <div className="relative flex-1 overflow-hidden bg-black">
+          {recordedBlob ? (
+            <video src={URL.createObjectURL(recordedBlob)} className="h-full w-full object-contain" controls playsInline />
+          ) : (
+            <video
+              ref={videoRef}
+              className="h-full w-full object-cover"
+              muted
+              playsInline
+              autoPlay
+            />
+          )}
 
-  // Preview da câmera (vídeo element OU placeholder)
-  const CameraPreview = (
-    <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-loog-border bg-black">
-      {recordedBlob ? (
-        <video src={URL.createObjectURL(recordedBlob)} className="h-full w-full object-cover" controls playsInline />
-      ) : cameraOn ? (
-        <video ref={videoRef} className="h-full w-full object-cover" muted playsInline autoPlay />
-      ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center text-loog-muted">
-          <div className="text-5xl opacity-50">📹</div>
-          <p className="text-xs">Câmera desligada — aperte &ldquo;Ativar câmera&rdquo;</p>
-        </div>
-      )}
-      {recording && (
-        <div className="absolute left-2 top-2 flex items-center gap-1 rounded-full bg-red-500/90 px-2 py-1 text-[11px] font-bold text-white">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
-          REC {elapsed}s / {RECORD_SECONDS}s
-        </div>
-      )}
-    </div>
-  );
+          {/* HUD TOPO: progress + fase atual + fechar */}
+          {recording && (
+            <div
+              className="absolute inset-x-0 top-0 flex items-center justify-between gap-3 bg-gradient-to-b from-black/90 to-transparent px-4 pb-6 pt-3"
+              style={{
+                paddingTop: "max(0.75rem, env(safe-area-inset-top))",
+                paddingLeft: "max(1rem, env(safe-area-inset-left))",
+                paddingRight: "max(1rem, env(safe-area-inset-right))",
+              }}
+            >
+              <div className="flex items-center gap-2 rounded-full bg-red-500/90 px-3 py-1.5 text-xs font-black text-white shadow-lg">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-white" />
+                REC {elapsed}s / {RECORD_SECONDS}s
+              </div>
+              <div className="flex-1 rounded-full bg-white/15 backdrop-blur">
+                <motion.div
+                  className="h-2 rounded-full bg-emerald-400"
+                  initial={{ width: 0 }}
+                  animate={{ width: `${(elapsed / RECORD_SECONDS) * 100}%` }}
+                  transition={{ ease: "linear", duration: 0.3 }}
+                />
+              </div>
+            </div>
+          )}
 
+          {/* HUD CENTRO: instrução da fase atual (gigante, animada) */}
+          {recording && (
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={faseIndex}
+                initial={{ opacity: 0, scale: 1.15, y: -10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.35 }}
+                className="pointer-events-none absolute inset-x-0 top-1/4 flex flex-col items-center gap-2 px-4 text-center"
+              >
+                <div className="text-6xl drop-shadow-[0_0_20px_rgba(0,0,0,0.8)] sm:text-7xl">{faseAtual.emoji}</div>
+                <div className="rounded-xl bg-black/70 px-4 py-2 backdrop-blur-sm">
+                  <div className="text-xs font-black uppercase tracking-widest text-emerald-300 sm:text-sm">
+                    Fase {faseIndex + 1}/{FASES.length} · {faseAtual.label}
+                  </div>
+                  <div className="mt-1 max-w-md text-sm font-bold text-white sm:text-base">
+                    {faseAtual.instrucao}
+                  </div>
+                </div>
+                {/* Mini-grid das fases com check */}
+                <div className="mt-3 flex gap-1">
+                  {FASES.map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        "h-1.5 w-8 rounded-full transition",
+                        i < faseIndex ? "bg-emerald-400"
+                          : i === faseIndex ? "bg-emerald-400 animate-pulse"
+                          : "bg-white/30",
+                      )}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            </AnimatePresence>
+          )}
+
+          {/* Instrução antes de começar (câmera aberta mas não gravando ainda) */}
+          {cameraOn && !recording && !recordedBlob && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm p-6 text-center">
+              <div className="rounded-2xl border-2 border-amber-500/60 bg-black/80 p-6">
+                <div className="text-5xl">⚠️</div>
+                <h3 className="mt-3 font-display text-xl font-black text-amber-200">Antes de começar</h3>
+                <ul className="mt-3 space-y-1 text-left text-sm text-white">
+                  <li>✓ Veículo <b className="text-amber-300">LIGADO</b> (painel aceso)</li>
+                  <li>✓ Narre em voz alta o que mostra</li>
+                  <li>✓ 60 segundos no total, 10s por ângulo</li>
+                  <li>✓ Siga as instruções que aparecem na tela</li>
+                </ul>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* BARRA INFERIOR: transcript (durante gravação) + botão principal (sempre visível) */}
+        <div
+          className="shrink-0 bg-gradient-to-t from-black via-black/95 to-black/50 px-4 pb-4 pt-6"
+          style={{
+            paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+            paddingLeft: "max(1rem, env(safe-area-inset-left))",
+            paddingRight: "max(1rem, env(safe-area-inset-right))",
+          }}
+        >
+          {liveTranscript && recording && (
+            <div className="mb-3 line-clamp-2 text-center text-xs text-blue-200/90">
+              🎤 {liveTranscript.slice(-180)}
+            </div>
+          )}
+          {uploadProgress && <div className="mb-2 text-center text-xs text-amber-300">{uploadProgress}</div>}
+          {error && <div className="mb-2 rounded-lg border border-rose-500/40 bg-rose-500/10 p-2 text-center text-xs text-rose-200">{error}</div>}
+
+          {recordedBlob ? (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { setRecordedBlob(null); setElapsed(0); setFullscreenMode(true); }}
+                className="flex-1 rounded-xl border-2 border-white/30 bg-white/10 py-4 text-sm font-bold text-white active:scale-95"
+              >↻ Refazer</button>
+              <button
+                type="button"
+                onClick={confirm}
+                disabled={uploading}
+                className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-4 text-sm font-black text-white shadow-glow disabled:opacity-40 active:scale-95"
+              >{uploading ? "Enviando…" : "✓ Enviar vídeo"}</button>
+            </div>
+          ) : recording ? (
+            <button
+              type="button"
+              onClick={stopRecording}
+              className="w-full rounded-xl bg-red-500 py-5 text-base font-black text-white shadow-[0_0_30px_rgba(239,68,68,0.5)] active:scale-95"
+            >⏹ Parar gravação</button>
+          ) : (
+            <button
+              type="button"
+              onClick={startRecording}
+              className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-5 text-base font-black text-white shadow-[0_0_30px_rgba(168,85,247,0.5)] active:scale-95"
+            >🔴 Iniciar gravação ({RECORD_SECONDS}s)</button>
+          )}
+        </div>
+      </motion.div>
+    );
+  }
+
+  // ─────────────────── MODO INICIAL (antes de ativar câmera) ───────────────────
   return (
-    // Layout responsivo: landscape = row (vídeo esq | controles dir), portrait = col.
-    // paddingBottom respeita safe-area-inset-bottom pra não cair atrás do home
-    // indicator do iPhone em landscape.
     <div
-      className="flex flex-col gap-3 landscape:flex-row landscape:items-stretch"
-      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      className="flex flex-col items-center gap-5 py-8 text-center"
+      style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
     >
-      {/* Coluna 1: preview da câmera */}
-      <div className="landscape:w-3/5 landscape:shrink-0">
-        {CameraPreview}
+      <motion.div className="text-7xl" animate={{ y: [0, -6, 0] }} transition={{ duration: 2, repeat: Infinity }}>🎥</motion.div>
+      <div>
+        <h3 className="font-display text-2xl font-black text-white">Vídeo da vistoria</h3>
+        <p className="mt-2 text-sm text-loog-muted">
+          Veículo <b className="text-amber-300">LIGADO</b> · dá uma volta completa<br />
+          <span className="text-[11px]">6 fases guiadas de 10s cada = {RECORD_SECONDS}s total</span>
+        </p>
       </div>
-
-      {/* Coluna 2: título + controles + botão */}
-      <div className="flex flex-col gap-2 landscape:flex-1 landscape:min-w-0 landscape:justify-between">
-        <div className="text-center landscape:text-left">
-          <h3 className="font-display text-base font-black text-white landscape:text-lg">Gravação da vistoria</h3>
-          <p className="text-[11px] text-loog-muted">
-            Veículo <b className="text-amber-300">LIGADO</b> · dá uma volta completa · até {RECORD_SECONDS}s
-          </p>
-        </div>
-
-        {liveTranscript && (
-          <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-2 text-[11px] text-blue-200/80 landscape:max-h-24 landscape:overflow-y-auto">
-            🎤 {liveTranscript.slice(-200)}
-          </div>
-        )}
-        {uploadProgress && <div className="text-center text-[11px] text-amber-300">{uploadProgress}</div>}
-        {error && <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-2 text-[11px] text-rose-200">{error}</div>}
-
-        {/* Botão de ação — sticky no fim pra garantir que fica visível */}
-        {ActionButton}
-      </div>
+      <ul className="w-full max-w-sm space-y-1 rounded-xl border border-loog-border bg-loog-panel/40 p-3 text-left text-xs text-loog-muted">
+        {FASES.map((f, i) => (
+          <li key={f.label} className="flex items-center gap-2">
+            <span className="w-6 text-center">{f.emoji}</span>
+            <span className="font-bold text-white">{f.label}</span>
+            <span className="ml-auto text-[10px]">{f.inicio}-{f.fim}s</span>
+          </li>
+        ))}
+      </ul>
+      {error && <div className="w-full max-w-sm rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">{error}</div>}
+      <button
+        type="button"
+        onClick={activateCamera}
+        disabled={cameraLoading}
+        className="w-full max-w-sm rounded-xl bg-gradient-to-r from-sky-500 to-blue-500 py-5 text-base font-black text-white shadow-glow disabled:opacity-40 active:scale-95"
+      >
+        {cameraLoading ? "Ativando câmera..." : "📷 Ativar câmera e começar"}
+      </button>
+      <p className="text-[11px] text-loog-muted">
+        A câmera só liga depois que você tocar no botão (segurança do iOS).
+      </p>
     </div>
   );
 }
