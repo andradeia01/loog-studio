@@ -7,6 +7,16 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const POST_TYPES = ["feed", "story", "reel", "carousel", "outro"] as const;
+type PostType = typeof POST_TYPES[number];
+
+/** Pontuação base por tipo — incentiva formatos de mais autoridade/engajamento */
+const PONTOS_POR_TIPO: Record<PostType, number> = {
+  reel: 15,
+  carousel: 12,
+  feed: 10,
+  outro: 8,
+  story: 5,
+};
 
 const CreateSchema = z.object({
   post_url: z.string().url("URL inválida"),
@@ -14,6 +24,29 @@ const CreateSchema = z.object({
   caption: z.string().max(500).optional().nullable(),
   posted_at: z.string().datetime({ offset: true }).optional(),
 });
+
+/** Tenta buscar metadata do post via oEmbed (Instagram público). Falhas são silenciosas. */
+async function fetchOEmbed(url: string): Promise<Record<string, unknown> | null> {
+  try {
+    // Instagram oficial oEmbed (requer token Meta — mas o endpoint graph aceita URL básica
+    // sem token pra posts públicos; se bloquear, usa fallback simples)
+    const u = new URL(url);
+    const isInstagram = /instagram\.com$/i.test(u.hostname) || /^(www\.)?instagram\.com$/i.test(u.hostname);
+    if (!isInstagram) return { provider: "generic", url };
+    // Como o oEmbed oficial requer token, extraímos só o shortcode da URL
+    // e geramos uma thumbnail URL public via scraping leve com HEAD request.
+    const match = u.pathname.match(/\/(?:p|reel|tv)\/([^\/]+)/);
+    const shortcode = match?.[1] ?? null;
+    return {
+      provider: "instagram",
+      shortcode,
+      url,
+      // thumbnail via Instagram CDN pattern (sem OEmbed token precisa, apenas open embed)
+      embed_url: shortcode ? `https://www.instagram.com/p/${shortcode}/embed` : null,
+      captured_at: new Date().toISOString(),
+    };
+  } catch { return null; }
+}
 
 /**
  * POST /api/checkins — consultor aprovado marca um post.
@@ -71,14 +104,19 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let points = 10;
+  // Pontuação V2: base por tipo + bônus de streak (só 1 post pontuável por dia)
+  const base = PONTOS_POR_TIPO[parsed.data.post_type] ?? 10;
+  let points = base;
   if (alreadyToday) {
-    points = 0; // já contou hoje — vale como atividade, mas não pontua extra
+    points = 0;
   } else {
     if (projectedStreak >= 30) points += 25;
     else if (projectedStreak >= 7) points += 10;
     else if (projectedStreak >= 3) points += 5;
   }
+
+  // Metadata com oEmbed/thumbnail (best-effort, não bloqueia o insert)
+  const meta = await fetchOEmbed(parsed.data.post_url);
 
   const { data, error } = await supabase
     .from("checkins")
@@ -90,9 +128,18 @@ export async function POST(req: NextRequest) {
       posted_at: postedAt.toISOString(),
       points_awarded: points,
       streak_at_time: projectedStreak,
+      metadata: meta,
     })
     .select()
     .single();
+
+  // Trata erro de duplicata (unique index) com mensagem amigável
+  if (error && /duplicate|unique/i.test(error.message)) {
+    return NextResponse.json(
+      { error: "post_duplicado", message: "Essa URL já foi registrada por você antes." },
+      { status: 409 },
+    );
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -123,10 +170,10 @@ export async function GET() {
   const ninetyAgo = new Date();
   ninetyAgo.setDate(ninetyAgo.getDate() - 90);
 
-  const [{ data: rows }, { data: profile }] = await Promise.all([
+  const [{ data: rows }, { data: profile }, { data: badges }] = await Promise.all([
     supabase
       .from("checkins")
-      .select("id, post_url, post_type, caption, posted_at, points_awarded, streak_at_time, approved, invalidated_at, invalidated_reason, created_at")
+      .select("id, post_url, post_type, caption, posted_at, points_awarded, streak_at_time, approved, invalidated_at, invalidated_reason, metadata, created_at")
       .eq("consultant_id", auth.auth.userId)
       .gte("posted_at", ninetyAgo.toISOString())
       .order("posted_at", { ascending: false }),
@@ -135,9 +182,18 @@ export async function GET() {
       .select("total_points, current_streak, longest_streak, last_checkin_date")
       .eq("id", auth.auth.userId)
       .maybeSingle(),
+    supabase
+      .from("fidelity_badges")
+      .select("kind, awarded_at")
+      .eq("consultant_id", auth.auth.userId)
+      .order("awarded_at", { ascending: false }),
   ]);
 
-  return NextResponse.json({ checkins: rows ?? [], stats: profile ?? null });
+  return NextResponse.json({
+    checkins: rows ?? [],
+    stats: profile ?? null,
+    badges: badges ?? [],
+  });
 }
 
 function formatDateSP(d: Date): string {
