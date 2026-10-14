@@ -45,7 +45,17 @@ interface HubResult {
   fipeEscolhido?: string;
   lowConfidence?: boolean;
   coberturasAplicadas?: string[];
-  coverageBreakdown?: { base_cents: number; deltas: { codigo: string; descricao: string; delta_cents: number }[]; total_cents: number };
+  coberturasDefault?: string[];
+  descontoCents?: number;
+  coverageBreakdown?: {
+    base_cents: number;
+    deltas: { codigo: string; descricao: string; delta_cents: number }[];
+    bruto_cents?: number;
+    desconto_pct?: number;
+    desconto_cents?: number;
+    total_cents: number;
+    defaults_aplicados?: string[];
+  };
 }
 
 interface HistItem { placa: string; marca: string; modelo: string; ano: string; at: number }
@@ -91,27 +101,21 @@ export function PlacaStudio() {
 
   useEffect(() => { setHist(loadHist()); }, []);
 
-  // Quando chega nova cotação, inicializa toggles de coberturas (todas ligadas)
+  // Monta a lista de coberturas (pra mensagem WhatsApp + PDF) a partir das
+  // customizadas aplicadas no backend. Isso substitui o fluxo legado de ler
+  // defaultCoverages/defaultServices do Hub — agora a verdade são os códigos
+  // da nossa tabela cotacao_coverages (que inclui defaults + o que consultor marcou).
   useEffect(() => {
-    if (!result?.plan) { setCoberturas([]); return; }
-    // Preferir defaultCoverages. defaultServices entra junto se for diferente de "reboque" (que já é fixo).
-    const seen = new Set<string>();
-    const base: CoberturaItem[] = [];
-    for (const c of result.plan.defaultCoverages ?? []) {
-      // reboque já aparece na "Proteção Contratada" fixa — não duplicar
-      if (/reboque|assist.?ncia/i.test(c.name)) continue;
-      if (seen.has(c.id)) continue;
-      seen.add(c.id);
-      base.push({ id: c.id, nome: c.name, ligado: true });
-    }
-    for (const s of result.plan.defaultServices ?? []) {
-      if (/reboque|assist.?ncia/i.test(s.name)) continue;
-      if (seen.has(s.id)) continue;
-      seen.add(s.id);
-      base.push({ id: s.id, nome: s.name, ligado: true });
-    }
+    const deltas = result?.coverageBreakdown?.deltas ?? [];
+    if (!deltas.length) { setCoberturas([]); return; }
+    const base: CoberturaItem[] = deltas
+      // Filtra o reboque base 300km (já aparece na "Proteção Contratada" fixa)
+      .filter((d) => !/reboque.*300/i.test(d.descricao))
+      // Downgrades (delta negativo) não entram como "adicional contratado"
+      .filter((d) => d.delta_cents >= 0)
+      .map((d) => ({ id: d.codigo, nome: d.descricao, ligado: true }));
     setCoberturas(base);
-  }, [result]);
+  }, [result?.coverageBreakdown?.deltas]);
 
   const valores = useMemo(() => {
     if (!result?.plan) return null;
@@ -308,10 +312,6 @@ export function PlacaStudio() {
   function copiarMensagem() {
     if (!mensagemWhats) return;
     try { navigator.clipboard.writeText(mensagemWhats); } catch {}
-  }
-
-  function toggleCobertura(id: string) {
-    setCoberturas((prev) => prev.map((c) => c.id === id ? { ...c, ligado: !c.ligado } : c));
   }
 
   function novaConsulta() {
@@ -519,10 +519,11 @@ export function PlacaStudio() {
               tipoVeiculo={tipoVeiculo}
               baseMensalCents={result.coverageBreakdown?.base_cents ?? result.plan?.monthlyValueCents ?? 0}
               initialCodigos={result.coberturasAplicadas ?? []}
+              defaultCodes={result.coberturasDefault ?? []}
+              descontoCents={result.descontoCents ?? result.coverageBreakdown?.desconto_cents ?? 0}
               onApply={aplicarCoberturas}
               applying={recotando}
             />
-            <TogglesCard coberturas={coberturas} onToggle={toggleCobertura} />
             <AcoesCard
               onWhats={enviarWhatsapp}
               onPdf={baixarPdfPremium}
@@ -612,6 +613,19 @@ function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, low
         </div>
       )}
 
+      {/* Badge de desconto aplicado — super explícito */}
+      {(r.descontoCents ?? r.coverageBreakdown?.desconto_cents ?? 0) > 0 && (
+        <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
+          <span className="text-base">🎁</span>
+          <div className="flex-1 text-[11px]">
+            <b className="text-emerald-300">{r.coverageBreakdown?.desconto_pct ?? 10}% de desconto já aplicado automaticamente</b>
+            <span className="ml-1 text-loog-muted">
+              — bruto {BRL((r.coverageBreakdown?.bruto_cents ?? 0) / 100)} · desconto {BRL((r.coverageBreakdown?.desconto_cents ?? r.descontoCents ?? 0) / 100)}
+            </span>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-3 p-5 sm:grid-cols-2">
         <div className="rounded-xl bg-loog-brand p-4 text-white shadow-glow">
           <div className="text-[10px] font-semibold uppercase tracking-widest text-white/80">Investimento Inicial</div>
@@ -621,7 +635,7 @@ function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, low
         <div className="rounded-xl border-2 border-loog-brand bg-white/5 p-4">
           <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-brand">Valor Total do Plano</div>
           <div className="mt-1 font-display text-3xl font-extrabold text-loog-brand">{valores.mensalidadeFormatted}</div>
-          <div className="mt-1 text-[11px] text-loog-muted">mensalidade recorrente</div>
+          <div className="mt-1 text-[11px] text-loog-muted">mensalidade recorrente · já com desconto</div>
         </div>
       </div>
     </article>
@@ -673,45 +687,6 @@ function FipeDisambig({ alternatives, lowConfidence, onTrocar, trocando }: {
                 </span>
                 <span className="shrink-0 text-[11px] font-bold text-loog-brand2">{f.valor_formatado ?? ""}</span>
               </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function TogglesCard({ coberturas, onToggle }: { coberturas: CoberturaItem[]; onToggle: (id: string) => void }) {
-  return (
-    <div className="card p-5">
-      <div className="mb-3">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Coberturas inclusas</h3>
-        <p className="text-[11px] text-loog-muted">Padrão tudo ligado. Desligue o que o cliente não quiser — mensagem e PDF atualizam na hora.</p>
-      </div>
-      <div className="mb-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-[11px] text-emerald-300">
-        <b>Fixas (não removíveis):</b> Assistência 24h nacional · Reboque KM ilimitado em colisão / 300km para pane
-      </div>
-      {coberturas.length === 0 ? (
-        <p className="text-xs text-loog-muted">Nenhuma cobertura adicional nesta cotação.</p>
-      ) : (
-        <ul className="space-y-1.5">
-          {coberturas.map((c) => (
-            <li key={c.id}>
-              <label className={cn(
-                "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 transition",
-                c.ligado ? "bg-emerald-500/10 border border-emerald-500/30" : "bg-white/5 border border-loog-border opacity-60",
-              )}>
-                <input
-                  type="checkbox"
-                  checked={c.ligado}
-                  onChange={() => onToggle(c.id)}
-                  className="h-4 w-4 accent-emerald-500"
-                />
-                <span className="flex-1 text-xs">{c.nome}</span>
-                <span className={cn("text-[10px] font-bold uppercase tracking-widest", c.ligado ? "text-emerald-300" : "text-loog-muted")}>
-                  {c.ligado ? "incluso" : "removido"}
-                </span>
-              </label>
             </li>
           ))}
         </ul>

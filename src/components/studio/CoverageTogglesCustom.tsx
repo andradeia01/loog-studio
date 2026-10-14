@@ -3,12 +3,12 @@
 /**
  * Toggles de coberturas opcionais customizadas da cotação LOOG.
  *
- * - Grupos exclusivos (terceiros, reserva, reboque, gnv, vidros): radio group — só 1 ativo
- * - Grupos toggle (monitoramento, atividade): on/off independente
- * - Preview do total em tempo real (soma delta localmente)
- * - Botão "Aplicar à cotação" dispara re-cotação via onApply com os códigos selecionados
- *
- * Fonte dos valores: tabela cotacao_coverages (migration 010), oficial LOOG.
+ * Regras:
+ *   - Códigos em `defaultCodes` já vêm inclusos na cotação rápida (delta_cents=0).
+ *     Esses não podem ser desligados — ficam destacados "✓ INCLUSO".
+ *   - Grupos exclusivos (radio): só 1 nível ativo. Trocar o nível soma a diferença.
+ *   - Grupos toggle: on/off independente.
+ *   - Preview do delta em tempo real; botão "Aplicar à cotação" dispara re-cotação.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -37,12 +37,16 @@ export function CoverageTogglesCustom({
   tipoVeiculo,
   baseMensalCents,
   initialCodigos,
+  defaultCodes,
+  descontoCents,
   onApply,
   applying,
 }: {
   tipoVeiculo: "carro" | "moto" | "utilitario" | "eletrico";
   baseMensalCents: number;
   initialCodigos?: string[];
+  defaultCodes?: string[];
+  descontoCents?: number;
   onApply: (codigos: string[]) => void | Promise<void>;
   applying: boolean;
 }) {
@@ -50,6 +54,7 @@ export function CoverageTogglesCustom({
   const [loading, setLoading] = useState(false);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set(initialCodigos ?? []));
   const [dirty, setDirty] = useState(false);
+  const defaults = useMemo(() => new Set(defaultCodes ?? []), [defaultCodes]);
 
   useEffect(() => {
     let cancel = false;
@@ -62,7 +67,7 @@ export function CoverageTogglesCustom({
     return () => { cancel = true; };
   }, [tipoVeiculo]);
 
-  // Reset "dirty" sempre que o backend confirma com novos códigos
+  // Sync externo (backend confirmou nova config)
   useEffect(() => {
     setSelecionados(new Set(initialCodigos ?? []));
     setDirty(false);
@@ -74,23 +79,23 @@ export function CoverageTogglesCustom({
     return total;
   }, [selecionados, grupos]);
 
+  // Simula o novo total (bruto + delta - desconto 10%)
+  const novoBrutoCents = baseMensalCents + totalDeltaCents;
+  // Reconstitui mesmo pct do desconto que o backend está usando
+  const descontoPct = descontoCents && baseMensalCents > 0 ? Math.round((descontoCents / (baseMensalCents + 0)) * 100) : 10;
+  const novoDescontoCents = Math.round(novoBrutoCents * (descontoPct / 100));
+
   function escolherExclusivo(grupo: GrupoCobertura, opt: Opcao) {
     const novo = new Set(selecionados);
-    // remove outros do mesmo grupo
+    // Remove outros do mesmo grupo (exclusivo)
     for (const o of grupo.opcoes) novo.delete(o.codigo);
     novo.add(opt.codigo);
     setSelecionados(novo);
     setDirty(true);
   }
 
-  function limparExclusivo(grupo: GrupoCobertura) {
-    const novo = new Set(selecionados);
-    for (const o of grupo.opcoes) novo.delete(o.codigo);
-    setSelecionados(novo);
-    setDirty(true);
-  }
-
   function toggle(opt: Opcao) {
+    if (defaults.has(opt.codigo)) return; // defaults não podem ser desligados
     const novo = new Set(selecionados);
     if (novo.has(opt.codigo)) novo.delete(opt.codigo); else novo.add(opt.codigo);
     setSelecionados(novo);
@@ -116,68 +121,94 @@ export function CoverageTogglesCustom({
         <div>
           <h3 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">⚙️ Personalizar coberturas</h3>
           <p className="mt-1 text-[11px] text-loog-muted/90">
-            Ajuste pra fechar o cliente — radio escolhe nível, toggle liga/desliga. Valor novo aparece já abaixo.
+            Itens <b className="text-emerald-300">INCLUSOS</b> já vêm no valor atual.
+            Upgrade um nível pra somar só a diferença.
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">+ Mensalidade</div>
-          <div className={cn("font-display text-xl font-bold", totalDeltaCents > 0 ? "text-emerald-300" : "text-loog-muted")}>
-            {totalDeltaCents > 0 ? `+ ${BRL(totalDeltaCents)}` : BRL(0)}
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Preview mensal</div>
+          <div className={cn("font-display text-xl font-bold", totalDeltaCents > 0 ? "text-emerald-300" : totalDeltaCents < 0 ? "text-amber-300" : "text-loog-muted")}>
+            {totalDeltaCents > 0 ? `+${BRL(totalDeltaCents)}` : totalDeltaCents < 0 ? BRL(totalDeltaCents) : BRL(0)}
           </div>
-          <div className="text-[10px] text-loog-muted">= {BRL(baseMensalCents + totalDeltaCents)}/mês</div>
+          <div className="text-[10px] text-loog-muted">
+            Novo mensal: <b className="text-white">{BRL(novoBrutoCents - novoDescontoCents)}</b>
+          </div>
         </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
-        {grupos.map((g) => (
-          <div key={g.grupo} className="rounded-xl border border-loog-border bg-loog-panel/40 p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h4 className="text-xs font-bold uppercase tracking-wider">{g.label}</h4>
-              {g.exclusivo && g.opcoes.some((o) => selecionados.has(o.codigo)) && (
-                <button type="button" onClick={() => limparExclusivo(g)} className="text-[10px] text-loog-muted hover:text-white">
-                  limpar
-                </button>
-              )}
+        {grupos.map((g) => {
+          const temDefaultNesteGrupo = g.opcoes.some((o) => defaults.has(o.codigo));
+          return (
+            <div key={g.grupo} className={cn(
+              "rounded-xl border p-3",
+              temDefaultNesteGrupo ? "border-emerald-500/20 bg-emerald-500/5" : "border-loog-border bg-loog-panel/40",
+            )}>
+              <div className="mb-2 flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider">{g.label}</h4>
+                {temDefaultNesteGrupo && (
+                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
+                    já incluso
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1">
+                {g.opcoes.map((o) => {
+                  const ativo = selecionados.has(o.codigo);
+                  const isDefault = defaults.has(o.codigo);
+                  const commonLabel = (
+                    <>
+                      <span className="min-w-0 flex-1 text-xs">{o.descricao}</span>
+                      <span className={cn(
+                        "ml-2 shrink-0 text-[10px] font-bold uppercase tracking-wider",
+                        isDefault ? "text-emerald-300" : o.delta_cents > 0 ? "text-amber-200" : o.delta_cents < 0 ? "text-sky-300" : "text-loog-muted",
+                      )}>
+                        {isDefault ? "✓ incluso" : o.delta_cents === 0 ? "incluso" : o.delta_cents > 0 ? `+${BRL(o.delta_cents)}` : BRL(o.delta_cents)}
+                      </span>
+                    </>
+                  );
+                  return g.exclusivo ? (
+                    <button
+                      key={o.codigo}
+                      type="button"
+                      onClick={() => escolherExclusivo(g, o)}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition",
+                        isDefault && ativo
+                          ? "border-emerald-500/60 bg-emerald-500/15"
+                          : ativo
+                            ? "border-loog-brand/60 bg-loog-brand/15"
+                            : "border-loog-border hover:bg-white/5",
+                      )}
+                    >
+                      {commonLabel}
+                    </button>
+                  ) : (
+                    <label key={o.codigo} className={cn(
+                      "flex items-center gap-2 rounded-lg border px-3 py-2 transition",
+                      isDefault ? "cursor-not-allowed opacity-80 border-emerald-500/40 bg-emerald-500/10" : "cursor-pointer",
+                      !isDefault && (ativo ? "border-loog-brand/60 bg-loog-brand/15" : "border-loog-border hover:bg-white/5"),
+                    )}>
+                      <input
+                        type="checkbox"
+                        checked={ativo || isDefault}
+                        disabled={isDefault}
+                        onChange={() => toggle(o)}
+                        className="h-4 w-4 accent-emerald-500"
+                      />
+                      {commonLabel}
+                    </label>
+                  );
+                })}
+              </div>
             </div>
-            <div className="space-y-1">
-              {g.opcoes.map((o) => {
-                const ativo = selecionados.has(o.codigo);
-                return g.exclusivo ? (
-                  <button
-                    key={o.codigo}
-                    type="button"
-                    onClick={() => escolherExclusivo(g, o)}
-                    className={cn(
-                      "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition",
-                      ativo ? "border-emerald-500/50 bg-emerald-500/10" : "border-loog-border hover:bg-white/5",
-                    )}
-                  >
-                    <span className="min-w-0 flex-1 text-xs">{o.descricao}</span>
-                    <span className={cn("ml-2 shrink-0 text-[10px] font-bold uppercase tracking-wider", ativo ? "text-emerald-300" : "text-loog-muted")}>
-                      {o.delta_cents === 0 ? "incluso" : `+${BRL(o.delta_cents)}`}
-                    </span>
-                  </button>
-                ) : (
-                  <label key={o.codigo} className={cn(
-                    "flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 transition",
-                    ativo ? "border-emerald-500/50 bg-emerald-500/10" : "border-loog-border hover:bg-white/5",
-                  )}>
-                    <input type="checkbox" checked={ativo} onChange={() => toggle(o)} className="h-4 w-4 accent-emerald-500" />
-                    <span className="flex-1 text-xs">{o.descricao}</span>
-                    <span className={cn("text-[10px] font-bold uppercase tracking-wider", ativo ? "text-emerald-300" : "text-loog-muted")}>
-                      {o.delta_cents === 0 ? "grátis" : `+${BRL(o.delta_cents)}`}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <span className="text-[11px] text-loog-muted">
-          {dirty ? "Mudanças pendentes — clique pra aplicar" : "Nenhuma mudança"}
+          {dirty ? "⚠ Mudanças pendentes — clique pra recalcular" : "Nenhuma mudança pendente"}
         </span>
         <button
           type="button"
@@ -185,7 +216,7 @@ export function CoverageTogglesCustom({
           disabled={!dirty || applying}
           className="rounded-md bg-loog-brand px-4 py-2 text-xs font-bold text-white hover:brightness-110 disabled:opacity-50"
         >
-          {applying ? "Aplicando…" : "Aplicar à cotação"}
+          {applying ? "Aplicando…" : "Recalcular cotação"}
         </button>
       </div>
     </div>

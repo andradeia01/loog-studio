@@ -8,47 +8,97 @@ import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placaf
 import { sendCAPIEvent, newEventId } from "@/lib/meta-capi";
 
 /**
- * Aplica deltas de coberturas opcionais sobre o resultado do Hub.
+ * Códigos de coberturas que a cotação RÁPIDA já inclui por padrão em cada tipo de veículo.
+ * Esses códigos têm `delta_cents=0` no banco (ver migration 010 + fix) — a UI mostra como
+ * "incluso" e pré-seleciona pra o consultor saber o que já tá valendo. Upgrades a partir
+ * daí cobram a DIFERENÇA (ex: trocar terceiros_30k pelo _100k cobra +R$ 50).
+ */
+const COBERTURAS_DEFAULT_POR_TIPO: Record<string, string[]> = {
+  carro:      ["reboque_carro_300",      "terceiros_carro_30k",      "reserva_carro_10d",      "vidros_carro_completa"],
+  moto:       ["reboque_moto_300",       "terceiros_moto_30k"],
+  utilitario: ["reboque_util_300",       "terceiros_util_30k",       "reserva_util_10d",       "vidros_util_completa"],
+  eletrico:   ["reboque_eletrico_300",   "terceiros_eletrico_30k",   "reserva_eletrico_10d",   "vidros_eletrico_completa"],
+  caminhao:   [],
+};
+
+/** Desconto automático aplicado em toda cotação do consultor. 10% é a política atual
+ *  (consultor pode dar até 10% sem pedir aprovação; acima disso precisa de gestor). */
+const DESCONTO_AUTOMATICO_PCT = 10;
+
+/**
+ * Aplica deltas de coberturas opcionais sobre o resultado do Hub + desconto automático.
  * Fonte: tabela cotacao_coverages (seed oficial LOOG, migração 010).
  * Toda cobertura é somada em R$ fixo — exceto Roubo+Furto e Colisão que são
- * % FIPE e JÁ VÊM no monthlyValueCents do Hub (não entram aqui).
+ * % FIPE e JÁ VÊM no monthlyValueCents do Hub.
+ *
+ * Fluxo:
+ *   1. Lê base (plan.monthlyValueCents ou monthlyValueCents)
+ *   2. Soma deltas das coberturas marcadas pelo consultor
+ *   3. Aplica desconto automático de 10%
+ *   4. Devolve result com o novo total + breakdown detalhado
  */
 async function aplicarDeltasCoberturas(
   result: Record<string, unknown>,
   coberturasCodigos: string[],
-): Promise<{ result: Record<string, unknown>; breakdown: { codigo: string; descricao: string; delta_cents: number }[]; totalDeltaCents: number }> {
-  if (!coberturasCodigos.length || !supabaseConfigured()) {
-    return { result, breakdown: [], totalDeltaCents: 0 };
-  }
-  const supabase = await createSupabaseServer();
-  const { data } = await supabase
-    .from("cotacao_coverages")
-    .select("codigo, descricao, delta_cents")
-    .in("codigo", coberturasCodigos)
-    .eq("ativo", true);
+  tipoVeiculo: string,
+): Promise<{
+  result: Record<string, unknown>;
+  breakdown: { codigo: string; descricao: string; delta_cents: number }[];
+  totalDeltaCents: number;
+  descontoCents: number;
+  defaultCodes: string[];
+}> {
+  const defaultCodes = COBERTURAS_DEFAULT_POR_TIPO[tipoVeiculo] ?? [];
+  // Garantimos que os defaults estão sempre na lista aplicada (consultor não pode "desligar" o que já é padrão)
+  const codigosFinais = Array.from(new Set([...defaultCodes, ...coberturasCodigos]));
 
-  const breakdown = (data ?? []).map((r) => ({
-    codigo: r.codigo as string,
-    descricao: r.descricao as string,
-    delta_cents: r.delta_cents as number,
-  }));
+  let breakdown: { codigo: string; descricao: string; delta_cents: number }[] = [];
+  if (codigosFinais.length && supabaseConfigured()) {
+    const supabase = await createSupabaseServer();
+    const { data } = await supabase
+      .from("cotacao_coverages")
+      .select("codigo, descricao, delta_cents")
+      .in("codigo", codigosFinais)
+      .eq("ativo", true);
+    breakdown = (data ?? []).map((r) => ({
+      codigo: r.codigo as string,
+      descricao: r.descricao as string,
+      delta_cents: r.delta_cents as number,
+    }));
+  }
   const totalDeltaCents = breakdown.reduce((s, r) => s + r.delta_cents, 0);
 
-  if (totalDeltaCents === 0) return { result, breakdown, totalDeltaCents };
-
-  // Aplica em plan.monthlyValueCents (nova estrutura) ou monthlyValueCents (legada)
   const r = { ...result } as Record<string, unknown>;
   const plan = (r.plan ?? {}) as Record<string, unknown>;
   const baseMensalPlan = typeof plan.monthlyValueCents === "number" ? plan.monthlyValueCents : null;
   const baseMensalRoot = typeof r.monthlyValueCents === "number" ? (r.monthlyValueCents as number) : null;
   const base = baseMensalPlan ?? baseMensalRoot ?? 0;
-  const novoTotal = base + totalDeltaCents;
 
-  if (baseMensalPlan != null) r.plan = { ...plan, monthlyValueCents: novoTotal, monthlyValueCentsBase: base };
-  if (baseMensalRoot != null) r.monthlyValueCents = novoTotal;
-  r.coverageBreakdown = { base_cents: base, deltas: breakdown, total_cents: novoTotal };
+  const totalBrutoCents = base + totalDeltaCents;
+  const descontoCents = Math.round(totalBrutoCents * (DESCONTO_AUTOMATICO_PCT / 100));
+  const totalFinalCents = Math.max(0, totalBrutoCents - descontoCents);
 
-  return { result: r, breakdown, totalDeltaCents };
+  if (baseMensalPlan != null) {
+    r.plan = {
+      ...plan,
+      monthlyValueCents: totalFinalCents,
+      monthlyValueCentsBase: base,
+      monthlyValueCentsBruto: totalBrutoCents,
+    };
+  }
+  if (baseMensalRoot != null) r.monthlyValueCents = totalFinalCents;
+
+  r.coverageBreakdown = {
+    base_cents: base,
+    deltas: breakdown,
+    bruto_cents: totalBrutoCents,
+    desconto_pct: DESCONTO_AUTOMATICO_PCT,
+    desconto_cents: descontoCents,
+    total_cents: totalFinalCents,
+    defaults_aplicados: defaultCodes,
+  };
+
+  return { result: r, breakdown, totalDeltaCents, descontoCents, defaultCodes };
 }
 
 export const runtime = "nodejs";
@@ -189,10 +239,11 @@ export async function POST(req: NextRequest) {
           leadId: leadIdFinal,
         });
 
-        // Aplica deltas de coberturas opcionais SE o consultor marcou algum
-        const { result, breakdown, totalDeltaCents } = await aplicarDeltasCoberturas(
+        // Aplica deltas de coberturas opcionais + desconto automático 10%
+        const { result, breakdown, totalDeltaCents, descontoCents, defaultCodes } = await aplicarDeltasCoberturas(
           rawResult as unknown as Record<string, unknown>,
           parsed.data.coberturas ?? [],
+          vehicleTypeFinal,
         );
 
         if (consultorId) {
@@ -264,6 +315,9 @@ export async function POST(req: NextRequest) {
         }));
         const fipeEscolhido = fipeManual ? parsed.data.fipeCode : fipe?.codigo_fipe;
 
+        // Lista final = defaults do tipo + o que o consultor pediu (dedup via Set)
+        const coberturasFinais = Array.from(new Set([...defaultCodes, ...(parsed.data.coberturas ?? [])]));
+
         return NextResponse.json({
           ok: true,
           via: "placafipe",
@@ -271,7 +325,9 @@ export async function POST(req: NextRequest) {
           fipeAlternatives,
           fipeEscolhido,
           lowConfidence: placafipe.low_confidence ?? false,
-          coberturasAplicadas: parsed.data.coberturas ?? [],
+          coberturasAplicadas: coberturasFinais,
+          coberturasDefault: defaultCodes,
+          descontoCents,
           ...result,
         });
       }
@@ -301,10 +357,12 @@ export async function POST(req: NextRequest) {
         leadId: leadIdFinal,
       });
 
-      // Aplica deltas de coberturas opcionais (fallback path)
-      const { result, breakdown, totalDeltaCents } = await aplicarDeltasCoberturas(
+      // Aplica deltas de coberturas opcionais + desconto 10% (fallback path)
+      const tipoFallback = parsed.data.tipo_veiculo ?? "carro";
+      const { result, breakdown, totalDeltaCents, descontoCents, defaultCodes } = await aplicarDeltasCoberturas(
         rawResult as unknown as Record<string, unknown>,
         parsed.data.coberturas ?? [],
+        tipoFallback,
       );
 
       if (consultorId) {
@@ -356,7 +414,17 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      return NextResponse.json({ ok: true, via: "hub-from-plate", eventId, placaUsada: placaVariante, ...result });
+      const coberturasFinais = Array.from(new Set([...defaultCodes, ...(parsed.data.coberturas ?? [])]));
+      return NextResponse.json({
+        ok: true,
+        via: "hub-from-plate",
+        eventId,
+        placaUsada: placaVariante,
+        coberturasAplicadas: coberturasFinais,
+        coberturasDefault: defaultCodes,
+        descontoCents,
+        ...result,
+      });
     } catch (err) {
       ultimoErro = err;
       // Se for 404 (placa não encontrada), vale tentar a próxima variante.
