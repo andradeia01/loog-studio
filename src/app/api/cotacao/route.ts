@@ -1,11 +1,55 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { requireApproved } from "@/lib/auth";
-import { supabaseConfigured } from "@/lib/supabase/server";
+import { supabaseConfigured, createSupabaseServer } from "@/lib/supabase/server";
 import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placafipe";
 import { sendCAPIEvent, newEventId } from "@/lib/meta-capi";
+
+/**
+ * Aplica deltas de coberturas opcionais sobre o resultado do Hub.
+ * Fonte: tabela cotacao_coverages (seed oficial LOOG, migração 010).
+ * Toda cobertura é somada em R$ fixo — exceto Roubo+Furto e Colisão que são
+ * % FIPE e JÁ VÊM no monthlyValueCents do Hub (não entram aqui).
+ */
+async function aplicarDeltasCoberturas(
+  result: Record<string, unknown>,
+  coberturasCodigos: string[],
+): Promise<{ result: Record<string, unknown>; breakdown: { codigo: string; descricao: string; delta_cents: number }[]; totalDeltaCents: number }> {
+  if (!coberturasCodigos.length || !supabaseConfigured()) {
+    return { result, breakdown: [], totalDeltaCents: 0 };
+  }
+  const supabase = await createSupabaseServer();
+  const { data } = await supabase
+    .from("cotacao_coverages")
+    .select("codigo, descricao, delta_cents")
+    .in("codigo", coberturasCodigos)
+    .eq("ativo", true);
+
+  const breakdown = (data ?? []).map((r) => ({
+    codigo: r.codigo as string,
+    descricao: r.descricao as string,
+    delta_cents: r.delta_cents as number,
+  }));
+  const totalDeltaCents = breakdown.reduce((s, r) => s + r.delta_cents, 0);
+
+  if (totalDeltaCents === 0) return { result, breakdown, totalDeltaCents };
+
+  // Aplica em plan.monthlyValueCents (nova estrutura) ou monthlyValueCents (legada)
+  const r = { ...result } as Record<string, unknown>;
+  const plan = (r.plan ?? {}) as Record<string, unknown>;
+  const baseMensalPlan = typeof plan.monthlyValueCents === "number" ? plan.monthlyValueCents : null;
+  const baseMensalRoot = typeof r.monthlyValueCents === "number" ? (r.monthlyValueCents as number) : null;
+  const base = baseMensalPlan ?? baseMensalRoot ?? 0;
+  const novoTotal = base + totalDeltaCents;
+
+  if (baseMensalPlan != null) r.plan = { ...plan, monthlyValueCents: novoTotal, monthlyValueCentsBase: base };
+  if (baseMensalRoot != null) r.monthlyValueCents = novoTotal;
+  r.coverageBreakdown = { base_cents: base, deltas: breakdown, total_cents: novoTotal };
+
+  return { result: r, breakdown, totalDeltaCents };
+}
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,6 +89,10 @@ const Body = z.object({
   }),
   tracking: TrackingSchema,
   leadId: z.string().optional(),
+  /** Códigos de coberturas opcionais aditivas (ex: ["terceiros_carro_100k","vidros_carro_completa"]). */
+  coberturas: z.array(z.string().max(80)).max(20).optional(),
+  /** FIPE escolhido manualmente pelo consultor na desambiguação (prevalece sobre o recomendado). */
+  fipeCode: z.string().max(20).optional(),
 });
 
 /**
@@ -119,20 +167,33 @@ export async function POST(req: NextRequest) {
         });
         const vehicleTypeFinal = parsed.data.tipo_veiculo ?? tipoInferido ?? "carro";
 
-        const result = await quoteFromText({
-          brand: marcaFinal,
-          model: modeloFinal,
-          modelYear: anoModelo,
-          fuel: fipe?.combustivel ?? v.combustivel ?? undefined,
-          // Código FIPE oficial — se o Hub suportar, pula totalmente o matching
-          // por string e usa a FIPE exata (ex: "001255-6" = Palio WK Adventure)
-          fipeCode: fipe?.codigo_fipe ?? undefined,
+        // Se o consultor desambiguou manualmente, troca pro FIPE escolhido
+        const fipeManual = parsed.data.fipeCode
+          ? (placafipe.fipe ?? []).find((f) => f.codigo_fipe === parsed.data.fipeCode)
+          : null;
+        const marcaUsada = fipeManual?.marca ?? marcaFinal;
+        const modeloUsado = fipeManual?.modelo ?? modeloFinal;
+        const anoUsado = Number(fipeManual?.ano_modelo ?? anoModelo);
+        const fipeCodeUsado = fipeManual?.codigo_fipe ?? fipe?.codigo_fipe;
+
+        const rawResult = await quoteFromText({
+          brand: marcaUsada,
+          model: modeloUsado,
+          modelYear: anoUsado,
+          fuel: (fipeManual?.combustivel ?? fipe?.combustivel ?? v.combustivel) ?? undefined,
+          fipeCode: fipeCodeUsado ?? undefined,
           vehicleType: vehicleTypeFinal,
           plate: placaPraHub,
           customerName: parsed.data.cliente.nome,
           customerPhone,
           leadId: leadIdFinal,
         });
+
+        // Aplica deltas de coberturas opcionais SE o consultor marcou algum
+        const { result, breakdown, totalDeltaCents } = await aplicarDeltasCoberturas(
+          rawResult as unknown as Record<string, unknown>,
+          parsed.data.coberturas ?? [],
+        );
 
         if (consultorId) {
           void registrarInteracaoCRM({
@@ -156,13 +217,17 @@ export async function POST(req: NextRequest) {
               quoteId: (result as { quoteId?: string }).quoteId ?? null,
               monthlyValueCents: (result as { monthlyValueCents?: number }).monthlyValueCents ?? null,
               whatsappMessage: (result as { whatsappMessage?: string }).whatsappMessage ?? null,
+              coberturasCustomizadas: (parsed.data.coberturas ?? []).length ? breakdown : null,
+              deltaCustomizacaoCents: totalDeltaCents || null,
+              fipeManualEscolhido: parsed.data.fipeCode ?? null,
             },
           });
         }
 
         // Meta CAPI — evento Lead server-side (dedup com browser pelo event_id)
         const eventId = parsed.data.tracking?.event_id ?? newEventId();
-        const monthly = (result as { plan?: { monthlyValueCents?: number } }).plan?.monthlyValueCents;
+        const monthly = (result as { plan?: { monthlyValueCents?: number } }).plan?.monthlyValueCents
+          ?? (result as { monthlyValueCents?: number }).monthlyValueCents;
         void sendCAPIEvent({
           eventName: "Lead",
           eventId,
@@ -187,7 +252,28 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        return NextResponse.json({ ok: true, via: "placafipe", eventId, ...result });
+        // Expõe as alternativas FIPE pra UI de desambiguação inline
+        const fipeAlternatives = (placafipe.fipe_alternatives ?? []).map((f) => ({
+          codigo_fipe: f.codigo_fipe,
+          marca: f.marca,
+          modelo: f.modelo,
+          ano_modelo: f.ano_modelo,
+          combustivel: f.combustivel,
+          valor_formatado: f.valor_formatado,
+          similaridade: f.similaridade,
+        }));
+        const fipeEscolhido = fipeManual ? parsed.data.fipeCode : fipe?.codigo_fipe;
+
+        return NextResponse.json({
+          ok: true,
+          via: "placafipe",
+          eventId,
+          fipeAlternatives,
+          fipeEscolhido,
+          lowConfidence: placafipe.low_confidence ?? false,
+          coberturasAplicadas: parsed.data.coberturas ?? [],
+          ...result,
+        });
       }
     } else if (!placafipe.ok) {
       // Log só pra observabilidade — não derruba, cai no fallback
@@ -207,13 +293,19 @@ export async function POST(req: NextRequest) {
 
   for (const placaVariante of placasPraTentar) {
     try {
-      const result = await quoteFromPlate({
+      const rawResult = await quoteFromPlate({
         plate: placaVariante,
         vehicleType: parsed.data.tipo_veiculo,
         customerName: parsed.data.cliente.nome,
         customerPhone,
         leadId: leadIdFinal,
       });
+
+      // Aplica deltas de coberturas opcionais (fallback path)
+      const { result, breakdown, totalDeltaCents } = await aplicarDeltasCoberturas(
+        rawResult as unknown as Record<string, unknown>,
+        parsed.data.coberturas ?? [],
+      );
 
       if (consultorId) {
         void registrarInteracaoCRM({
@@ -232,13 +324,16 @@ export async function POST(req: NextRequest) {
             quoteId: (result as { quoteId?: string }).quoteId ?? null,
             monthlyValueCents: (result as { monthlyValueCents?: number }).monthlyValueCents ?? null,
             whatsappMessage: (result as { whatsappMessage?: string }).whatsappMessage ?? null,
+            coberturasCustomizadas: (parsed.data.coberturas ?? []).length ? breakdown : null,
+            deltaCustomizacaoCents: totalDeltaCents || null,
           },
         });
       }
 
       // Meta CAPI — evento Lead server-side (fallback hub path)
       const eventId = parsed.data.tracking?.event_id ?? newEventId();
-      const monthly = (result as { plan?: { monthlyValueCents?: number } }).plan?.monthlyValueCents;
+      const monthly = (result as { plan?: { monthlyValueCents?: number } }).plan?.monthlyValueCents
+        ?? (result as { monthlyValueCents?: number }).monthlyValueCents;
       void sendCAPIEvent({
         eventName: "Lead",
         eventId,

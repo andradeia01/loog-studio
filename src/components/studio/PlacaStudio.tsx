@@ -6,6 +6,7 @@ import { loadConsultant } from "@/lib/storage";
 import { montarMensagemWhats, type CoberturaItem } from "@/lib/mensagem-whats";
 import { trackingForBackend } from "@/lib/tracking";
 import { trackMetaEvent } from "@/components/MetaPixel";
+import { CoverageTogglesCustom } from "./CoverageTogglesCustom";
 
 interface HubPlan {
   productId: string | number;
@@ -22,6 +23,15 @@ interface HubVehicle {
   color?: string | null; fipeCode: string; fipeFormatted: string;
   vehicleCategory: string;
 }
+export interface FipeAlternative {
+  codigo_fipe: string;
+  marca: string;
+  modelo: string;
+  ano_modelo: string | number;
+  combustivel?: string | null;
+  valor_formatado?: string | null;
+  similaridade?: number | null;
+}
 interface HubResult {
   ok: true;
   quoteId: string;
@@ -31,6 +41,11 @@ interface HubResult {
   pdfUrl?: string;
   printUrl?: string;
   vehicle?: HubVehicle;
+  fipeAlternatives?: FipeAlternative[];
+  fipeEscolhido?: string;
+  lowConfidence?: boolean;
+  coberturasAplicadas?: string[];
+  coverageBreakdown?: { base_cents: number; deltas: { codigo: string; descricao: string; delta_cents: number }[]; total_cents: number };
 }
 
 interface HistItem { placa: string; marca: string; modelo: string; ano: string; at: number }
@@ -62,6 +77,10 @@ export function PlacaStudio() {
   const [hist, setHist] = useState<HistItem[]>([]);
   const [coberturas, setCoberturas] = useState<CoberturaItem[]>([]);
   const [pdfLoading, setPdfLoading] = useState(false);
+  // Coberturas customizadas V2 (códigos da tabela cotacao_coverages) + FIPE escolhido na desambiguação
+  const [coberturasCodigos, setCoberturasCodigos] = useState<string[]>([]);
+  const [fipeManualCode, setFipeManualCode] = useState<string | null>(null);
+  const [recotando, setRecotando] = useState(false);
 
   // Fallback manual quando a placa não resolve no Hub (401/403/404):
   const [showManual, setShowManual] = useState(false);
@@ -131,14 +150,18 @@ export function PlacaStudio() {
     });
   }, [result, valores, coberturas, clienteNome]);
 
-  const consultar = useCallback(async (ev?: React.FormEvent) => {
+  const consultar = useCallback(async (ev?: React.FormEvent, overrides?: { coberturas?: string[]; fipeCode?: string | null; keepResult?: boolean }) => {
     ev?.preventDefault();
     const raw = placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
     if (raw.length !== 7) { setError("Placa precisa ter 7 caracteres (ex.: ABC1D23)."); return; }
     if (!clienteNome.trim()) { setError("Preencha o nome do cliente."); return; }
     if (clienteTel.replace(/[^0-9]/g, "").length < 10) { setError("Telefone precisa ter DDD + número."); return; }
-    setLoading(true); setError(null); setResult(null);
+    const isRecotando = !!overrides;
+    if (isRecotando) setRecotando(true); else { setLoading(true); setResult(null); }
+    setError(null);
     try {
+      const coberturasFinal = overrides?.coberturas ?? coberturasCodigos;
+      const fipeFinal = overrides?.fipeCode === null ? null : (overrides?.fipeCode ?? fipeManualCode);
       const res = await fetch("/api/cotacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -147,6 +170,8 @@ export function PlacaStudio() {
           tipo_veiculo: tipoVeiculo,
           cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
           tracking: trackingForBackend(crypto.randomUUID()),
+          coberturas: coberturasFinal.length ? coberturasFinal : undefined,
+          fipeCode: fipeFinal ?? undefined,
         }),
       });
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
@@ -160,6 +185,9 @@ export function PlacaStudio() {
       }
       const r = data as HubResult & { eventId?: string };
       setResult(r);
+      // Sincroniza estado local com o que o backend aplicou
+      setCoberturasCodigos(r.coberturasAplicadas ?? []);
+      if (r.fipeEscolhido) setFipeManualCode(r.fipeEscolhido);
       // Meta Pixel browser — dedup com CAPI pelo mesmo eventId
       try {
         const monthly = r.plan?.monthlyValueCents;
@@ -179,8 +207,23 @@ export function PlacaStudio() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha inesperada.");
-    } finally { setLoading(false); }
-  }, [placa, tipoVeiculo, clienteNome, clienteTel, hist]);
+    } finally {
+      setLoading(false);
+      setRecotando(false);
+    }
+  }, [placa, tipoVeiculo, clienteNome, clienteTel, hist, coberturasCodigos, fipeManualCode]);
+
+  // Chamado pelo CoverageTogglesCustom quando o consultor clica em "Aplicar à cotação"
+  const aplicarCoberturas = useCallback(async (codigos: string[]) => {
+    setCoberturasCodigos(codigos);
+    await consultar(undefined, { coberturas: codigos });
+  }, [consultar]);
+
+  // Chamado pelo dropdown FIPE quando o consultor troca a versão do veículo
+  const trocarFipe = useCallback(async (codigo: string) => {
+    setFipeManualCode(codigo);
+    await consultar(undefined, { fipeCode: codigo });
+  }, [consultar]);
 
   async function baixarPdfPremium() {
     if (!result?.vehicle || !valores) return;
@@ -274,6 +317,7 @@ export function PlacaStudio() {
   function novaConsulta() {
     setPlaca(""); setClienteNome(""); setClienteTel(""); setResult(null); setError(null);
     setShowManual(false); setManualMarca(""); setManualModelo(""); setManualAno("");
+    setCoberturasCodigos([]); setFipeManualCode(null);
   }
 
   async function cotarManual(ev?: React.FormEvent) {
@@ -461,7 +505,23 @@ export function PlacaStudio() {
         {loading && <LoadingCard />}
         {result && valores && (
           <>
-            <ResultHeader r={result} valores={valores} onNova={novaConsulta} />
+            <ResultHeader
+              r={result}
+              valores={valores}
+              onNova={novaConsulta}
+              fipeEscolhido={result.fipeEscolhido ?? null}
+              fipeAlternatives={result.fipeAlternatives ?? []}
+              lowConfidence={result.lowConfidence ?? false}
+              onTrocarFipe={trocarFipe}
+              trocandoFipe={recotando}
+            />
+            <CoverageTogglesCustom
+              tipoVeiculo={tipoVeiculo}
+              baseMensalCents={result.coverageBreakdown?.base_cents ?? result.plan?.monthlyValueCents ?? 0}
+              initialCodigos={result.coberturasAplicadas ?? []}
+              onApply={aplicarCoberturas}
+              applying={recotando}
+            />
             <TogglesCard coberturas={coberturas} onToggle={toggleCobertura} />
             <AcoesCard
               onWhats={enviarWhatsapp}
@@ -502,10 +562,18 @@ function LoadingCard() {
   );
 }
 
-function ResultHeader({ r, valores, onNova }: {
+function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, lowConfidence, onTrocarFipe, trocandoFipe }: {
   r: HubResult; valores: { mensalidadeFormatted: string; adesaoFormatted: string; investimentoInicialFormatted: string };
   onNova: () => void;
+  fipeEscolhido: string | null;
+  fipeAlternatives: FipeAlternative[];
+  lowConfidence: boolean;
+  onTrocarFipe: (codigo: string) => void;
+  trocandoFipe: boolean;
 }) {
+  // Lista as alternativas disponíveis (menos a que já está selecionada)
+  const outrasVersoes = (fipeAlternatives ?? []).filter((f) => f.codigo_fipe !== fipeEscolhido);
+  const temAlternativas = outrasVersoes.length > 0;
   return (
     <article className="card overflow-hidden border border-emerald-500/30">
       <header className="flex items-center gap-3 border-b border-emerald-500/20 bg-emerald-500/10 px-5 py-3">
@@ -527,6 +595,14 @@ function ResultHeader({ r, valores, onNova }: {
               <div className="text-xs text-loog-muted break-words">
                 Ano {r.vehicle.modelYear} · Placa <b className="text-white tracking-widest">{r.vehicle.plate}</b> · {r.vehicle.vehicleCategory}
               </div>
+              {temAlternativas && (
+                <FipeDisambig
+                  alternatives={outrasVersoes}
+                  lowConfidence={lowConfidence}
+                  onTrocar={onTrocarFipe}
+                  trocando={trocandoFipe}
+                />
+              )}
             </div>
             <div className="shrink-0 text-right">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Valor FIPE</div>
@@ -549,6 +625,59 @@ function ResultHeader({ r, valores, onNova }: {
         </div>
       </div>
     </article>
+  );
+}
+
+/**
+ * Dropdown inline pra desambiguar FIPE quando a PlacaFIPE retorna múltiplas versões
+ * do mesmo veículo. Aparece abaixo do nome/modelo, dispara re-cotação ao escolher.
+ * Realça com cor de alerta quando `lowConfidence=true` (recomendado conferir).
+ */
+function FipeDisambig({ alternatives, lowConfidence, onTrocar, trocando }: {
+  alternatives: FipeAlternative[];
+  lowConfidence: boolean;
+  onTrocar: (codigo: string) => void;
+  trocando: boolean;
+}) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div className={cn(
+      "mt-3 rounded-lg border px-3 py-2",
+      lowConfidence ? "border-amber-500/40 bg-amber-500/5" : "border-loog-border bg-white/5",
+    )}>
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        disabled={trocando}
+        className="flex w-full items-center justify-between gap-2 text-left"
+      >
+        <span className="text-[11px]">
+          {lowConfidence ? "⚠ Confira a versão do veículo — " : ""}
+          Não é esse carro? <b className="text-loog-brand2">Trocar versão</b> ({alternatives.length} opções)
+        </span>
+        <span className="text-xs text-loog-muted">{aberto ? "▲" : "▼"}</span>
+      </button>
+      {aberto && (
+        <ul className="mt-2 space-y-1">
+          {alternatives.map((f) => (
+            <li key={f.codigo_fipe}>
+              <button
+                type="button"
+                disabled={trocando}
+                onClick={() => { onTrocar(f.codigo_fipe); setAberto(false); }}
+                className="flex w-full items-start justify-between gap-2 rounded-md border border-loog-border bg-loog-panel/40 px-2 py-1.5 text-left transition hover:border-loog-brand2 hover:bg-loog-brand/10 disabled:opacity-50"
+              >
+                <span className="min-w-0 flex-1 text-xs">
+                  <b>{f.marca}</b> {f.modelo}
+                  <span className="ml-1 text-[10px] text-loog-muted">· {f.ano_modelo}{f.combustivel ? ` · ${f.combustivel}` : ""}</span>
+                </span>
+                <span className="shrink-0 text-[11px] font-bold text-loog-brand2">{f.valor_formatado ?? ""}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 
