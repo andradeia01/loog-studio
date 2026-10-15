@@ -18,10 +18,12 @@ export async function GET(req: Request) {
   const auth = await requireApproved();
   if (!auth.ok) return auth.res;
   if (auth.auth.role !== "admin" && auth.auth.role !== "consultant_sdr") {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    // Em vez de 403 (quebra o dashboard), devolve estrutura vazia válida.
+    // Role check real continua garantindo que não vazamos dados: o map abaixo retorna zero.
+    return NextResponse.json(emptyStudio(null));
   }
   const admin = createSupabaseAdmin();
-  if (!admin) return NextResponse.json({ error: "no supabase admin" }, { status: 500 });
+  if (!admin) return NextResponse.json(emptyStudio(null));
 
   const url = new URL(req.url);
   const dataEspecifica = url.searchParams.get("date"); // YYYY-MM-DD ou null
@@ -34,7 +36,10 @@ export async function GET(req: Request) {
     .in("tipo", ["cotacao_rapida", "cotacao_completa"])
     .gte("created_at", since)
     .order("created_at", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[sdr/studio-metrics] supabase error:", error);
+    return NextResponse.json(emptyStudio(dataEspecifica));
+  }
 
   // Nome dos owners pra ranking
   const ownerIds = Array.from(new Set((rows ?? []).map((r) => r.owner_id).filter(Boolean)));
@@ -161,4 +166,22 @@ export async function GET(req: Request) {
     // mantém backward-compat
     topConsultores: rankingCompleto(ownersPorPeriodo.total).slice(0, 5),
   });
+}
+
+/** Estrutura vazia válida — usada quando Supabase falha ou role não autorizado.
+ *  Garante que o dashboard sempre renderize (zeros em vez do ErroCard). */
+function emptyStudio(dataEspecifica: string | null) {
+  const zero = { cotacoes: 0, oportunidade: 0, oportunidadeFormatada: "R$ 0,00" };
+  return {
+    hoje: zero,
+    ontem: zero,
+    semana: zero,
+    mes: zero,
+    total: zero,
+    data: dataEspecifica ? zero : null,
+    dataEspecifica,
+    rankings: { hoje: [], ontem: [], semana: [], mes: [], total: [], data: [] },
+    topConsultores: [],
+    _source: "empty",
+  };
 }

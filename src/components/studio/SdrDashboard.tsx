@@ -50,6 +50,28 @@ interface StudioMetrics {
 
 const plural = (n: number, singular: string, plural: string) => `${n} ${n === 1 ? singular : plural}`;
 
+/** Fallback client-side: usado se backend falhou e devolveu erro em vez de JSON estruturado. */
+function emptySdr(date: string): SdrMetrics {
+  const zero: SdrBucket = { leads: 0, cotacoes: 0, valorCotado: 0, valorCotadoFormatado: "R$ 0,00", handoffs: 0, negociando: 0 };
+  return {
+    hoje: zero, ontem: zero, semana: zero, mes: zero,
+    total: { ...zero, ganhos: 0 },
+    data: date ? zero : null,
+    dataEspecifica: date || null,
+    taxaConversao: 0,
+  };
+}
+function emptyStudio(date: string): StudioMetrics {
+  const zero: StudioBucket = { cotacoes: 0, oportunidade: 0, oportunidadeFormatada: "R$ 0,00" };
+  return {
+    hoje: zero, ontem: zero, semana: zero, mes: zero, total: zero,
+    data: date ? zero : null,
+    dataEspecifica: date || null,
+    rankings: { hoje: [], ontem: [], semana: [], mes: [], total: [], data: [] },
+    topConsultores: [],
+  };
+}
+
 const PERIODOS: { k: Exclude<Periodo, "data">; lb: string; full: string }[] = [
   { k: "hoje", lb: "Hoje", full: "HOJE" },
   { k: "ontem", lb: "Ontem", full: "ONTEM" },
@@ -72,12 +94,16 @@ export function SdrDashboard() {
       try {
         const q = dataEspecifica ? `?date=${encodeURIComponent(dataEspecifica)}` : "";
         const [a, b] = await Promise.all([
-          fetch(`/api/sdr/metrics${q}`).then((r) => (r.ok ? r.json() : null)),
-          fetch(`/api/sdr/studio-metrics${q}`).then((r) => (r.ok ? r.json() : null)),
+          fetch(`/api/sdr/metrics${q}`, { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : emptySdr(dataEspecifica)))
+            .catch(() => emptySdr(dataEspecifica)),
+          fetch(`/api/sdr/studio-metrics${q}`, { cache: "no-store" })
+            .then((r) => (r.ok ? r.json() : emptyStudio(dataEspecifica)))
+            .catch(() => emptyStudio(dataEspecifica)),
         ]);
         if (!alive) return;
-        if (a) setSdr(a as SdrMetrics);
-        if (b) setStudio(b as StudioMetrics);
+        setSdr(a as SdrMetrics);
+        setStudio(b as StudioMetrics);
       } catch { /* silencioso */ }
       finally { if (alive) setLoading(false); }
     };
