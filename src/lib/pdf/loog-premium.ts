@@ -42,6 +42,14 @@ export interface Consultant {
   city?: string | null;
 }
 
+export interface CenarioImagem {
+  cenario: "incendio" | "enchente" | "batida" | "roubo";
+  label: string;
+  emoji: string;
+  perdaPct: number;      // 0..1 (fator sobre FIPE)
+  buffer: Uint8Array;    // PNG binário
+}
+
 export interface PremiumPdfInput {
   cliente: { nome: string; telefone?: string };
   veiculo: {
@@ -52,6 +60,7 @@ export interface PremiumPdfInput {
     color?: string | null;
     categoria: string;
     fipeFormatted: string;
+    fipeValueCents?: number; // novo — pra calcular perdas em R$
   };
   valores: {
     mensalidade: number;
@@ -67,6 +76,7 @@ export interface PremiumPdfInput {
   validadeDias: number;
   consultor: Consultant;
   protocolo: string;
+  cenarios?: CenarioImagem[]; // opcional — se vier, adiciona página 2
 }
 
 interface FontBag {
@@ -105,6 +115,12 @@ export async function gerarPdfPremium(input: PremiumPdfInput): Promise<Uint8Arra
   y = renderConsultor(page, input, fonts, y - 14);
 
   renderFooter(page, fonts);
+
+  // ─── PÁGINA 2: Cenários de perda (quando temos imagens geradas) ─────────────
+  if (input.cenarios && input.cenarios.length > 0) {
+    await renderPaginaCenarios(doc, input, fonts, logo);
+  }
+
   return await doc.save();
 }
 
@@ -312,6 +328,123 @@ function renderConsultor(page: PDFPage, input: PremiumPdfInput, f: FontBag, yTop
   page.drawText(contato, { x: MARGIN_X + 16, y: yTop - 42, size: 9, font: f.font, color: AZUL_PO });
 
   return yBot;
+}
+
+/**
+ * PÁGINA 2 — Cenários de perda com imagens geradas por IA.
+ * Grid 2×2 com fundo dark-tech, cada card mostra:
+ *   - imagem da cena específica do veículo
+ *   - label do cenário + emoji
+ *   - valor estimado da perda em R$ (fator × FIPE)
+ * Fecha com comparativo "Pague R$ XX vs perca R$ YY".
+ */
+async function renderPaginaCenarios(doc: PDFDocument, input: PremiumPdfInput, f: FontBag, logo: PDFImage | null): Promise<void> {
+  const cenarios = input.cenarios ?? [];
+  if (cenarios.length === 0) return;
+
+  const page = doc.addPage([A4.W, A4.H]);
+  // Fundo escuro dark-tech
+  page.drawRectangle({ x: 0, y: 0, width: A4.W, height: A4.H, color: AZUL_PROFUNDO });
+
+  // Hero da página — altura reduzida pra sobrar grid
+  const heroH = 110;
+  page.drawRectangle({ x: 0, y: A4.H - heroH, width: A4.W, height: heroH, color: PRETO });
+  // Linha âmbar na base do hero
+  page.drawRectangle({ x: 0, y: A4.H - heroH, width: A4.W, height: 2, color: AMBAR });
+
+  if (logo) {
+    const scale = 32 / logo.height;
+    page.drawImage(logo, { x: MARGIN_X, y: A4.H - 48, width: logo.width * scale, height: 32 });
+  } else {
+    drawLogoVector(page, MARGIN_X, A4.H - 44, 28, BRANCO);
+  }
+
+  page.drawText("CENÁRIOS DE PERDA", { x: MARGIN_X, y: A4.H - 72, size: 10, font: f.fontBold, color: AMBAR });
+  page.drawText("O QUE VOCÊ PERDERIA SEM A LOOG", {
+    x: MARGIN_X, y: A4.H - 92, size: 20, font: f.fontBold, color: BRANCO,
+  });
+
+  // ─── Grid 2x2 ─────────────────────────────────────────────────────────────
+  const gridTop = A4.H - heroH - 20;
+  const gridBottom = 170; // deixa espaço pro comparativo + footer
+  const gridH = gridTop - gridBottom;
+  const cardW = (A4.W - MARGIN_X * 2 - 12) / 2;
+  const cardH = (gridH - 12) / 2;
+
+  const fipeCents = input.veiculo.fipeValueCents ?? parseFipeFormatted(input.veiculo.fipeFormatted);
+
+  for (let i = 0; i < Math.min(4, cenarios.length); i++) {
+    const c = cenarios[i];
+    const col = i % 2;
+    const row = Math.floor(i / 2);
+    const x = MARGIN_X + col * (cardW + 12);
+    const y = gridTop - cardH - row * (cardH + 12);
+
+    // Card background escuro
+    page.drawRectangle({ x, y, width: cardW, height: cardH, color: PRETO, borderColor: AZUL2, borderWidth: 0.6 });
+
+    // Insere imagem — ocupa 70% da altura do card
+    const imgH = cardH * 0.6;
+    try {
+      const img = await doc.embedPng(c.buffer);
+      const imgW = cardW - 10;
+      const imgY = y + cardH - imgH - 5;
+      page.drawImage(img, { x: x + 5, y: imgY, width: imgW, height: imgH });
+    } catch {
+      // Se falhar, deixa um placeholder cinza
+      page.drawRectangle({ x: x + 5, y: y + cardH - imgH - 5, width: cardW - 10, height: imgH, color: GRAFITE });
+    }
+
+    // Faixa inferior com label + valor
+    const faixaY = y + 6;
+    const perdaCents = Math.round(fipeCents * c.perdaPct);
+    page.drawText(`${c.emoji}  ${c.label.toUpperCase()}`, {
+      x: x + 10, y: faixaY + 20, size: 11, font: f.fontBold, color: AMBAR,
+    });
+    page.drawText(`Perda estimada: ${brl(perdaCents / 100)}`, {
+      x: x + 10, y: faixaY + 6, size: 9, font: f.font, color: BRANCO,
+    });
+  }
+
+  // ─── Comparativo "Você paga vs perde" ─────────────────────────────────────
+  const compY = gridBottom - 20;
+  const compH = 90;
+  page.drawRectangle({ x: MARGIN_X, y: compY - compH, width: A4.W - MARGIN_X * 2, height: compH, color: PRETO, borderColor: AMBAR, borderWidth: 1 });
+  page.drawRectangle({ x: MARGIN_X, y: compY - 4, width: A4.W - MARGIN_X * 2, height: 4, color: AMBAR });
+
+  page.drawText("A DECISÃO É SUA", { x: MARGIN_X + 16, y: compY - 24, size: 9, font: f.fontBold, color: AMBAR });
+
+  // Col esquerda — "você paga"
+  page.drawText("VOCÊ PAGA (mensal)", { x: MARGIN_X + 16, y: compY - 46, size: 8, font: f.font, color: AZUL_PO });
+  page.drawText(input.valores.mensalidadeFormatted, {
+    x: MARGIN_X + 16, y: compY - 68, size: 22, font: f.fontBold, color: VERDE,
+  });
+
+  // Col direita — "ou perde"
+  const colDirX = A4.W / 2 + 20;
+  page.drawText("OU PERDE (sem proteção)", { x: colDirX, y: compY - 46, size: 8, font: f.font, color: AZUL_PO });
+  page.drawText(brl(fipeCents / 100), {
+    x: colDirX, y: compY - 68, size: 22, font: f.fontBold, color: VERMELHO,
+  });
+
+  // ─── Footer dark ──────────────────────────────────────────────────────────
+  page.drawRectangle({ x: 0, y: 0, width: A4.W, height: 32, color: PRETO });
+  page.drawRectangle({ x: 0, y: 32, width: A4.W, height: 1, color: AMBAR });
+  page.drawText("LOOG PROTEÇÃO VEICULAR  ·  loogprotecaoveicular.com.br", {
+    x: MARGIN_X, y: 12, size: 8, font: f.fontBold, color: BRANCO,
+  });
+  textRight(page, `Protocolo ${input.protocolo}`, A4.W - MARGIN_X, 12, 8, f.font, AMBAR);
+}
+
+/** Extrai cents de uma string tipo "R$ 102.797,00" — fallback quando fipeValueCents não vem. */
+function parseFipeFormatted(s: string): number {
+  const num = s.replace(/[^\d,]/g, "").replace(",", ".");
+  const v = parseFloat(num);
+  return isNaN(v) ? 0 : Math.round(v * 100);
+}
+
+function brl(reais: number): string {
+  return reais.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function renderFooter(page: PDFPage, f: FontBag) {

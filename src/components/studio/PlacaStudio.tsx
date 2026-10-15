@@ -255,11 +255,16 @@ export function PlacaStudio() {
     await consultar(undefined, { descontoPct: pct });
   }, [consultar]);
 
-  async function baixarPdfPremium() {
+  async function baixarPdfPremium(comCenarios = false) {
     if (!result?.vehicle || !valores) return;
     setPdfLoading(true);
     try {
       const stored = loadConsultant();
+      // Extrai FIPE cents da string ("R$ 102.797,00" -> 10279700) pra calcular perdas na pg 2
+      const fipeCentsMatch = result.vehicle.fipeFormatted.match(/[\d.,]+/)?.[0];
+      const fipeValueCents = fipeCentsMatch
+        ? Math.round(parseFloat(fipeCentsMatch.replace(/\./g, "").replace(",", ".")) * 100)
+        : undefined;
       const res = await fetch("/api/cotacao/pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -273,6 +278,7 @@ export function PlacaStudio() {
             color: result.vehicle.color ?? null,
             categoria: result.vehicle.vehicleCategory,
             fipeFormatted: result.vehicle.fipeFormatted,
+            fipeValueCents,
           },
           valores,
           adicionais: coberturas.filter((c) => c.ligado).map((c) => c.nome),
@@ -284,6 +290,7 @@ export function PlacaStudio() {
             city: stored?.city ?? null,
           },
           quoteId: result.quoteId,
+          incluirCenarios: comCenarios,
         }),
       });
       if (!res.ok) {
@@ -292,7 +299,7 @@ export function PlacaStudio() {
       }
       const blob = await res.blob();
       const filename = res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1]
-        ?? `LOOG-cotacao-${result.vehicle.plate}.pdf`;
+        ?? `LOOG-cotacao-${result.vehicle.plate}${comCenarios ? "-premium-ia" : ""}.pdf`;
       await entregarPdf(blob, filename);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao gerar PDF.");
@@ -558,7 +565,8 @@ export function PlacaStudio() {
             />
             <AcoesCard
               onWhats={enviarWhatsapp}
-              onPdf={baixarPdfPremium}
+              onPdf={() => baixarPdfPremium(false)}
+              onPdfIa={() => baixarPdfPremium(true)}
               pdfLoading={pdfLoading}
               onCopy={copiarMensagem}
             />
@@ -747,32 +755,51 @@ function FipeDisambig({ alternatives, lowConfidence, onTrocar, trocando }: {
   );
 }
 
-function AcoesCard({ onWhats, onPdf, pdfLoading, onCopy }: {
-  onWhats: () => void; onPdf: () => void; pdfLoading: boolean; onCopy: () => void;
+function AcoesCard({ onWhats, onPdf, onPdfIa, pdfLoading, onCopy }: {
+  onWhats: () => void; onPdf: () => void; onPdfIa: () => void; pdfLoading: boolean; onCopy: () => void;
 }) {
   return (
-    <div className="card grid grid-cols-1 gap-2 p-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
-      <button
-        type="button"
-        onClick={onWhats}
-        className="w-full rounded-md bg-[#25D366] px-3 py-2.5 text-sm font-bold text-black hover:brightness-110"
-      >
-        📲 Enviar no WhatsApp
-      </button>
-      <button
-        type="button"
-        onClick={onPdf}
-        disabled={pdfLoading}
-        className="w-full rounded-md bg-loog-brand px-3 py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50"
-      >
-        {pdfLoading ? "Gerando PDF…" : "📥 Baixar PDF premium LOOG"}
-      </button>
+    <div className="card space-y-2 p-4">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <button
+          type="button"
+          onClick={onWhats}
+          disabled={pdfLoading}
+          className="w-full rounded-md bg-[#25D366] px-3 py-2.5 text-sm font-bold text-black hover:brightness-110 disabled:opacity-50"
+        >
+          📲 Enviar no WhatsApp
+        </button>
+        <button
+          type="button"
+          onClick={onPdf}
+          disabled={pdfLoading}
+          className="w-full rounded-md bg-loog-brand px-3 py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50"
+        >
+          {pdfLoading ? "Gerando…" : "📥 PDF LOOG"}
+        </button>
+        <button
+          type="button"
+          onClick={onPdfIa}
+          disabled={pdfLoading}
+          className="group relative w-full overflow-hidden rounded-md border border-amber-500/50 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500 px-3 py-2.5 text-sm font-bold text-black hover:brightness-110 disabled:opacity-50"
+          title="Gera 4 imagens IA do seu veículo em cenários de perda (incêndio, enchente, batida, roubo). Pode levar ~30-60s na primeira vez."
+        >
+          {pdfLoading ? "Gerando com IA…" : "✨ PDF Premium IA"}
+        </button>
+      </div>
+      {pdfLoading && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+          ⏳ <b>Gerando PDF…</b> Se escolheu <b>PDF Premium IA</b>, pode levar <b>30-90 segundos</b> na primeira vez
+          (OpenAI está criando imagens do seu veículo em 4 cenários de perda).
+          <br /><span className="opacity-70">Próximas cotações do mesmo modelo serão instantâneas (cache).</span>
+        </div>
+      )}
       <button
         type="button"
         onClick={onCopy}
-        className="w-full rounded-md border border-loog-border px-3 py-2.5 text-xs text-loog-muted hover:bg-white/5 sm:col-span-2 lg:col-span-1"
+        className="w-full rounded-md border border-loog-border px-3 py-2 text-xs text-loog-muted hover:bg-white/5"
       >
-        📋 Copiar mensagem
+        📋 Copiar mensagem WhatsApp
       </button>
     </div>
   );

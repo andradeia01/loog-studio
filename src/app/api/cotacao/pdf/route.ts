@@ -3,10 +3,15 @@ import { z } from "zod";
 import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
 import { gerarPdfPremium, PROTECAO_BASE, DIFERENCIAIS_LOOG, protocolo } from "@/lib/pdf/loog-premium";
+import { gerarCenariosPerda } from "@/lib/openai-images";
 import { slugify, timestamp } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// A geração de 4 imagens via OpenAI pode levar 30-90s. Netlify Functions tem
+// hard limit de 26s em free tier e 10min em Pro, mas Next streaming geralmente
+// fica em 60s. Prolongamos até o máximo permitido pela plataforma.
+export const maxDuration = 300;
 
 const Body = z.object({
   cliente: z.object({ nome: z.string().min(1), telefone: z.string().optional() }),
@@ -18,6 +23,7 @@ const Body = z.object({
     color: z.string().nullable().optional(),
     categoria: z.string(),
     fipeFormatted: z.string(),
+    fipeValueCents: z.number().optional(),
   }),
   valores: z.object({
     mensalidade: z.number(),
@@ -36,6 +42,8 @@ const Body = z.object({
     city: z.string().nullable().optional(),
   }).default({}),
   quoteId: z.string().optional(),
+  /** Se true, inclui página 2 com 4 cenários de perda (demorado, OpenAI). */
+  incluirCenarios: z.boolean().optional().default(false),
 });
 
 export async function POST(req: NextRequest) {
@@ -50,6 +58,23 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Se o consultor pediu cenários, gera as 4 imagens em paralelo (com cache).
+    // Falha silenciosa — se OpenAI der timeout/erro, PDF sai sem a página 2.
+    let cenarios;
+    if (parsed.data.incluirCenarios) {
+      try {
+        cenarios = await gerarCenariosPerda({
+          brand: parsed.data.veiculo.brand,
+          model: parsed.data.veiculo.model,
+          modelYear: parsed.data.veiculo.modelYear,
+          color: parsed.data.veiculo.color,
+        });
+        console.log("[pdf] cenarios gerados:", cenarios.map((c) => `${c.cenario}:${c.fromCache ? "cache" : "openai"}`).join(", "));
+      } catch (err) {
+        console.warn("[pdf] falha ao gerar cenários (seguindo sem):", err instanceof Error ? err.message : err);
+      }
+    }
+
     const pdf = await gerarPdfPremium({
       cliente: parsed.data.cliente,
       veiculo: parsed.data.veiculo,
@@ -60,6 +85,7 @@ export async function POST(req: NextRequest) {
       validadeDias: parsed.data.validadeDias,
       consultor: parsed.data.consultor,
       protocolo: parsed.data.quoteId ? `LG-${parsed.data.quoteId}` : protocolo(),
+      cenarios,
     });
 
     const filename = `LOOG-cotacao-${slugify(parsed.data.veiculo.placa)}-${timestamp()}.pdf`;
