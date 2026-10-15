@@ -5,7 +5,7 @@
  * o novo SW → activate limpa caches + manda "RELOAD" pros clients → cliente
  * recarrega sozinho, sem o usuário precisar desinstalar.
  */
-const SW_VERSION = '2026-10-14-cotacao-coverages-v3-desconto-defaults';
+const SW_VERSION = '2026-10-14-cotacao-coverages-v4-desconto-sincronizado';
 
 self.addEventListener('install', (e) => {
   // skipWaiting = NÃO espera abas antigas fecharem pra ativar — ativa já

@@ -79,11 +79,13 @@ export function CoverageTogglesCustom({
     return total;
   }, [selecionados, grupos]);
 
-  // Simula o novo total (bruto + delta - desconto 10%)
+  // Preview do novo mensal — recalcula desconto sobre o novo bruto (base = Hub bruto antes do desconto)
+  // Política LOOG atual: 10% automático. Mantém sincronizado com DESCONTO_AUTOMATICO_PCT do backend.
+  const DESCONTO_PCT = 10;
   const novoBrutoCents = baseMensalCents + totalDeltaCents;
-  // Reconstitui mesmo pct do desconto que o backend está usando
-  const descontoPct = descontoCents && baseMensalCents > 0 ? Math.round((descontoCents / (baseMensalCents + 0)) * 100) : 10;
-  const novoDescontoCents = Math.round(novoBrutoCents * (descontoPct / 100));
+  const novoDescontoCents = Math.round(novoBrutoCents * (DESCONTO_PCT / 100));
+  const novoFinalCents = Math.max(0, novoBrutoCents - novoDescontoCents);
+  void descontoCents; // mantido na prop pra compat futura
 
   function escolherExclusivo(grupo: GrupoCobertura, opt: Opcao) {
     const novo = new Set(selecionados);
@@ -131,7 +133,7 @@ export function CoverageTogglesCustom({
             {totalDeltaCents > 0 ? `+${BRL(totalDeltaCents)}` : totalDeltaCents < 0 ? BRL(totalDeltaCents) : BRL(0)}
           </div>
           <div className="text-[10px] text-loog-muted">
-            Novo mensal: <b className="text-white">{BRL(novoBrutoCents - novoDescontoCents)}</b>
+            Novo mensal (com {DESCONTO_PCT}% off): <b className="text-emerald-300">{BRL(novoFinalCents)}</b>
           </div>
         </div>
       </div>

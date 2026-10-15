@@ -37,33 +37,39 @@ const DESCONTO_AUTOMATICO_PCT = 10;
  *   3. Aplica desconto automático de 10%
  *   4. Devolve result com o novo total + breakdown detalhado
  */
+const brl = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 async function aplicarDeltasCoberturas(
   result: Record<string, unknown>,
   coberturasCodigos: string[],
   tipoVeiculo: string,
 ): Promise<{
   result: Record<string, unknown>;
-  breakdown: { codigo: string; descricao: string; delta_cents: number }[];
+  breakdown: { codigo: string; descricao: string; delta_cents: number; grupo_label?: string }[];
   totalDeltaCents: number;
   descontoCents: number;
   defaultCodes: string[];
+  coberturasAplicadas: string[];
 }> {
   const defaultCodes = COBERTURAS_DEFAULT_POR_TIPO[tipoVeiculo] ?? [];
-  // Garantimos que os defaults estão sempre na lista aplicada (consultor não pode "desligar" o que já é padrão)
-  const codigosFinais = Array.from(new Set([...defaultCodes, ...coberturasCodigos]));
+  // REGRA: UI é fonte de verdade. Se o consultor mandou lista, essa é a lista final (ele
+  // pode ter trocado terceiros_30k pelo _50k — não devemos re-inserir o default). Se mandou
+  // vazio, aplicamos os defaults como estado inicial da cotação.
+  const codigosFinais = coberturasCodigos.length > 0 ? coberturasCodigos : [...defaultCodes];
 
   let breakdown: { codigo: string; descricao: string; delta_cents: number }[] = [];
   if (codigosFinais.length && supabaseConfigured()) {
     const supabase = await createSupabaseServer();
     const { data } = await supabase
       .from("cotacao_coverages")
-      .select("codigo, descricao, delta_cents")
+      .select("codigo, descricao, delta_cents, grupo_label")
       .in("codigo", codigosFinais)
       .eq("ativo", true);
     breakdown = (data ?? []).map((r) => ({
       codigo: r.codigo as string,
       descricao: r.descricao as string,
       delta_cents: r.delta_cents as number,
+      grupo_label: r.grupo_label as string | undefined,
     }));
   }
   const totalDeltaCents = breakdown.reduce((s, r) => s + r.delta_cents, 0);
@@ -74,16 +80,26 @@ async function aplicarDeltasCoberturas(
   const baseMensalRoot = typeof r.monthlyValueCents === "number" ? (r.monthlyValueCents as number) : null;
   const base = baseMensalPlan ?? baseMensalRoot ?? 0;
 
+  // Fórmula clara:
+  //   bruto = base_do_Hub + Σ(deltas das coberturas escolhidas)
+  //   desconto = 10% × bruto
+  //   final = bruto - desconto
+  // O desconto SEMPRE recalcula sobre o bruto atual — se o consultor adicionar coberturas,
+  // o desconto aumenta junto (porque é % do bruto novo).
   const totalBrutoCents = base + totalDeltaCents;
   const descontoCents = Math.round(totalBrutoCents * (DESCONTO_AUTOMATICO_PCT / 100));
   const totalFinalCents = Math.max(0, totalBrutoCents - descontoCents);
 
+  // CRÍTICO: atualizar BOTH monthlyValueCents (número) E monthlyValueFormatted (string).
+  // O frontend prefere a string quando ela existe — se não atualizarmos, UI mostra valor stale.
   if (baseMensalPlan != null) {
     r.plan = {
       ...plan,
       monthlyValueCents: totalFinalCents,
+      monthlyValueFormatted: brl(totalFinalCents),
       monthlyValueCentsBase: base,
       monthlyValueCentsBruto: totalBrutoCents,
+      monthlyValueFormattedBruto: brl(totalBrutoCents),
     };
   }
   if (baseMensalRoot != null) r.monthlyValueCents = totalFinalCents;
@@ -98,7 +114,7 @@ async function aplicarDeltasCoberturas(
     defaults_aplicados: defaultCodes,
   };
 
-  return { result: r, breakdown, totalDeltaCents, descontoCents, defaultCodes };
+  return { result: r, breakdown, totalDeltaCents, descontoCents, defaultCodes, coberturasAplicadas: codigosFinais };
 }
 
 export const runtime = "nodejs";
@@ -240,7 +256,7 @@ export async function POST(req: NextRequest) {
         });
 
         // Aplica deltas de coberturas opcionais + desconto automático 10%
-        const { result, breakdown, totalDeltaCents, descontoCents, defaultCodes } = await aplicarDeltasCoberturas(
+        const { result, breakdown, totalDeltaCents, descontoCents, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
           rawResult as unknown as Record<string, unknown>,
           parsed.data.coberturas ?? [],
           vehicleTypeFinal,
@@ -315,9 +331,6 @@ export async function POST(req: NextRequest) {
         }));
         const fipeEscolhido = fipeManual ? parsed.data.fipeCode : fipe?.codigo_fipe;
 
-        // Lista final = defaults do tipo + o que o consultor pediu (dedup via Set)
-        const coberturasFinais = Array.from(new Set([...defaultCodes, ...(parsed.data.coberturas ?? [])]));
-
         return NextResponse.json({
           ok: true,
           via: "placafipe",
@@ -325,7 +338,9 @@ export async function POST(req: NextRequest) {
           fipeAlternatives,
           fipeEscolhido,
           lowConfidence: placafipe.low_confidence ?? false,
-          coberturasAplicadas: coberturasFinais,
+          // coberturasAplicadas vem da função — reflete EXATAMENTE o que o consultor pediu,
+          // sem forçar union com defaults (evita duplicatas por grupo exclusivo)
+          coberturasAplicadas,
           coberturasDefault: defaultCodes,
           descontoCents,
           ...result,
@@ -359,7 +374,7 @@ export async function POST(req: NextRequest) {
 
       // Aplica deltas de coberturas opcionais + desconto 10% (fallback path)
       const tipoFallback = parsed.data.tipo_veiculo ?? "carro";
-      const { result, breakdown, totalDeltaCents, descontoCents, defaultCodes } = await aplicarDeltasCoberturas(
+      const { result, breakdown, totalDeltaCents, descontoCents, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
         rawResult as unknown as Record<string, unknown>,
         parsed.data.coberturas ?? [],
         tipoFallback,
@@ -414,13 +429,12 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      const coberturasFinais = Array.from(new Set([...defaultCodes, ...(parsed.data.coberturas ?? [])]));
       return NextResponse.json({
         ok: true,
         via: "hub-from-plate",
         eventId,
         placaUsada: placaVariante,
-        coberturasAplicadas: coberturasFinais,
+        coberturasAplicadas,
         coberturasDefault: defaultCodes,
         descontoCents,
         ...result,

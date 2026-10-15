@@ -49,7 +49,7 @@ interface HubResult {
   descontoCents?: number;
   coverageBreakdown?: {
     base_cents: number;
-    deltas: { codigo: string; descricao: string; delta_cents: number }[];
+    deltas: { codigo: string; descricao: string; delta_cents: number; grupo_label?: string }[];
     bruto_cents?: number;
     desconto_pct?: number;
     desconto_cents?: number;
@@ -108,12 +108,24 @@ export function PlacaStudio() {
   useEffect(() => {
     const deltas = result?.coverageBreakdown?.deltas ?? [];
     if (!deltas.length) { setCoberturas([]); return; }
-    const base: CoberturaItem[] = deltas
-      // Filtra o reboque base 300km (já aparece na "Proteção Contratada" fixa)
-      .filter((d) => !/reboque.*300/i.test(d.descricao))
+    // Deduplica por grupo_label — se por algum motivo vieram 2 níveis do mesmo radio,
+    // mantém o de maior delta (que é o nível mais alto escolhido pelo consultor).
+    const byGrupo = new Map<string, typeof deltas[number]>();
+    for (const d of deltas) {
+      // Filtra reboque base 300km (já aparece na "Proteção Contratada" fixa)
+      if (/reboque.*300/i.test(d.descricao)) continue;
       // Downgrades (delta negativo) não entram como "adicional contratado"
-      .filter((d) => d.delta_cents >= 0)
-      .map((d) => ({ id: d.codigo, nome: d.descricao, ligado: true }));
+      if (d.delta_cents < 0) continue;
+      const chave = d.grupo_label || d.codigo;
+      const existente = byGrupo.get(chave);
+      if (!existente || d.delta_cents > existente.delta_cents) byGrupo.set(chave, d);
+    }
+    const base: CoberturaItem[] = Array.from(byGrupo.values()).map((d) => ({
+      id: d.codigo,
+      // Nome legível: "Danos Materiais a Terceiros: Até R$ 50.000" em vez de só "Até R$ 50.000"
+      nome: d.grupo_label ? `${d.grupo_label}: ${d.descricao}` : d.descricao,
+      ligado: true,
+    }));
     setCoberturas(base);
   }, [result?.coverageBreakdown?.deltas]);
 
@@ -124,10 +136,12 @@ export function PlacaStudio() {
     const mensalidade = mensalCents / 100;
     const adesao = adesaoCents / 100;
     const investimentoInicial = mensalidade + adesao;
+    // CRÍTICO: SEMPRE formatar do número atualizado — nunca confiar na string formatada
+    // do Hub, porque ela não reflete o desconto aplicado nem os deltas das coberturas.
     return {
       mensalidade, adesao, investimentoInicial,
-      mensalidadeFormatted: result.plan.monthlyValueFormatted ?? BRL(mensalidade),
-      adesaoFormatted: result.plan.joinFeeFormatted ?? BRL(adesao),
+      mensalidadeFormatted: BRL(mensalidade),
+      adesaoFormatted: BRL(adesao),
       investimentoInicialFormatted: BRL(investimentoInicial),
     };
   }, [result]);
@@ -633,9 +647,9 @@ function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, low
           <div className="mt-1 text-[11px] text-white/80">1º boleto · {valores.mensalidadeFormatted} mensalidade + {valores.adesaoFormatted} adesão</div>
         </div>
         <div className="rounded-xl border-2 border-loog-brand bg-white/5 p-4">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-brand">Valor Total do Plano</div>
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-brand">Valor Mensal do Plano</div>
           <div className="mt-1 font-display text-3xl font-extrabold text-loog-brand">{valores.mensalidadeFormatted}</div>
-          <div className="mt-1 text-[11px] text-loog-muted">mensalidade recorrente · já com desconto</div>
+          <div className="mt-1 text-[11px] text-loog-muted">pelos próximos 12 meses · já com 10% de desconto</div>
         </div>
       </div>
     </article>
