@@ -7,6 +7,7 @@ import { montarMensagemWhats, type CoberturaItem } from "@/lib/mensagem-whats";
 import { trackingForBackend } from "@/lib/tracking";
 import { trackMetaEvent } from "@/components/MetaPixel";
 import { CoverageTogglesCustom } from "./CoverageTogglesCustom";
+import { DiscountControl } from "./DiscountControl";
 
 interface HubPlan {
   productId: string | number;
@@ -47,6 +48,7 @@ interface HubResult {
   coberturasAplicadas?: string[];
   coberturasDefault?: string[];
   descontoCents?: number;
+  descontoPct?: number;
   coverageBreakdown?: {
     base_cents: number;
     deltas: { codigo: string; descricao: string; delta_cents: number; grupo_label?: string }[];
@@ -90,6 +92,7 @@ export function PlacaStudio() {
   // Coberturas customizadas V2 (códigos da tabela cotacao_coverages) + FIPE escolhido na desambiguação
   const [coberturasCodigos, setCoberturasCodigos] = useState<string[]>([]);
   const [fipeManualCode, setFipeManualCode] = useState<string | null>(null);
+  const [descontoPct, setDescontoPct] = useState<number | null>(null); // null = default 10% do backend
   const [recotando, setRecotando] = useState(false);
 
   // Fallback manual quando a placa não resolve no Hub (401/403/404):
@@ -168,7 +171,7 @@ export function PlacaStudio() {
     });
   }, [result, valores, coberturas, clienteNome]);
 
-  const consultar = useCallback(async (ev?: React.FormEvent, overrides?: { coberturas?: string[]; fipeCode?: string | null; keepResult?: boolean }) => {
+  const consultar = useCallback(async (ev?: React.FormEvent, overrides?: { coberturas?: string[]; fipeCode?: string | null; descontoPct?: number | null; keepResult?: boolean }) => {
     ev?.preventDefault();
     const raw = placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
     if (raw.length !== 7) { setError("Placa precisa ter 7 caracteres (ex.: ABC1D23)."); return; }
@@ -180,6 +183,7 @@ export function PlacaStudio() {
     try {
       const coberturasFinal = overrides?.coberturas ?? coberturasCodigos;
       const fipeFinal = overrides?.fipeCode === null ? null : (overrides?.fipeCode ?? fipeManualCode);
+      const descontoFinal = overrides?.descontoPct === null ? null : (overrides?.descontoPct ?? descontoPct);
       const res = await fetch("/api/cotacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -190,6 +194,7 @@ export function PlacaStudio() {
           tracking: trackingForBackend(crypto.randomUUID()),
           coberturas: coberturasFinal.length ? coberturasFinal : undefined,
           fipeCode: fipeFinal ?? undefined,
+          descontoPct: descontoFinal ?? undefined,
         }),
       });
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
@@ -206,6 +211,7 @@ export function PlacaStudio() {
       // Sincroniza estado local com o que o backend aplicou
       setCoberturasCodigos(r.coberturasAplicadas ?? []);
       if (r.fipeEscolhido) setFipeManualCode(r.fipeEscolhido);
+      if (typeof r.descontoPct === "number") setDescontoPct(r.descontoPct);
       // Meta Pixel browser — dedup com CAPI pelo mesmo eventId
       try {
         const monthly = r.plan?.monthlyValueCents;
@@ -229,7 +235,7 @@ export function PlacaStudio() {
       setLoading(false);
       setRecotando(false);
     }
-  }, [placa, tipoVeiculo, clienteNome, clienteTel, hist, coberturasCodigos, fipeManualCode]);
+  }, [placa, tipoVeiculo, clienteNome, clienteTel, hist, coberturasCodigos, fipeManualCode, descontoPct]);
 
   // Chamado pelo CoverageTogglesCustom quando o consultor clica em "Aplicar à cotação"
   const aplicarCoberturas = useCallback(async (codigos: string[]) => {
@@ -241,6 +247,12 @@ export function PlacaStudio() {
   const trocarFipe = useCallback(async (codigo: string) => {
     setFipeManualCode(codigo);
     await consultar(undefined, { fipeCode: codigo });
+  }, [consultar]);
+
+  // Chamado pelo DiscountControl ao mudar o % de desconto
+  const aplicarDesconto = useCallback(async (pct: number) => {
+    setDescontoPct(pct);
+    await consultar(undefined, { descontoPct: pct });
   }, [consultar]);
 
   async function baixarPdfPremium() {
@@ -331,7 +343,7 @@ export function PlacaStudio() {
   function novaConsulta() {
     setPlaca(""); setClienteNome(""); setClienteTel(""); setResult(null); setError(null);
     setShowManual(false); setManualMarca(""); setManualModelo(""); setManualAno("");
-    setCoberturasCodigos([]); setFipeManualCode(null);
+    setCoberturasCodigos([]); setFipeManualCode(null); setDescontoPct(null);
   }
 
   async function cotarManual(ev?: React.FormEvent) {
@@ -538,6 +550,12 @@ export function PlacaStudio() {
               onApply={aplicarCoberturas}
               applying={recotando}
             />
+            <DiscountControl
+              brutoCents={result.coverageBreakdown?.bruto_cents ?? ((result.coverageBreakdown?.base_cents ?? 0) + 0)}
+              descontoPctAplicado={result.descontoPct ?? result.coverageBreakdown?.desconto_pct ?? 10}
+              onApply={aplicarDesconto}
+              applying={recotando}
+            />
             <AcoesCard
               onWhats={enviarWhatsapp}
               onPdf={baixarPdfPremium}
@@ -627,18 +645,34 @@ function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, low
         </div>
       )}
 
-      {/* Badge de desconto aplicado — super explícito */}
-      {(r.descontoCents ?? r.coverageBreakdown?.desconto_cents ?? 0) > 0 && (
-        <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
-          <span className="text-base">🎁</span>
-          <div className="flex-1 text-[11px]">
-            <b className="text-emerald-300">{r.coverageBreakdown?.desconto_pct ?? 10}% de desconto já aplicado automaticamente</b>
-            <span className="ml-1 text-loog-muted">
-              — bruto {BRL((r.coverageBreakdown?.bruto_cents ?? 0) / 100)} · desconto {BRL((r.coverageBreakdown?.desconto_cents ?? r.descontoCents ?? 0) / 100)}
-            </span>
+      {/* Badge de desconto aplicado (ou sem desconto, se consultor desligou) */}
+      {(() => {
+        const pct = r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 10;
+        const descontoCents = r.coverageBreakdown?.desconto_cents ?? r.descontoCents ?? 0;
+        const brutoCents = r.coverageBreakdown?.bruto_cents ?? 0;
+        if (pct <= 0) {
+          return (
+            <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2">
+              <span className="text-base">⚠️</span>
+              <div className="flex-1 text-[11px]">
+                <b className="text-red-300">SEM desconto aplicado</b>
+                <span className="ml-1 text-loog-muted">— valor bruto da cotação</span>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div className="mx-5 mt-4 flex items-center gap-2 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2">
+            <span className="text-base">🎁</span>
+            <div className="flex-1 text-[11px]">
+              <b className="text-emerald-300">{pct}% de desconto aplicado</b>
+              <span className="ml-1 text-loog-muted">
+                — bruto {BRL(brutoCents / 100)} · desconto {BRL(descontoCents / 100)}
+              </span>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       <div className="grid gap-3 p-5 sm:grid-cols-2">
         <div className="rounded-xl bg-loog-brand p-4 text-white shadow-glow">
@@ -649,7 +683,11 @@ function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, low
         <div className="rounded-xl border-2 border-loog-brand bg-white/5 p-4">
           <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-brand">Valor Mensal do Plano</div>
           <div className="mt-1 font-display text-3xl font-extrabold text-loog-brand">{valores.mensalidadeFormatted}</div>
-          <div className="mt-1 text-[11px] text-loog-muted">pelos próximos 12 meses · já com 10% de desconto</div>
+          <div className="mt-1 text-[11px] text-loog-muted">
+            pelos próximos 12 meses · {(r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 10) > 0
+              ? `com ${r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 10}% de desconto`
+              : "sem desconto aplicado"}
+          </div>
         </div>
       </div>
     </article>

@@ -43,11 +43,13 @@ async function aplicarDeltasCoberturas(
   result: Record<string, unknown>,
   coberturasCodigos: string[],
   tipoVeiculo: string,
+  descontoPctRequerido?: number,
 ): Promise<{
   result: Record<string, unknown>;
   breakdown: { codigo: string; descricao: string; delta_cents: number; grupo_label?: string }[];
   totalDeltaCents: number;
   descontoCents: number;
+  descontoPct: number;
   defaultCodes: string[];
   coberturasAplicadas: string[];
 }> {
@@ -87,7 +89,10 @@ async function aplicarDeltasCoberturas(
   // O desconto SEMPRE recalcula sobre o bruto atual — se o consultor adicionar coberturas,
   // o desconto aumenta junto (porque é % do bruto novo).
   const totalBrutoCents = base + totalDeltaCents;
-  const descontoCents = Math.round(totalBrutoCents * (DESCONTO_AUTOMATICO_PCT / 100));
+  // pct vem do consultor (0 = sem desconto) ou usa o default (10%)
+  // Clampa em 0-20 por segurança (role check vem depois)
+  const descontoPct = Math.max(0, Math.min(20, descontoPctRequerido ?? DESCONTO_AUTOMATICO_PCT));
+  const descontoCents = Math.round(totalBrutoCents * (descontoPct / 100));
   const totalFinalCents = Math.max(0, totalBrutoCents - descontoCents);
 
   // CRÍTICO: atualizar BOTH monthlyValueCents (número) E monthlyValueFormatted (string).
@@ -108,13 +113,13 @@ async function aplicarDeltasCoberturas(
     base_cents: base,
     deltas: breakdown,
     bruto_cents: totalBrutoCents,
-    desconto_pct: DESCONTO_AUTOMATICO_PCT,
+    desconto_pct: descontoPct,
     desconto_cents: descontoCents,
     total_cents: totalFinalCents,
     defaults_aplicados: defaultCodes,
   };
 
-  return { result: r, breakdown, totalDeltaCents, descontoCents, defaultCodes, coberturasAplicadas: codigosFinais };
+  return { result: r, breakdown, totalDeltaCents, descontoCents, descontoPct, defaultCodes, coberturasAplicadas: codigosFinais };
 }
 
 export const runtime = "nodejs";
@@ -159,6 +164,9 @@ const Body = z.object({
   coberturas: z.array(z.string().max(80)).max(20).optional(),
   /** FIPE escolhido manualmente pelo consultor na desambiguação (prevalece sobre o recomendado). */
   fipeCode: z.string().max(20).optional(),
+  /** % de desconto a aplicar (0 a 20). Default = 10 (política padrão LOOG).
+   *  Validações de role: consultor até 10% livre, gestor até 15%, admin até 20%. */
+  descontoPct: z.number().min(0).max(20).optional(),
 });
 
 /**
@@ -255,11 +263,12 @@ export async function POST(req: NextRequest) {
           leadId: leadIdFinal,
         });
 
-        // Aplica deltas de coberturas opcionais + desconto automático 10%
-        const { result, breakdown, totalDeltaCents, descontoCents, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
+        // Aplica deltas + desconto variável (pct vem do consultor; default 10%)
+        const { result, breakdown, totalDeltaCents, descontoCents, descontoPct, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
           rawResult as unknown as Record<string, unknown>,
           parsed.data.coberturas ?? [],
           vehicleTypeFinal,
+          parsed.data.descontoPct,
         );
 
         if (consultorId) {
@@ -343,6 +352,7 @@ export async function POST(req: NextRequest) {
           coberturasAplicadas,
           coberturasDefault: defaultCodes,
           descontoCents,
+          descontoPct,
           ...result,
         });
       }
@@ -372,12 +382,13 @@ export async function POST(req: NextRequest) {
         leadId: leadIdFinal,
       });
 
-      // Aplica deltas de coberturas opcionais + desconto 10% (fallback path)
+      // Aplica deltas + desconto variável (fallback path)
       const tipoFallback = parsed.data.tipo_veiculo ?? "carro";
-      const { result, breakdown, totalDeltaCents, descontoCents, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
+      const { result, breakdown, totalDeltaCents, descontoCents, descontoPct, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
         rawResult as unknown as Record<string, unknown>,
         parsed.data.coberturas ?? [],
         tipoFallback,
+        parsed.data.descontoPct,
       );
 
       if (consultorId) {
@@ -437,6 +448,7 @@ export async function POST(req: NextRequest) {
         coberturasAplicadas,
         coberturasDefault: defaultCodes,
         descontoCents,
+        descontoPct,
         ...result,
       });
     } catch (err) {

@@ -141,16 +141,32 @@ export function CoverageTogglesCustom({
       <div className="grid gap-3 md:grid-cols-2">
         {grupos.map((g) => {
           const temDefaultNesteGrupo = g.opcoes.some((o) => defaults.has(o.codigo));
+          // Qual opção está ATIVA? (relevante pros grupos exclusivos — radio)
+          const opcaoAtiva = g.exclusivo ? g.opcoes.find((o) => selecionados.has(o.codigo)) : null;
+          const defaultAtivo = opcaoAtiva && defaults.has(opcaoAtiva.codigo);
+          // Badge dinâmico: mostra o estado real do grupo
+          let badge: { texto: string; cor: string } | null = null;
+          if (temDefaultNesteGrupo && opcaoAtiva) {
+            if (defaultAtivo) {
+              badge = { texto: "✓ incluso", cor: "bg-emerald-500/20 text-emerald-300" };
+            } else if (opcaoAtiva.delta_cents > 0) {
+              badge = { texto: `UPGRADE +${BRL(opcaoAtiva.delta_cents)}`, cor: "bg-loog-brand/30 text-white" };
+            } else if (opcaoAtiva.delta_cents < 0) {
+              badge = { texto: `REDUZIDO ${BRL(opcaoAtiva.delta_cents)}`, cor: "bg-amber-500/20 text-amber-200" };
+            }
+          }
           return (
             <div key={g.grupo} className={cn(
-              "rounded-xl border p-3",
-              temDefaultNesteGrupo ? "border-emerald-500/20 bg-emerald-500/5" : "border-loog-border bg-loog-panel/40",
+              "rounded-xl border p-3 transition",
+              defaultAtivo ? "border-emerald-500/30 bg-emerald-500/5" :
+              opcaoAtiva ? "border-loog-brand/40 bg-loog-brand/5" :
+              "border-loog-border bg-loog-panel/40",
             )}>
               <div className="mb-2 flex items-center justify-between">
                 <h4 className="text-xs font-bold uppercase tracking-wider">{g.label}</h4>
-                {temDefaultNesteGrupo && (
-                  <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-300">
-                    já incluso
+                {badge && (
+                  <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider", badge.cor)}>
+                    {badge.texto}
                   </span>
                 )}
               </div>
@@ -175,14 +191,15 @@ export function CoverageTogglesCustom({
                       type="button"
                       onClick={() => escolherExclusivo(g, o)}
                       className={cn(
-                        "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition",
-                        isDefault && ativo
-                          ? "border-emerald-500/60 bg-emerald-500/15"
+                        "flex w-full items-center justify-between rounded-lg border-2 px-3 py-2 text-left transition",
+                        ativo && isDefault
+                          ? "border-emerald-500 bg-emerald-500/20 shadow-glow"
                           : ativo
-                            ? "border-loog-brand/60 bg-loog-brand/15"
-                            : "border-loog-border hover:bg-white/5",
+                            ? "border-loog-brand bg-loog-brand/25 shadow-glow"
+                            : "border-loog-border/60 opacity-70 hover:opacity-100 hover:bg-white/5",
                       )}
                     >
+                      {ativo && <span className="mr-2 text-[11px] font-bold text-white">●</span>}
                       {commonLabel}
                     </button>
                   ) : (
