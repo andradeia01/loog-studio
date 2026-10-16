@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
  * Pede pro Hub gerar um QR code novo via Baileys.
  *
  * Hoje: STUB. Devolve estado "ainda sem Hub Baileys" com instruções.
- * Fase 2: POST pro Hub (https://2-25-189-22.sslip.io/v1/sdr/qr), que
+ * Fase 2: POST pro Hub (https://loogstudio.tech/v1/sdr/qr), que
  * inicia uma sessão Baileys e retorna { qrCode (dataUrl), expiresAt }.
  */
 export async function POST() {

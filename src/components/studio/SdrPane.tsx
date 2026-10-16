@@ -1234,7 +1234,7 @@ function OficialTab() {
     }
   };
 
-  const WEBHOOK_URL = "https://2-25-189-22.sslip.io/webhook/meta";
+  const WEBHOOK_URL = "https://loogstudio.tech/webhook/meta";
 
   return (
     <div className="space-y-4 text-sm">
