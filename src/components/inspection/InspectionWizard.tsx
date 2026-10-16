@@ -768,15 +768,23 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
       const r1 = await fetch(`/api/inspection/${inspectionId}/upload`, { method: "POST", body: videoForm });
       if (!r1.ok) throw new Error((await r1.json()).error ?? "upload do vídeo falhou");
 
-      // Extrai 10 frames + sobe cada um como FRAME
+      // Extrai 10 frames + sobe cada um como FRAME.
+      // frame-extractor foi atualizado (import do HUB) e agora retorna
+      // ExtractedFrame[] com { blob, dataUrl, timestampMs, width, height }.
       setUploadProgress("Extraindo frames do vídeo…");
       const frames = await extractFrames(recordedBlob, 10);
       for (let i = 0; i < frames.length; i++) {
         setUploadProgress(`Enviando frame ${i + 1}/${frames.length}…`);
         const f = new FormData();
         f.append("kind", "FRAME");
-        f.append("file", frames[i], `frame-${i}.jpg`);
-        f.append("metadata", JSON.stringify({ index: i, total: frames.length }));
+        f.append("file", frames[i].blob, `frame-${i}.jpg`);
+        f.append("metadata", JSON.stringify({
+          index: i,
+          total: frames.length,
+          timestampMs: frames[i].timestampMs,
+          width: frames[i].width,
+          height: frames[i].height,
+        }));
         await fetch(`/api/inspection/${inspectionId}/upload`, { method: "POST", body: f });
       }
       streamRef.current?.getTracks().forEach((t) => t.stop());
