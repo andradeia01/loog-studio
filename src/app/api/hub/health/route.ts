@@ -31,8 +31,9 @@ export async function GET() {
       cache: "no-store",
     });
     const latencyMs = Date.now() - started;
-    if (r.ok || r.status === 404) {
-      // 404 no /health significa que o server respondeu — tá vivo
+    // Qualquer resposta HTTP (incluindo 401 "falta auth" e 404 "rota não existe")
+    // significa que o Hub tá UP e respondendo. Só erro de rede/SSL conta como offline.
+    if (r.status < 500 || r.status === 503) {
       return NextResponse.json({
         ok: true,
         url,
