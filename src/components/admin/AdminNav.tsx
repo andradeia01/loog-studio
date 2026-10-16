@@ -1,13 +1,31 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-type Key = "templates" | "consultores" | "artes-prontas" | "videos-prontos" | "fidelidade" | "leads-trafego" | "vistorias" | "config";
+type Key =
+  | "templates"
+  | "consultores"
+  | "artes-prontas"
+  | "videos-prontos"
+  | "fidelidade"
+  | "leads-trafego"
+  | "vistorias"
+  | "planos"
+  | "associados"
+  | "veiculos"
+  | "signatarios"
+  | "infra"
+  | "config";
 
 const TABS: { key: Key; label: string; href: string }[] = [
   { key: "templates", label: "Templates", href: "/admin" },
   { key: "consultores", label: "Consultores", href: "/admin/consultores" },
-  { key: "artes-prontas", label: "Artes prontas", href: "/admin/artes-prontas" },
-  { key: "videos-prontos", label: "Vídeos prontos", href: "/admin/videos-prontos" },
+  { key: "associados", label: "Associados 👥", href: "/admin/associados" },
+  { key: "veiculos", label: "Veículos 🚗", href: "/admin/veiculos" },
+  { key: "planos", label: "Planos 💰", href: "/admin/planos" },
+  { key: "signatarios", label: "Signatários ✍️", href: "/admin/signatarios" },
+  { key: "infra", label: "Infra 🛠️", href: "/admin/infra" },
+  { key: "artes-prontas", label: "Artes", href: "/admin/artes-prontas" },
+  { key: "videos-prontos", label: "Vídeos", href: "/admin/videos-prontos" },
   { key: "fidelidade", label: "Fidelidade 🔥", href: "/admin/fidelidade" },
   { key: "leads-trafego", label: "Tráfego 📊", href: "/admin/leads-trafego" },
   { key: "vistorias", label: "Vistorias 🎥", href: "/admin/vistorias" },
