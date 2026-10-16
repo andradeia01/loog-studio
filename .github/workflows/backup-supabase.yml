@@ -1,0 +1,63 @@
+name: Backup Supabase (semanal)
+# Roda todo domingo às 03:00 UTC (= 00:00 Brasília) + sob demanda via workflow_dispatch.
+# Faz pg_dump completo (schema + dados), compacta e sobe como asset em release privado.
+# Mantém histórico infinito até 2GB por release (GitHub free tier).
+#
+# Setup inicial (único):
+# 1. No Supabase dashboard: Settings > Database > Connection string > URI (com senha)
+# 2. GitHub repo > Settings > Secrets > Actions > New: SUPABASE_DATABASE_URL = o URI acima
+# 3. Primeira execução manual: Actions > "Backup Supabase (semanal)" > Run workflow
+
+on:
+  schedule:
+    - cron: "0 3 * * 0"  # domingos 03h UTC
+  workflow_dispatch:
+    inputs:
+      razao:
+        description: "Razão do backup manual (opcional)"
+        required: false
+        type: string
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write  # pra criar release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump + compress
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          TIMESTAMP=$(date -u +"%Y%m%dT%H%M%SZ")
+          FILENAME="loog-studio-supabase-${TIMESTAMP}.sql.gz"
+          echo "FILENAME=${FILENAME}" >> $GITHUB_ENV
+          echo "TIMESTAMP=${TIMESTAMP}" >> $GITHUB_ENV
+          pg_dump \
+            --no-owner --no-privileges \
+            --clean --if-exists \
+            --format=plain \
+            --encoding=UTF8 \
+            "$DATABASE_URL" | gzip -9 > "${FILENAME}"
+          ls -lh "${FILENAME}"
+
+      - name: Create release + upload dump
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RAZAO: ${{ inputs.razao || 'backup automático semanal' }}
+        run: |
+          TAG="backup-${TIMESTAMP}"
+          gh release create "${TAG}" "${FILENAME}" \
+            --title "Backup Supabase ${TIMESTAMP}" \
+            --notes "Dump completo (schema + dados) via pg_dump. ${RAZAO}. Restore: \`gunzip -c ${FILENAME} | psql \"\$DATABASE_URL\"\`." \
+            --prerelease
+          echo "Backup publicado como release ${TAG}."
