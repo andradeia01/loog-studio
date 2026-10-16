@@ -15,6 +15,9 @@ export interface SubTab {
   label: string;
   icon?: string;
   badge?: number;
+  /** Marca sub como "em desenvolvimento" — mostra pill âmbar "EM BREVE" e desabilita o clique.
+   *  Usado pra features ainda mock (sem backend/UI real), evitando que consultor clique em placeholder. */
+  comingSoon?: boolean;
 }
 
 export interface Mundo {
@@ -183,17 +186,26 @@ export function StudioShell({
                     <button
                       key={s.key}
                       type="button"
-                      onClick={() => onNavigate(current.key, s.key)}
+                      onClick={() => !s.comingSoon && onNavigate(current.key, s.key)}
+                      disabled={s.comingSoon}
+                      title={s.comingSoon ? "Em desenvolvimento — chega em breve" : undefined}
                       className={cn(
                         "relative shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition",
-                        activeSub === s.key
-                          ? "bg-loog-brand text-white shadow-glow"
-                          : "text-loog-muted hover:text-white",
+                        s.comingSoon
+                          ? "cursor-not-allowed text-loog-muted/50"
+                          : activeSub === s.key
+                            ? "bg-loog-brand text-white shadow-glow"
+                            : "text-loog-muted hover:text-white",
                       )}
                     >
                       {s.icon && <span className="mr-1.5">{s.icon}</span>}
                       {s.label}
-                      {typeof s.badge === "number" && s.badge > 0 && (
+                      {s.comingSoon && (
+                        <span className="ml-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-amber-300">
+                          em breve
+                        </span>
+                      )}
+                      {typeof s.badge === "number" && s.badge > 0 && !s.comingSoon && (
                         <span className={cn(
                           "ml-2 rounded-full px-1.5 py-0.5 text-[10px]",
                           activeSub === s.key ? "bg-black/30" : "bg-white/10",
@@ -309,17 +321,26 @@ function Nav({
                   <li key={s.key}>
                     <button
                       type="button"
-                      onClick={() => onNavigate(m.key, s.key)}
+                      onClick={() => !s.comingSoon && onNavigate(m.key, s.key)}
+                      disabled={s.comingSoon}
+                      title={s.comingSoon ? "Em desenvolvimento" : undefined}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs transition",
-                        activeSub === s.key
-                          ? "bg-white/10 text-white"
-                          : "text-loog-muted hover:bg-white/5 hover:text-white",
+                        s.comingSoon
+                          ? "cursor-not-allowed text-loog-muted/50"
+                          : activeSub === s.key
+                            ? "bg-white/10 text-white"
+                            : "text-loog-muted hover:bg-white/5 hover:text-white",
                       )}
                     >
                       {s.icon && <span>{s.icon}</span>}
                       <span className="flex-1 text-left">{s.label}</span>
-                      {typeof s.badge === "number" && s.badge > 0 && (
+                      {s.comingSoon && (
+                        <span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-widest text-amber-300">
+                          soon
+                        </span>
+                      )}
+                      {typeof s.badge === "number" && s.badge > 0 && !s.comingSoon && (
                         <span className="rounded-full bg-white/10 px-1.5 py-0.5 text-[9px]">{s.badge}</span>
                       )}
                     </button>

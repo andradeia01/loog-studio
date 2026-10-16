@@ -136,17 +136,16 @@ export function StudioApp({
       subs: [
         { key: "placa", label: "Cotação Rápida", icon: "⚡" },
         { key: "completa", label: "Cotação Completa", icon: "📄" },
-        { key: "simulador", label: "Simulador", icon: "🧮" },
-        // v0: aba Funil visível pra todos (conteúdo tem guard próprio); abas sdr/dashboard mantém guard
-        { key: "funil", label: "Funil", icon: "🔁" },
+        { key: "simulador", label: "Simulador", icon: "🧮", comingSoon: true },
+        { key: "funil", label: "Funil", icon: "🔁", comingSoon: true },
         ...(canSeeSdr ? [
           { key: "dashboard", label: "Dashboard", icon: "📊" },
           { key: "sdr", label: "SDR WhatsApp", icon: "💬" },
         ] : []),
         { key: "crm", label: "CRM / Leads", icon: "👥" },
         { key: "pipeline", label: "Pipeline", icon: "📈" },
-        { key: "followups", label: "Follow-ups", icon: "🔔" },
-        { key: "comissoes", label: "Comissões", icon: "💰" },
+        { key: "followups", label: "Follow-ups", icon: "🔔", comingSoon: true },
+        { key: "comissoes", label: "Comissões", icon: "💰", comingSoon: true },
       ],
     },
     {
@@ -181,10 +180,10 @@ export function StudioApp({
       short: "Treinamentos, scripts e biblioteca de conhecimento LOOG",
       color: "from-indigo-500/20 to-blue-500/5",
       subs: [
-        { key: "trilhas", label: "Trilhas", icon: "🛤️" },
-        { key: "biblioteca", label: "Biblioteca", icon: "📖" },
-        { key: "scripts", label: "Scripts de venda", icon: "💬" },
-        { key: "ranking-academia", label: "Ranking", icon: "🏆" },
+        { key: "trilhas", label: "Trilhas", icon: "🛤️", comingSoon: true },
+        { key: "biblioteca", label: "Biblioteca", icon: "📖", comingSoon: true },
+        { key: "scripts", label: "Scripts de venda", icon: "💬", comingSoon: true },
+        { key: "ranking-academia", label: "Ranking", icon: "🏆", comingSoon: true },
       ],
     },
     {
@@ -194,9 +193,9 @@ export function StudioApp({
       short: "Compromissos, lembretes de cliente e reuniões",
       color: "from-rose-500/20 to-pink-500/5",
       subs: [
-        { key: "hoje", label: "Hoje", icon: "☀️" },
-        { key: "mes", label: "Mês", icon: "🗓️" },
-        { key: "lembretes", label: "Lembretes", icon: "⏰" },
+        { key: "hoje", label: "Hoje", icon: "☀️", comingSoon: true },
+        { key: "mes", label: "Mês", icon: "🗓️", comingSoon: true },
+        { key: "lembretes", label: "Lembretes", icon: "⏰", comingSoon: true },
       ],
     },
     {
