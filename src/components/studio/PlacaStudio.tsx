@@ -8,6 +8,7 @@ import { trackingForBackend } from "@/lib/tracking";
 import { trackMetaEvent } from "@/components/MetaPixel";
 import { CoverageTogglesCustom } from "./CoverageTogglesCustom";
 import { DiscountControl } from "./DiscountControl";
+import { useHubStatus } from "./HubStatusBanner";
 
 interface HubPlan {
   productId: string | number;
@@ -79,6 +80,8 @@ function saveHist(list: HistItem[]) {
 }
 
 export function PlacaStudio() {
+  const hubStatus = useHubStatus();
+  const hubOffline = !hubStatus.ok;
   const [placa, setPlaca] = useState("");
   const [tipoVeiculo, setTipoVeiculo] = useState<"carro" | "moto" | "utilitario" | "eletrico">("carro");
   const [clienteNome, setClienteNome] = useState("");
@@ -230,7 +233,12 @@ export function PlacaStudio() {
         setHist(next); saveHist(next);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha inesperada.");
+      // Traduz "fetch failed" cru pra mensagem amigável
+      const raw = err instanceof Error ? err.message : "Falha inesperada.";
+      const amigavel = /fetch failed|TypeError|NetworkError|Failed to fetch/i.test(raw)
+        ? "Sem conexão com o sistema LOOG agora. Tenta de novo em alguns minutos."
+        : raw;
+      setError(amigavel);
     } finally {
       setLoading(false);
       setRecotando(false);
@@ -446,9 +454,19 @@ export function PlacaStudio() {
             onChange={(e) => setClienteTel(e.target.value)} required placeholder="(11) 99999-9999"
           />
 
-          <button type="submit" className="btn-primary w-full !py-2" disabled={loading}>
-            {loading ? "Gerando cotação…" : "🚗 Gerar cotação oficial"}
+          <button
+            type="submit"
+            className="btn-primary w-full !py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading || hubOffline}
+            title={hubOffline ? "Sistema LOOG Hub offline — cotações indisponíveis" : undefined}
+          >
+            {hubOffline ? "⚠️ Hub LOOG offline" : loading ? "Gerando cotação…" : "🚗 Gerar cotação oficial"}
           </button>
+          {hubOffline && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-[11px] text-red-200">
+              Enquanto o Hub tá fora, nenhuma cotação consegue chegar no SIVIS. Os dados que você digitar ficam salvos — tenta de novo em alguns minutos.
+            </div>
+          )}
           {error && (
             <div className="space-y-2">
               <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>

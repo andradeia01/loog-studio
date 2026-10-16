@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { LoogLogo } from "@/components/ui/LoogMark";
+import { HubStatusBanner } from "@/components/studio/HubStatusBanner";
 import { LogoutButton } from "@/components/auth/LogoutButton";
 
 export type MundoKey = "home" | "dashboard" | "vendas" | "vistoria" | "conteudo" | "ia" | "academia" | "agenda" | "producao" | "fidelidade";
@@ -72,6 +73,8 @@ export function StudioShell({
 
   return (
     <div className="min-h-screen bg-loog-bg text-loog-text">
+      {/* Banner global: aparece quando LOOG Hub tá offline (fica em cima do header). */}
+      <HubStatusBanner />
       {/* TOP BAR (sempre visível, compacta)
           iOS fix: paddingTop + paddingLeft/Right usam safe-area pra evitar que
           o logo e o botão "Sair" fiquem atrás do notch em landscape iPhone. */}

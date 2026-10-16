@@ -515,6 +515,17 @@ export async function POST(req: NextRequest) {
     }
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[cotacao] falha nao-Hub:", msg);
+    // Detecta erros de rede comuns (Hub offline, SSL quebrado, DNS, timeout)
+    // e devolve mensagem clara pro consultor em vez do "fetch failed" cru.
+    const isNetworkError = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|certificate|SSL|TLS/i.test(msg);
+    if (isNetworkError) {
+      return NextResponse.json({
+        error: "hub_offline",
+        message: "Sistema LOOG Hub temporariamente fora do ar. Nenhuma cotação consegue chegar no SIVIS agora. Tente de novo em alguns minutos — ou avise o admin.",
+        hubOffline: true,
+        canFallbackManual: false,
+      }, { status: 503 });
+    }
     return NextResponse.json({ error: "falha", message: msg }, { status: 500 });
   }
 }
