@@ -48,6 +48,8 @@ function categoriaLabel(cat: string): string {
  * independente dos toggles de coberturas adicionais.
  */
 const PROTECAO_FIXA = [
+  "ROUBO E FURTO",
+  "COLISÃO (perda parcial e perda total)",
   "ASSISTÊNCIA 24H EM TODO TERRITÓRIO NACIONAL",
   "Reboque com KM ILIMITADO em casos de colisão e até 300km (150km ida e 150km volta) para pane Mecânica, Elétrica e Falta de Combustível",
 ];
