@@ -23,6 +23,7 @@ import { PlacaStudio } from "./PlacaStudio";
 import { CotacaoCompleta } from "./CotacaoCompleta";
 import { CrmLeads } from "./CrmLeads";
 import { CrmPipeline } from "./CrmPipeline";
+import { TwentyCrmPane } from "./TwentyCrmPane";
 import { useAndroidBack } from "@/lib/hooks/use-android-back";
 import { SdrPane } from "./SdrPane";
 import { SdrDashboard } from "./SdrDashboard";
@@ -144,6 +145,7 @@ export function StudioApp({
           { key: "sdr", label: "SDR WhatsApp", icon: "💬" },
         ] : []),
         { key: "crm", label: "CRM / Leads", icon: "👥" },
+        { key: "crm-twenty", label: "CRM Twenty", icon: "💎" },
         { key: "pipeline", label: "Pipeline", icon: "📈" },
         { key: "followups", label: "Follow-ups", icon: "🔔", comingSoon: true },
         { key: "comissoes", label: "Comissões", icon: "💰", comingSoon: true },
@@ -350,6 +352,7 @@ function renderConteudo(opts: RenderOpts) {
       return <FunilDashboard />;
     }
     if (activeSub === "crm") return <CrmLeads />;
+    if (activeSub === "crm-twenty") return <TwentyCrmPane />;
     if (activeSub === "pipeline") return <CrmPipeline />;
     if (activeSub === "followups") return <MundoPane
       icon="🔔"
