@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
 import { LoogLogo } from "@/components/ui/LoogMark";
 import { formatPhoneBR } from "@/lib/utils";
+import { PasswordInput } from "@/components/auth/PasswordInput";
 
 export default function SignupPage() {
   const router = useRouter();
@@ -92,7 +93,7 @@ export default function SignupPage() {
           </div>
           <div>
             <label className="label mb-1.5">Senha</label>
-            <input type="password" required minLength={6} className="input" autoComplete="new-password" value={form.password} onChange={(e) => patch("password", e.target.value)} placeholder="mínimo 6 caracteres" />
+            <PasswordInput value={form.password} onChange={(v) => patch("password", v)} autoComplete="new-password" minLength={6} placeholder="mínimo 6 caracteres" />
           </div>
           {err && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{err}</div>}
           <button className="btn-primary w-full" disabled={loading}>

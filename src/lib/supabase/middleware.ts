@@ -51,7 +51,8 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/api/ai") ||
     path.startsWith("/api/admin");
   const isAuthPage =
-    path === "/login" || path === "/signup" || path === "/pending" || path === "/rejected";
+    path === "/login" || path === "/signup" || path === "/pending" || path === "/rejected" ||
+    path === "/esqueci-senha" || path === "/recuperar-senha";
 
   if (!user && isProtected) {
     const to = request.nextUrl.clone();

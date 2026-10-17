@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
 import { startSessionKeepalive } from "@/lib/errors/api-fetch";
+import { PasswordInput } from "@/components/auth/PasswordInput";
 
 /**
  * Montado uma vez na raiz do /studio.
@@ -85,13 +86,13 @@ export function SessionGuard() {
           </label>
           <label className="block">
             <span className="mb-1 block text-[11px] uppercase tracking-wider text-loog-muted">Senha</span>
-            <input
-              type="password"
+            <PasswordInput
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={setPassword}
+              autoComplete="current-password"
               required
+              minLength={6}
               autoFocus={!!email}
-              className="w-full rounded-lg border border-loog-border bg-loog-bg px-3 py-2 text-sm text-white focus:border-loog-brand focus:outline-none"
             />
           </label>
           {error && <p className="text-sm text-red-400">⚠️ {error}</p>}
@@ -102,6 +103,16 @@ export function SessionGuard() {
           >
             {reauthing ? "Entrando..." : "Entrar de novo"}
           </button>
+          <div className="text-center">
+            <a
+              href={`/esqueci-senha${email ? `?email=${encodeURIComponent(email)}` : ""}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-[11px] text-loog-brand2 hover:underline"
+            >
+              Esqueci minha senha
+            </a>
+          </div>
         </form>
       </div>
     </div>

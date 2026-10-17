@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createSupabaseBrowser } from "@/lib/supabase/client";
 import { LoogLogo } from "@/components/ui/LoogMark";
+import { PasswordInput } from "@/components/auth/PasswordInput";
 
 function LoginInner() {
   const router = useRouter();
@@ -69,15 +70,21 @@ function LoginInner() {
             />
           </div>
           <div>
-            <label className="label mb-1.5">Senha</label>
-            <input
-              type="password"
-              className="input"
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="label">Senha</label>
+              <Link
+                href={`/esqueci-senha${email ? `?email=${encodeURIComponent(email)}` : ""}`}
+                className="text-[11px] text-loog-brand2 hover:underline"
+              >
+                Esqueci minha senha
+              </Link>
+            </div>
+            <PasswordInput
               value={password}
+              onChange={setPassword}
               autoComplete="current-password"
               required
               minLength={6}
-              onChange={(e) => setPassword(e.target.value)}
             />
           </div>
           {err && <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{err}</div>}
