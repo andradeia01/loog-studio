@@ -325,9 +325,37 @@ export async function consultarPlaca(placaRaw: string): Promise<PlacaFipeResult 
     if (!payload) {
       return { ok: false, status: 502, error: "upstream_invalido", message: "Resposta inválida do upstream." };
     }
-    // codigo 1 = ok; 22 = parcial (combustível diferente); 499 = fipe não encontrada mas veículo sim
+    // Códigos da PlacaFIPE:
+    //   1    = ok
+    //   22   = ok parcial (combustível diferente)
+    //   499  = veículo encontrado sem FIPE
+    //   4862 = token inválido/expirado   → admin precisa renovar
+    //   outros 4xxx = sem crédito, limite diário, etc
     const codigo = payload.codigo;
     const info = payload.informacoes_veiculo;
+
+    // Token inválido tem tratamento específico — não vale cair pra "nao_encontrado"
+    if (codigo === 4862 || /token inv[aá]lido|token expirado/i.test(String(payload.msg ?? ""))) {
+      return {
+        ok: false,
+        status: 401,
+        error: "token_invalido",
+        message: "Token PlacaFIPE inválido ou expirado. Admin precisa renovar em placafipe.com.br.",
+      };
+    }
+    // Outros erros numéricos sem informacoes_veiculo = sem crédito/limite/etc
+    if (!info && typeof codigo === "number" && codigo !== 1 && codigo !== 22) {
+      const msg = String(payload.msg ?? "");
+      const isSemCredito = /cr[eé]dito|saldo|limite/i.test(msg);
+      return {
+        ok: false,
+        status: isSemCredito ? 402 : 502,
+        error: isSemCredito ? "sem_credito" : "upstream_erro",
+        message: isSemCredito
+          ? `PlacaFIPE sem crédito/saldo. Admin precisa recarregar. (${msg})`
+          : `PlacaFIPE respondeu erro ${codigo}: ${msg}`,
+      };
+    }
     if (!info) {
       return { ok: false, status: 404, error: "nao_encontrado", message: payload.msg ?? "Veículo não encontrado." };
     }

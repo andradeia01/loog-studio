@@ -3,9 +3,10 @@ import { currentUser } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
 import { consultarPlaca } from "@/lib/placafipe";
 import {
-  errPlacaInvalida, errPlacafipeTokenAusente, errPlacafipeNaoEncontrou,
-  errPlacafipeTimeout, errPlacafipeIndisponivel, errRateLimitStudio,
-  errSessaoExpirada, errNaoAprovado, toApiResponse,
+  errPlacaInvalida, errPlacafipeTokenAusente, errPlacafipeTokenInvalido,
+  errPlacafipeNaoEncontrou, errPlacafipeTimeout, errPlacafipeIndisponivel,
+  errPlacafipeSemCredito, errRateLimitStudio, errSessaoExpirada,
+  errNaoAprovado, toApiResponse,
 } from "@/lib/errors/cotacao-errors";
 import { checkRateLimit, rateLimitKey } from "@/lib/errors/rate-limit";
 
@@ -49,6 +50,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ placa: stri
     const err =
       result.error === "placa_invalida"   ? errPlacaInvalida(placaStr) :
       result.error === "token_ausente"    ? errPlacafipeTokenAusente() :
+      result.error === "token_invalido"   ? errPlacafipeTokenInvalido(result.message) :
+      result.error === "sem_credito"      ? errPlacafipeSemCredito(result.message) :
       result.error === "nao_encontrado"   ? errPlacafipeNaoEncontrou(placaStr, result.message) :
       result.error === "timeout"          ? errPlacafipeTimeout(placaStr) :
                                             errPlacafipeIndisponivel(placaStr, result.message);

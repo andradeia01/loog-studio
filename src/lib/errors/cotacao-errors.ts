@@ -75,6 +75,32 @@ export function errPlacafipeTokenAusente(): CotacaoError {
   };
 }
 
+export function errPlacafipeTokenInvalido(upstreamMsg?: string): CotacaoError {
+  return {
+    source: "placafipe",
+    code: "placafipe_token_invalido",
+    title: "Token PlacaFIPE expirado",
+    message: "O token do PlacaFIPE expirou ou foi revogado. O admin precisa renovar em placafipe.com.br — enquanto isso, nenhuma placa consegue ser consultada. Use cotação manual (marca + modelo + ano).",
+    nextAction: "manual",
+    httpStatus: 401,
+    retryable: false,
+    upstreamMessage: upstreamMsg,
+  };
+}
+
+export function errPlacafipeSemCredito(upstreamMsg?: string): CotacaoError {
+  return {
+    source: "placafipe",
+    code: "placafipe_sem_credito",
+    title: "PlacaFIPE sem crédito",
+    message: "A conta do PlacaFIPE ficou sem saldo/créditos. O admin precisa recarregar. Enquanto isso, use cotação manual.",
+    nextAction: "contact_admin",
+    httpStatus: 402,
+    retryable: false,
+    upstreamMessage: upstreamMsg,
+  };
+}
+
 export function errPlacafipeNaoEncontrou(placa: string, upstreamMsg?: string): CotacaoError {
   return {
     source: "placafipe",
