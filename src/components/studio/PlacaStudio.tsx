@@ -9,6 +9,38 @@ import { trackMetaEvent } from "@/components/MetaPixel";
 import { CoverageTogglesCustom } from "./CoverageTogglesCustom";
 import { DiscountControl } from "./DiscountControl";
 import { useHubStatus } from "./HubStatusBanner";
+import { ErrorBadge, type ErrorSource, type NextAction } from "./ErrorBadge";
+import { apiFetch } from "@/lib/errors/api-fetch";
+
+interface StudioError {
+  source: ErrorSource;
+  title: string;
+  message: string;
+  nextAction: NextAction;
+  retryable: boolean;
+}
+
+function parseApiError(status: number, data: Record<string, unknown>, fallbackMessage?: string): StudioError {
+  // Novo formato (do catálogo cotacao-errors.ts): { error, source, title, message, nextAction, retryable }
+  if (typeof data.source === "string" && typeof data.title === "string" && typeof data.message === "string") {
+    return {
+      source: data.source as ErrorSource,
+      title: data.title as string,
+      message: data.message as string,
+      nextAction: (data.nextAction as NextAction) ?? "retry",
+      retryable: Boolean(data.retryable),
+    };
+  }
+  // Fallback: formato antigo { error, message }
+  const msg = (data.message as string | undefined) ?? fallbackMessage ?? `Falha (${status}).`;
+  return {
+    source: status === 401 ? "auth" : status >= 500 ? "network" : "studio",
+    title: `Erro ${status}`,
+    message: msg,
+    nextAction: status === 401 ? "relogin" : status === 429 ? "wait" : "retry",
+    retryable: status >= 500 || status === 429,
+  };
+}
 
 interface HubPlan {
   productId: string | number;
@@ -87,7 +119,7 @@ export function PlacaStudio() {
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTel, setClienteTel] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<StudioError | null>(null);
   const [result, setResult] = useState<HubResult | null>(null);
   const [hist, setHist] = useState<HistItem[]>([]);
   const [coberturas, setCoberturas] = useState<CoberturaItem[]>([]);
@@ -177,9 +209,18 @@ export function PlacaStudio() {
   const consultar = useCallback(async (ev?: React.FormEvent, overrides?: { coberturas?: string[]; fipeCode?: string | null; descontoPct?: number | null; keepResult?: boolean }) => {
     ev?.preventDefault();
     const raw = placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-    if (raw.length !== 7) { setError("Placa precisa ter 7 caracteres (ex.: ABC1D23)."); return; }
-    if (!clienteNome.trim()) { setError("Preencha o nome do cliente."); return; }
-    if (clienteTel.replace(/[^0-9]/g, "").length < 10) { setError("Telefone precisa ter DDD + número."); return; }
+    if (raw.length !== 7) {
+      setError({ source: "studio", title: "Placa incompleta", message: "Precisa ter 7 caracteres (ex: ABC1D23).", nextAction: "fix_input", retryable: false });
+      return;
+    }
+    if (!clienteNome.trim()) {
+      setError({ source: "studio", title: "Nome vazio", message: "Preenche o nome do cliente.", nextAction: "fix_input", retryable: false });
+      return;
+    }
+    if (clienteTel.replace(/[^0-9]/g, "").length < 10) {
+      setError({ source: "studio", title: "Telefone inválido", message: "Precisa ter DDD + número (10 ou 11 dígitos).", nextAction: "fix_input", retryable: false });
+      return;
+    }
     const isRecotando = !!overrides;
     if (isRecotando) setRecotando(true); else { setLoading(true); setResult(null); }
     setError(null);
@@ -187,7 +228,8 @@ export function PlacaStudio() {
       const coberturasFinal = overrides?.coberturas ?? coberturasCodigos;
       const fipeFinal = overrides?.fipeCode === null ? null : (overrides?.fipeCode ?? fipeManualCode);
       const descontoFinal = overrides?.descontoPct === null ? null : (overrides?.descontoPct ?? descontoPct);
-      const res = await fetch("/api/cotacao", {
+      // apiFetch: faz retry automático em 401 (refreshSession) e dispara modal se falhar
+      const res = await apiFetch("/api/cotacao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -202,12 +244,11 @@ export function PlacaStudio() {
       });
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
       if (!res.ok) {
-        const msg = (data as { message?: string }).message ?? `Falha (${res.status}).`;
-        // Se o backend sinalizar que dá pra cair pro manual, oferece
-        if ((data as { canFallbackManual?: boolean }).canFallbackManual) {
-          setShowManual(true);
-        }
-        throw new Error(msg);
+        const studioErr = parseApiError(res.status, data as Record<string, unknown>);
+        // Oferece modo manual quando o próximo passo recomendado é "manual"
+        if (studioErr.nextAction === "manual") setShowManual(true);
+        setError(studioErr);
+        return;
       }
       const r = data as HubResult & { eventId?: string };
       setResult(r);
@@ -233,12 +274,17 @@ export function PlacaStudio() {
         setHist(next); saveHist(next);
       }
     } catch (err) {
-      // Traduz "fetch failed" cru pra mensagem amigável
       const raw = err instanceof Error ? err.message : "Falha inesperada.";
-      const amigavel = /fetch failed|TypeError|NetworkError|Failed to fetch/i.test(raw)
-        ? "Sem conexão com o sistema LOOG agora. Tenta de novo em alguns minutos."
-        : raw;
-      setError(amigavel);
+      const isNet = /fetch failed|TypeError|NetworkError|Failed to fetch/i.test(raw);
+      setError({
+        source: isNet ? "network" : "studio",
+        title: isNet ? "Sem conexão" : "Falha inesperada",
+        message: isNet
+          ? "Seu dispositivo não conseguiu falar com o Studio. Verifica Wi-Fi/4G e tenta de novo."
+          : raw,
+        nextAction: "retry",
+        retryable: true,
+      });
     } finally {
       setLoading(false);
       setRecotando(false);
@@ -310,7 +356,13 @@ export function PlacaStudio() {
         ?? `LOOG-cotacao-${result.vehicle.plate}${comCenarios ? "-premium-ia" : ""}.pdf`;
       await entregarPdf(blob, filename);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao gerar PDF.");
+      setError({
+        source: "studio",
+        title: "PDF falhou",
+        message: err instanceof Error ? err.message : "Não deu pra gerar o PDF agora. Tenta de novo.",
+        nextAction: "retry",
+        retryable: true,
+      });
     } finally { setPdfLoading(false); }
   }
 
@@ -364,17 +416,17 @@ export function PlacaStudio() {
   async function cotarManual(ev?: React.FormEvent) {
     ev?.preventDefault();
     if (!manualMarca.trim() || !manualModelo.trim() || !manualAno) {
-      setError("Preencha marca, modelo e ano.");
+      setError({ source: "studio", title: "Dados faltando", message: "Preenche marca, modelo e ano.", nextAction: "fix_input", retryable: false });
       return;
     }
     const anoNum = Number(manualAno);
     if (!Number.isInteger(anoNum) || anoNum < 1980 || anoNum > new Date().getFullYear() + 1) {
-      setError("Ano inválido.");
+      setError({ source: "studio", title: "Ano inválido", message: "Ano precisa estar entre 1980 e o próximo ano.", nextAction: "fix_input", retryable: false });
       return;
     }
     setLoading(true); setError(null); setResult(null);
     try {
-      const res = await fetch("/api/cotacao/manual", {
+      const res = await apiFetch("/api/cotacao/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -389,11 +441,15 @@ export function PlacaStudio() {
         }),
       });
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
-      if (!res.ok) throw new Error((data as { message?: string }).message ?? `Falha (${res.status}).`);
+      if (!res.ok) {
+        setError(parseApiError(res.status, data as Record<string, unknown>));
+        return;
+      }
       setResult(data as HubResult);
       setShowManual(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao cotar manualmente.");
+      const raw = err instanceof Error ? err.message : "Falha ao cotar manualmente.";
+      setError({ source: "studio", title: "Cotação manual falhou", message: raw, nextAction: "retry", retryable: true });
     } finally { setLoading(false); }
   }
 
@@ -468,18 +524,15 @@ export function PlacaStudio() {
             </div>
           )}
           {error && (
-            <div className="space-y-2">
-              <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>
-              {showManual && (
-                <button
-                  type="button"
-                  onClick={() => setShowManual(true)}
-                  className="w-full rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/20"
-                >
-                  🛠️ Cotar manualmente (marca/modelo/ano)
-                </button>
-              )}
-            </div>
+            <ErrorBadge
+              source={error.source}
+              title={error.title}
+              message={error.message}
+              nextAction={error.nextAction}
+              retryable={error.retryable}
+              onRetry={() => void consultar()}
+              onManual={() => setShowManual(true)}
+            />
           )}
         </form>
 

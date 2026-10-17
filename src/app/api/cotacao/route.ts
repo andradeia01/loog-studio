@@ -1,11 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { requireApproved } from "@/lib/auth";
+import { currentUser } from "@/lib/auth";
 import { supabaseConfigured, createSupabaseServer } from "@/lib/supabase/server";
 import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placafipe";
 import { sendCAPIEvent, newEventId } from "@/lib/meta-capi";
+import {
+  errSessaoExpirada, errNaoAprovado, errTelefoneInvalido, errBodyInvalido,
+  errRateLimitStudio, classifyHubError, errHubOffline, errDesconhecido,
+  isNetworkError, toApiResponse, type CotacaoError,
+} from "@/lib/errors/cotacao-errors";
+import { checkRateLimit, rateLimitKey } from "@/lib/errors/rate-limit";
 
 /**
  * Códigos de coberturas que a cotação RÁPIDA já inclui por padrão em cada tipo de veículo.
@@ -125,15 +131,13 @@ async function aplicarDeltasCoberturas(
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const HITS = new Map<string, { count: number; resetAt: number }>();
-const LIMIT = 10;
-const WINDOW_MS = 60_000;
-function rateLimited(ip: string) {
-  const now = Date.now();
-  const rec = HITS.get(ip);
-  if (!rec || rec.resetAt < now) { HITS.set(ip, { count: 1, resetAt: now + WINDOW_MS }); return false; }
-  rec.count += 1;
-  return rec.count > LIMIT;
+// Rate limit por consultor (não IP): 40 cotações/min — margem pra ninguém atingir num dia normal
+const COTACAO_LIMIT = 40;
+
+/** Helper: devolve NextResponse já formatado a partir de um CotacaoError. */
+function errResponse(err: CotacaoError, extraHeaders?: Record<string, string>): NextResponse {
+  const { body, status } = toApiResponse(err);
+  return NextResponse.json(body, { status, headers: extraHeaders });
 }
 
 const TrackingSchema = z.object({
@@ -178,26 +182,27 @@ const Body = z.object({
  */
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (rateLimited(ip)) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
 
+  // Auth PRIMEIRO (precisamos do userId pro rate-limit por consultor).
+  // Sessão expirada = 401 com source "auth" → cliente oferece "Entrar de novo".
   let consultorId: string | undefined;
   let groupId: string | null | undefined;
   if (supabaseConfigured()) {
-    const auth = await requireApproved();
-    if (!auth.ok) return auth.res;
-    consultorId = auth.auth.userId;
-    groupId = auth.auth.groupId;
+    const auth = await currentUser();
+    if (!auth) return errResponse(errSessaoExpirada());
+    if (auth.status !== "approved") return errResponse(errNaoAprovado());
+    consultorId = auth.userId;
+    groupId = auth.groupId;
   }
+
+  const rl = checkRateLimit(rateLimitKey(consultorId ?? null, ip, "cotacao"), COTACAO_LIMIT);
+  if (rl.limited) return errResponse(errRateLimitStudio(rl.retryAfterSecs), { "Retry-After": String(rl.retryAfterSecs) });
 
   const parsed = Body.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json({ error: "invalido", details: parsed.error.flatten() }, { status: 400 });
-  }
+  if (!parsed.success) return errResponse(errBodyInvalido(parsed.error.flatten()));
 
   const telefoneDigits = parsed.data.cliente.telefone.replace(/[^0-9]/g, "");
-  if (telefoneDigits.length < 10) {
-    return NextResponse.json({ error: "telefone_invalido", message: "Telefone precisa ter DDD + número (10 ou 11 dígitos)." }, { status: 400 });
-  }
+  if (telefoneDigits.length < 10) return errResponse(errTelefoneInvalido());
   // Hub espera E.164 BR (55DDNNNNNNNNN); se já veio com 55, mantém, senão prefixa.
   const customerPhone = telefoneDigits.startsWith("55") ? telefoneDigits : `55${telefoneDigits}`;
   const leadIdFinal = parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined);
@@ -469,63 +474,16 @@ export async function POST(req: NextRequest) {
     const err = ultimoErro;
     void viaPrimario; // evita unused warning
     if (err instanceof HubError) {
-      // Log DETALHADO pra diagnóstico (nunca vaza pro cliente, só pros Function Logs)
       console.error("[cotacao] HubError:", {
-        status: err.status,
-        code: err.code,
-        message: err.message,
-        placa: parsed.data.placa,
-        payload: err.payload,
+        status: err.status, code: err.code, message: err.message,
+        placa: parsed.data.placa, payload: err.payload,
       });
-
-      // Mensagem específica por status — ajuda o consultor entender e sugere caminho
-      let user: string;
-      let canFallbackManual = false;
-      switch (err.status) {
-        case 401:
-          user = "Chave do sistema LOOG inválida ou sessão expirada. Fale com o admin pra renovar — enquanto isso, use cotação manual (marca/modelo/ano).";
-          canFallbackManual = true;
-          break;
-        case 403:
-          user = "Esta placa está bloqueada no provedor LOOG (pode ser restrição comercial da base). Tente cotação manual.";
-          canFallbackManual = true;
-          break;
-        case 404:
-          user = "Placa não encontrada no provedor LOOG. Verifique se digitou certo — se tiver certeza da placa, use cotação manual (informa marca/modelo/ano).";
-          canFallbackManual = true;
-          break;
-        case 429:
-          user = "Muitas consultas em pouco tempo. Aguarde ~30s e tente novamente.";
-          break;
-        case 408:
-        case 504:
-          user = "O provedor LOOG demorou demais pra responder. Tente de novo.";
-          break;
-        case 502:
-        case 503:
-          user = "Sistema interno LOOG indisponível no momento. Tente em alguns segundos.";
-          break;
-        default:
-          user = `Erro ao consultar placa (status ${err.status}). ${err.message}`;
-      }
-      return NextResponse.json(
-        { error: err.code ?? "hub_error", message: user, status: err.status, canFallbackManual },
-        { status: err.status >= 400 && err.status < 500 ? err.status : 502 },
-      );
+      // Mapeia pelo catálogo tipado — source "sivis" e nextAction coerente
+      return errResponse(classifyHubError(err, parsed.data.placa));
     }
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[cotacao] falha nao-Hub:", msg);
-    // Detecta erros de rede comuns (Hub offline, SSL quebrado, DNS, timeout)
-    // e devolve mensagem clara pro consultor em vez do "fetch failed" cru.
-    const isNetworkError = /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|certificate|SSL|TLS/i.test(msg);
-    if (isNetworkError) {
-      return NextResponse.json({
-        error: "hub_offline",
-        message: "Sistema LOOG Hub temporariamente fora do ar. Nenhuma cotação consegue chegar no SIVIS agora. Tente de novo em alguns minutos — ou avise o admin.",
-        hubOffline: true,
-        canFallbackManual: false,
-      }, { status: 503 });
-    }
-    return NextResponse.json({ error: "falha", message: msg }, { status: 500 });
+    if (isNetworkError(msg)) return errResponse(errHubOffline());
+    return errResponse(errDesconhecido(err));
   }
 }

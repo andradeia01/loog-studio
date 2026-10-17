@@ -31,6 +31,7 @@ import { InspectionPane } from "@/components/inspection/InspectionPane";
 import { StudioShell, type Mundo, type MundoKey } from "./StudioShell";
 import { StudioHome } from "./StudioHome";
 import { MundoPane } from "./MundoPane";
+import { SessionGuard } from "./SessionGuard";
 
 const DEFAULT_CONSULTANT: Consultant = {
   name: "", phone: "", instagram: "", city: "", photoDataUrl: null,
@@ -236,22 +237,25 @@ export function StudioApp({
   }, [activeMundo, activeSub]));
 
   return (
-    <StudioShell
-      mundos={mundos}
-      activeMundo={activeMundo}
-      activeSub={activeSub}
-      onNavigate={handleNavigate}
-      consultantName={consultant.name}
-      authEnabled={authEnabled}
-    >
-      {renderConteudo({
-        activeMundo, activeSub, mundos,
-        consultant, setConsultant, dataOk,
-        category, setCategory, filtered,
-        readyArts, readyFolders, readyVideos, readyVideoFolders,
-        userId, canSeeSdr, onNavigate: handleNavigate,
-      })}
-    </StudioShell>
+    <>
+      {authEnabled && <SessionGuard />}
+      <StudioShell
+        mundos={mundos}
+        activeMundo={activeMundo}
+        activeSub={activeSub}
+        onNavigate={handleNavigate}
+        consultantName={consultant.name}
+        authEnabled={authEnabled}
+      >
+        {renderConteudo({
+          activeMundo, activeSub, mundos,
+          consultant, setConsultant, dataOk,
+          category, setCategory, filtered,
+          readyArts, readyFolders, readyVideos, readyVideoFolders,
+          userId, canSeeSdr, onNavigate: handleNavigate,
+        })}
+      </StudioShell>
+    </>
   );
 }
 

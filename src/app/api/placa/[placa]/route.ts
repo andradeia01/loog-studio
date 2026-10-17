@@ -1,38 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApproved } from "@/lib/auth";
+import { currentUser } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
 import { consultarPlaca } from "@/lib/placafipe";
+import {
+  errPlacaInvalida, errPlacafipeTokenAusente, errPlacafipeNaoEncontrou,
+  errPlacafipeTimeout, errPlacafipeIndisponivel, errRateLimitStudio,
+  errSessaoExpirada, errNaoAprovado, toApiResponse,
+} from "@/lib/errors/cotacao-errors";
+import { checkRateLimit, rateLimitKey } from "@/lib/errors/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const HITS = new Map<string, { count: number; resetAt: number }>();
-const LIMIT = 15;
-const WINDOW_MS = 60_000;
-function rateLimited(ip: string) {
-  const now = Date.now();
-  const rec = HITS.get(ip);
-  if (!rec || rec.resetAt < now) { HITS.set(ip, { count: 1, resetAt: now + WINDOW_MS }); return false; }
-  rec.count += 1;
-  return rec.count > LIMIT;
-}
+const LIMIT = 60; // 60 req/min por consultor (ou IP se dev sem supabase)
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ placa: string }> }) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
-  if (rateLimited(ip)) return NextResponse.json({ error: "rate_limited" }, { status: 429 });
-
+  // Auth PRIMEIRO: precisamos do userId pro bucket de rate-limit.
+  let userId: string | null = null;
   if (supabaseConfigured()) {
-    const auth = await requireApproved();
-    if (!auth.ok) return auth.res;
+    const auth = await currentUser();
+    if (!auth) {
+      const err = errSessaoExpirada();
+      return NextResponse.json(toApiResponse(err).body, { status: toApiResponse(err).status });
+    }
+    if (auth.status !== "approved") {
+      const err = errNaoAprovado();
+      return NextResponse.json(toApiResponse(err).body, { status: toApiResponse(err).status });
+    }
+    userId = auth.userId;
+  }
+
+  // Rate limit por consultor (não IP) — vários consultores no mesmo escritório não brigam.
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || "unknown";
+  const rl = checkRateLimit(rateLimitKey(userId, ip, "placa"), LIMIT);
+  if (rl.limited) {
+    const err = errRateLimitStudio(rl.retryAfterSecs);
+    return NextResponse.json(toApiResponse(err).body, {
+      status: toApiResponse(err).status,
+      headers: { "Retry-After": String(rl.retryAfterSecs) },
+    });
   }
 
   const { placa } = await ctx.params;
   const result = await consultarPlaca(placa ?? "");
   if (!result.ok) {
-    return NextResponse.json(
-      { error: result.error, message: result.message },
-      { status: result.status },
-    );
+    // Mapeia o result.error legado → catálogo tipado com source "placafipe"
+    const placaStr = String(placa ?? "");
+    const err =
+      result.error === "placa_invalida"   ? errPlacaInvalida(placaStr) :
+      result.error === "token_ausente"    ? errPlacafipeTokenAusente() :
+      result.error === "nao_encontrado"   ? errPlacafipeNaoEncontrou(placaStr, result.message) :
+      result.error === "timeout"          ? errPlacafipeTimeout(placaStr) :
+                                            errPlacafipeIndisponivel(placaStr, result.message);
+    return NextResponse.json(toApiResponse(err).body, { status: toApiResponse(err).status });
   }
   return NextResponse.json(result);
 }
