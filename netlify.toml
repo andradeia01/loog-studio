@@ -7,16 +7,16 @@
 # =============================================================================
 
 [build]
-  command = "npm run build"
+  # Força npm a instalar binários sharp específicos pra linux-x64 ANTES do build.
+  # Sem isso, package-lock só tem binários darwin (gerado no laptop do dev) e
+  # as Netlify Functions quebram em runtime com "Could not load the sharp
+  # module using the linux-x64 runtime".
+  command = "npm install --os=linux --cpu=x64 --include=optional sharp && npm run build"
   publish = ".next"
 
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
-  # Força npm a instalar optionalDependencies (sharp precisa dos binários
-  # @img/sharp-linux-x64 e @img/sharp-libvips-linux*). Sem isso, Functions
-  # da Netlify quebram em runtime com "Could not load the sharp module
-  # using the linux-x64 runtime".
   NPM_FLAGS = "--include=optional"
 
 [[plugins]]
