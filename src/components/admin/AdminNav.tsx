@@ -14,6 +14,7 @@ type Key =
   | "veiculos"
   | "signatarios"
   | "infra"
+  | "triplice"
   | "config";
 
 const TABS: { key: Key; label: string; href: string }[] = [
@@ -23,6 +24,7 @@ const TABS: { key: Key; label: string; href: string }[] = [
   { key: "veiculos", label: "Veículos 🚗", href: "/admin/veiculos" },
   { key: "planos", label: "Planos 💰", href: "/admin/planos" },
   { key: "signatarios", label: "Signatários ✍️", href: "/admin/signatarios" },
+  { key: "triplice", label: "Tríplice 🔱", href: "/admin/triplice" },
   { key: "infra", label: "Infra 🛠️", href: "/admin/infra" },
   { key: "artes-prontas", label: "Artes", href: "/admin/artes-prontas" },
   { key: "videos-prontos", label: "Vídeos", href: "/admin/videos-prontos" },
