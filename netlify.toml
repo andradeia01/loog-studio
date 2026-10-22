@@ -11,7 +11,8 @@
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "20"
+  # @supabase/supabase-js requer Node >= 22; manter em 20 quebra o build do CI.
+  NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
   # Força npm a instalar optionalDependencies (sharp precisa dos binários
   # @img/sharp-linux-x64 e @img/sharp-libvips-linux*). O bundler + included_files
