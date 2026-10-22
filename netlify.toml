@@ -7,24 +7,23 @@
 # =============================================================================
 
 [build]
-  # Força a instalação dos binários sharp nativos pra Linux x64 que o npm
-  # pode ter pulado (package-lock foi gerado em Windows/Darwin). Sem isso,
-  # Netlify Functions quebram em runtime com "Could not load the sharp
-  # module using the linux-x64 runtime".
-  command = "npm install --no-save @img/sharp-linux-x64@0.34.5 @img/sharp-libvips-linux-x64@1.2.4 && npm run build"
+  command = "npm run build"
   publish = ".next"
 
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
+  # Força npm a instalar optionalDependencies (sharp precisa dos binários
+  # @img/sharp-linux-x64 e @img/sharp-libvips-linux*). O bundler + included_files
+  # abaixo preserva eles no empacotamento final.
   NPM_FLAGS = "--include=optional"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
 
-# Garante que os binários nativos do sharp sejam empacotados nas Functions.
-# Sem external_node_modules + included_files, o bundler Netlify remove os
-# binários .node e as functions quebram em runtime.
+# Preserva os binários nativos do sharp no empacotamento das Functions.
+# Sem external_node_modules + included_files, o bundler Netlify remove
+# arquivos .node e as functions quebram em runtime.
 [functions]
   external_node_modules = ["sharp"]
   included_files = [
