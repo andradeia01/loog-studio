@@ -548,10 +548,22 @@ export function protocolo(): string {
   return `LG${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
 }
 
-/** Constantes publicadas. */
+/** Constantes publicadas.
+ *  Lista fiel ao modelo oficial LOOG (visweb.com.br — proposta de proteção).
+ *  Ordem IMPORTA: coberturas principais (Roubo/Colisão) vêm primeiro —
+ *  são o motivo pelo qual o associado contrata, não podem ficar escondidas. */
 export const PROTECAO_BASE = [
+  "COBERTURA PARA ROUBO E FURTO",
+  "COLISÃO, PERDA TOTAL, INCÊNDIO E FENÔMENOS DA NATUREZA",
   "ASSISTÊNCIA 24H EM TODO TERRITÓRIO NACIONAL",
-  "Reboque com KM ILIMITADO em casos de colisão e até 300km (150km ida e 150km volta) para pane Mecânica, Elétrica e Falta de Combustível",
+  "REBOQUE ILIMITADO EM CASO DE COLISÃO",
+  "Reboque para pane Mecânica, Elétrica e Falta de Combustível até 300km (150km ida + 150km volta)",
+  "RECARGA DE BATERIA",
+  "CHAVEIRO",
+  "TRANSPORTE ALTERNATIVO (Uber ou Táxi)",
+  "HOSPEDAGEM EMERGENCIAL",
+  "REMOÇÃO INTER-HOSPITALAR",
+  "ASSESSORIA JURÍDICA",
 ];
 
 export const DIFERENCIAIS_LOOG = [
