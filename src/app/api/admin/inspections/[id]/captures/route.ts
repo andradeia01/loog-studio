@@ -28,11 +28,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ id: string }> 
 
   if (error) return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
 
-  // Pra cada capture, gera uma signed URL (válida 1h) pro bucket 'inspections'
+  // Pra cada capture, gera uma signed URL (válida 1h) pro bucket 'inspection-media'
+  // (bucket real criado na migration-006; antes estava com nome errado 'inspections')
   const withUrls = await Promise.all(
     (captures ?? []).map(async (c) => {
       const { data: urlData } = await admin.storage
-        .from("inspections")
+        .from("inspection-media")
         .createSignedUrl(c.storage_path, 60 * 60);
       return { ...c, signed_url: urlData?.signedUrl ?? null };
     }),

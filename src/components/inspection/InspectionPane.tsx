@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { InspectionStatus, InspectionMode } from "@/lib/inspection/types";
 import { InspectionWizard } from "./InspectionWizard";
+import { QrHandoffModal } from "./QrHandoffModal";
 import { useVisibilityInterval } from "@/lib/hooks/use-visibility-interval";
 
 interface ListItem {
@@ -34,6 +35,7 @@ export function InspectionPane() {
   const [items, setItems] = useState<ListItem[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   const load = async () => {
     try {
@@ -65,13 +67,23 @@ export function InspectionPane() {
             Vai no cliente, abre o LOOG Studio, grava 60s do veículo <b>ligado</b> cobrindo todos os ângulos.
             A IA extrai os frames, confere ângulos, placa, odômetro, qualidade e aprova ou reprova na hora.
           </p>
-          <button
-            type="button"
-            onClick={() => setWizardOpen(true)}
-            className="mt-4 inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-fuchsia-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:scale-105"
-          >
-            ✨ Nova vistoria
-          </button>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setWizardOpen(true)}
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-fuchsia-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:scale-105"
+            >
+              ✨ Nova vistoria
+            </button>
+            <button
+              type="button"
+              onClick={() => setQrOpen(true)}
+              className="inline-flex items-center gap-2 rounded-full border border-purple-400/40 bg-black/30 px-4 py-2.5 text-sm font-semibold text-purple-100 hover:bg-purple-500/20"
+              title="Escaneie no celular pra abrir a vistoria lá"
+            >
+              📱 Fazer no celular
+            </button>
+          </div>
         </div>
       </div>
 
@@ -135,6 +147,8 @@ export function InspectionPane() {
           onFinished={() => { setWizardOpen(false); load(); }}
         />
       )}
+
+      {qrOpen && <QrHandoffModal onClose={() => setQrOpen(false)} />}
     </div>
   );
 }
