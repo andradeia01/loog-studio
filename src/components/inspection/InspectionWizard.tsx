@@ -11,10 +11,10 @@ type Step =
   | "form"            // placa + dados
   | "permissions"     // pedir câmera/mic/localização
   | "selfie"          // foto do operador
-  | "record"          // gravação de vídeo com narração (fluxo principal, estilo migração)
-  | "odometer"        // foto extra do odômetro
-  | "chassis"         // foto do número do chassi (VIN)
+  | "record"          // vídeo 60s (6 fases guiadas - começa pelo odômetro)
   | "engine"          // foto do cofre do motor (capô aberto)
+  | "chassis"         // foto do número do chassi (VIN)
+  | "crlv"            // CRLV: foto OU upload (PDF/imagem)
   | "uploading"       // enviando pro servidor
   | "processing"      // IA analisando
   | "done";           // resultado
@@ -145,19 +145,19 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
               <RecordStep
                 inspectionId={inspectionId}
                 onTranscript={setTranscript}
-                onNext={() => setStep("odometer")}
+                onNext={() => setStep("engine")}
                 onError={(msg) => setErrorMsg(msg)}
                 error={errorMsg}
               />
             )}
 
-            {step === "odometer" && inspectionId && (
+            {step === "engine" && inspectionId && (
               <PhotoCaptureStep
-                key="odometer"
+                key="engine"
                 inspectionId={inspectionId}
-                kind="ODOMETER_PHOTO"
-                title="Foto do odômetro"
-                subtitle={<>Painel <b className="text-amber-300">ligado</b> — tira uma foto chapada do km total.</>}
+                kind="ENGINE_PHOTO"
+                title="Foto do cofre do motor"
+                subtitle={<><b className="text-amber-300">Capô aberto</b> — foto do motor inteiro. A IA checa adulterações, soldagem recente e etiqueta de identificação.</>}
                 ctaLabel="Enviar e seguir"
                 onNext={() => setStep("chassis")}
                 onError={(msg) => setErrorMsg(msg)}
@@ -173,20 +173,17 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
                 title="Foto do chassi (VIN)"
                 subtitle={<>Número de <b className="text-amber-300">17 caracteres</b>, gravado na soleira da porta do motorista, parede corta-fogo do motor, longarina ou vidro. Chega bem perto pra ficar legível.</>}
                 ctaLabel="Enviar e seguir"
-                onNext={() => setStep("engine")}
+                onNext={() => setStep("crlv")}
                 onError={(msg) => setErrorMsg(msg)}
                 error={errorMsg}
               />
             )}
 
-            {step === "engine" && inspectionId && (
-              <PhotoCaptureStep
-                key="engine"
+            {step === "crlv" && inspectionId && (
+              <CrlvStep
                 inspectionId={inspectionId}
-                kind="ENGINE_PHOTO"
-                title="Foto do cofre do motor"
-                subtitle={<><b className="text-amber-300">Capô aberto</b> — foto do motor inteiro. A IA vai checar adulterações, soldagem recente e etiqueta de identificação.</>}
-                ctaLabel="Enviar e analisar"
+                onError={(msg) => setErrorMsg(msg)}
+                error={errorMsg}
                 onNext={async () => {
                   setStep("processing");
                   setErrorMsg(null);
@@ -205,8 +202,6 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
                     setStep("done");
                   }
                 }}
-                onError={(msg) => setErrorMsg(msg)}
-                error={errorMsg}
               />
             )}
 
@@ -232,10 +227,10 @@ function stepLabel(s: Step): string {
     form: "1/8 Dados do veículo",
     permissions: "2/8 Permissões",
     selfie: "3/8 Foto do operador",
-    record: "4/8 Vídeo da vistoria",
-    odometer: "5/8 Odômetro",
-    chassis: "6/8 Chassi",
-    engine: "7/8 Cofre do motor",
+    record: "4/8 Vídeo 60s (6 ângulos)",
+    engine: "5/8 Cofre do motor",
+    chassis: "6/8 Chassi (VIN)",
+    crlv: "7/8 CRLV (foto ou PDF)",
     uploading: "Enviando…",
     processing: "8/8 IA analisando",
     done: "Resultado",
@@ -573,13 +568,17 @@ function SelfieStep({ inspectionId, onNext, onError, error }: {
 // ============================================================
 
 interface Fase { emoji: string; label: string; instrucao: string; inicio: number; fim: number }
+// Vistoria V2 (novo fluxo 60s guiado):
+// Começa pelo ODÔMETRO com painel aceso (prova anti-fraude: carro ligado)
+// Depois sentido horário: FRENTE → LAT DIREITA → TRASEIRA → LAT ESQUERDA → TETO/VIDROS
+// Motor + chassi + CRLV viram fotos separadas (não cabem no vídeo externo).
 const FASES: Fase[] = [
-  { emoji: "🚗⬆️", label: "FRONTAL",         instrucao: "Fique de FRENTE pro carro. Enquadre o parachoque, faróis e placa.", inicio: 0,  fim: 10 },
-  { emoji: "🚗⬅️", label: "LATERAL ESQUERDA", instrucao: "Vá pra lateral ESQUERDA. Capture do farol até a lanterna traseira.", inicio: 10, fim: 20 },
-  { emoji: "🚗⬇️", label: "TRASEIRA",        instrucao: "Fique ATRÁS do carro. Enquadre o parachoque, lanternas e placa.",   inicio: 20, fim: 30 },
-  { emoji: "🚗➡️", label: "LATERAL DIREITA",  instrucao: "Vá pra lateral DIREITA. Capture do farol até a lanterna traseira.", inicio: 30, fim: 40 },
-  { emoji: "🚗",   label: "TETO",             instrucao: "Suba a câmera e capture o TETO do veículo (dê um passo pra trás).", inicio: 40, fim: 50 },
-  { emoji: "🔧",   label: "MOTOR",            instrucao: "Abra o CAPÔ. Enquadre o motor inteiro e narre o que ver.",          inicio: 50, fim: 60 },
+  { emoji: "📊",   label: "ODÔMETRO + PAINEL",  instrucao: "Veículo LIGADO. Enquadre o painel aceso e o KM total bem legível.",    inicio: 0,  fim: 10 },
+  { emoji: "🚗⬆️", label: "FRENTE",             instrucao: "Fique de FRENTE pro carro. Passe por farol direito → placa → farol esquerdo.", inicio: 10, fim: 20 },
+  { emoji: "🚗➡️", label: "LATERAL DIREITA",    instrucao: "Lado DIREITO completo (da frente pra trás) — passe pelas 2 rodas.",       inicio: 20, fim: 30 },
+  { emoji: "🚗⬇️", label: "TRASEIRA",           instrucao: "Fique ATRÁS. Lanterna direita → placa + porta-malas → lanterna esquerda.",  inicio: 30, fim: 40 },
+  { emoji: "🚗⬅️", label: "LATERAL ESQUERDA",   instrucao: "Lado ESQUERDO completo (de trás pra frente) — volte pra frente do carro.",   inicio: 40, fim: 50 },
+  { emoji: "🪟",   label: "TETO + VIDROS",      instrucao: "Teto (um passo pra trás). Depois para-brisa EXTERNO + INTERNO + painel 360°.", inicio: 50, fim: 60 },
 ];
 
 function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
@@ -1090,6 +1089,197 @@ function PhotoCaptureStep({ inspectionId, kind, title, subtitle, ctaLabel, onNex
           </>
         ) : (
           <button type="button" onClick={snap} className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-3 text-sm font-bold text-white">📷 Capturar</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CRLV STEP — CRLV digital (upload PDF/imagem) ou foto chapada do físico
+// Diferente das outras fotos: aqui o consultor escolhe o modo. Se tem o CRLV
+// em PDF (CRLV digital do app Denatran), upload direto. Se tem só o papel,
+// tira foto. Aceita até 10 MB.
+// ============================================================
+function CrlvStep({ inspectionId, onNext, onError, error }: {
+  inspectionId: string;
+  onNext: () => void | Promise<void>;
+  onError: (msg: string) => void;
+  error: string | null;
+}) {
+  const [mode, setMode] = useState<"foto" | "upload" | null>(null);
+  const [file, setFile] = useState<Blob | File | null>(null);
+  const [filename, setFilename] = useState<string>("crlv.jpg");
+  const [uploading, setUploading] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    if (mode !== "foto") return;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" }, width: { ideal: 1600 }, height: { ideal: 1200 } },
+        });
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+      } catch (err) { onError((err as Error).message); }
+    })();
+    return () => { streamRef.current?.getTracks().forEach((t) => t.stop()); };
+  }, [mode, onError]);
+
+  const snap = async () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0);
+    const b = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.92));
+    if (b) { setFile(b); setFilename("crlv-foto.jpg"); }
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 10 * 1024 * 1024) { onError("Arquivo muito grande (máximo 10 MB)"); return; }
+    const okTypes = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
+    if (!okTypes.includes(f.type)) { onError(`Tipo não suportado (${f.type}). Use PDF, JPG ou PNG.`); return; }
+    setFile(f);
+    setFilename(f.name);
+  };
+
+  const confirm = async () => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const isPdf = file instanceof File && file.type === "application/pdf";
+      const f = new FormData();
+      f.append("kind", isPdf ? "CRLV_UPLOAD" : "CRLV_PHOTO");
+      f.append("file", file, filename);
+      const r = await fetch(`/api/inspection/${inspectionId}/upload`, { method: "POST", body: f });
+      if (!r.ok) throw new Error((await r.json()).error ?? "upload falhou");
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      await onNext();
+    } catch (err) { onError((err as Error).message); }
+    finally { setUploading(false); }
+  };
+
+  // Tela de escolha de modo
+  if (mode === null) {
+    return (
+      <div className="space-y-4">
+        <div className="text-center">
+          <h3 className="font-display text-lg font-black text-white">CRLV (documento do veículo)</h3>
+          <p className="mt-1 text-xs text-loog-muted">Como você quer enviar?</p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => setMode("foto")}
+            className="group rounded-2xl border border-loog-border bg-loog-panel/40 p-5 text-left hover:border-purple-500/60"
+          >
+            <div className="text-4xl">📷</div>
+            <div className="mt-2 font-display text-base font-bold text-white">Tirar foto do papel</div>
+            <div className="mt-1 text-[11px] text-loog-muted">CRLV físico (o papel verde/azul). Tire chapada, bem iluminada, todas as bordas visíveis.</div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMode("upload")}
+            className="group rounded-2xl border border-loog-border bg-loog-panel/40 p-5 text-left hover:border-purple-500/60"
+          >
+            <div className="text-4xl">📎</div>
+            <div className="mt-2 font-display text-base font-bold text-white">Enviar PDF (CRLV digital)</div>
+            <div className="mt-1 text-[11px] text-loog-muted">PDF baixado do app CDT/Denatran. Até 10 MB. Também aceita foto que você já tirou.</div>
+          </button>
+        </div>
+
+        {error && <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">{error}</div>}
+      </div>
+    );
+  }
+
+  // Modo FOTO
+  if (mode === "foto") {
+    return (
+      <div className="space-y-3">
+        <div className="text-center">
+          <h3 className="font-display text-lg font-black text-white">Foto do CRLV</h3>
+          <p className="text-xs text-loog-muted">Papel chapado, bem iluminado, todas as 4 bordas visíveis. A IA valida se a <b className="text-amber-300">placa</b> e o <b className="text-amber-300">chassi</b> batem com os dados.</p>
+        </div>
+        <div className="relative mx-auto aspect-[4/3] w-full max-w-md overflow-hidden rounded-2xl border border-loog-border bg-black">
+          {file ? (
+            <img src={URL.createObjectURL(file)} alt="CRLV" className="h-full w-full object-contain" />
+          ) : (
+            <video ref={videoRef} className="h-full w-full object-cover" muted playsInline />
+          )}
+        </div>
+        {error && <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">{error}</div>}
+        <div className="flex gap-2">
+          {file ? (
+            <>
+              <button type="button" onClick={() => setFile(null)} className="flex-1 rounded-xl border border-loog-border bg-loog-panel/60 py-3 text-xs text-white">Refazer</button>
+              <button type="button" onClick={confirm} disabled={uploading} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 text-xs font-bold text-black disabled:opacity-40">
+                {uploading ? "Enviando…" : "✓ Enviar e analisar"}
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => setMode(null)} className="rounded-xl border border-loog-border bg-loog-panel/60 px-4 py-3 text-xs text-white">Voltar</button>
+              <button type="button" onClick={snap} className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-3 text-sm font-bold text-white">📷 Capturar</button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Modo UPLOAD (PDF ou imagem já tirada)
+  return (
+    <div className="space-y-3">
+      <div className="text-center">
+        <h3 className="font-display text-lg font-black text-white">Upload do CRLV</h3>
+        <p className="text-xs text-loog-muted">PDF digital, JPG ou PNG. Máximo 10 MB.</p>
+      </div>
+      <div className="rounded-2xl border border-dashed border-loog-border bg-loog-panel/30 p-6 text-center">
+        {file ? (
+          <div className="space-y-2">
+            <div className="text-4xl">
+              {(file instanceof File && file.type === "application/pdf") ? "📄" : "🖼️"}
+            </div>
+            <div className="text-sm font-semibold text-white">{filename}</div>
+            <div className="text-[10px] text-loog-muted">
+              {file instanceof File ? `${(file.size / 1024).toFixed(0)} KB` : "foto capturada"}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="text-4xl">📎</div>
+            <label className="mt-3 inline-block cursor-pointer rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 px-5 py-2.5 text-sm font-bold text-white">
+              Escolher arquivo
+              <input
+                type="file"
+                accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif"
+                onChange={onFileChange}
+                className="hidden"
+              />
+            </label>
+          </>
+        )}
+      </div>
+      {error && <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">{error}</div>}
+      <div className="flex gap-2">
+        <button type="button" onClick={() => { setFile(null); setMode(null); }} className="rounded-xl border border-loog-border bg-loog-panel/60 px-4 py-3 text-xs text-white">Voltar</button>
+        {file && (
+          <button type="button" onClick={confirm} disabled={uploading} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 text-xs font-bold text-black disabled:opacity-40">
+            {uploading ? "Enviando…" : "✓ Enviar e analisar"}
+          </button>
         )}
       </div>
     </div>

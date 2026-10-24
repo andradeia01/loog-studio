@@ -48,6 +48,9 @@ export async function POST(req: Request) {
     migracao_origem: migracaoOrigem,
     mode: body.mode === "REMOTE" ? "REMOTE" : "PRESENCIAL",
     status: "DRAFT",
+    // V2 fluxo (vídeo 60s começando pelo odômetro + motor/chassi/CRLV).
+    // Wizard antigo (v1) ainda rodando pra sessions legadas enquanto consultores migram.
+    wizard_version: "v2",
   };
 
   const { data, error } = await admin.from("inspections").insert(insert).select("id").single();

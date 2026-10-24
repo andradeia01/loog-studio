@@ -43,18 +43,24 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     gps_timestamp: body.gps ? new Date().toISOString() : null,
   }).eq("id", id);
 
-  // Puxa captures: FRAMES + ODOMETER + CHASSIS + ENGINE
+  // Puxa captures: FRAMES + ODOMETER (v1) + CHASSIS + ENGINE + CRLV (v2)
   const { data: caps, error: capsErr } = await admin
     .from("inspection_captures")
-    .select("kind, storage_path, metadata")
+    .select("kind, storage_path, metadata, mime_type")
     .eq("inspection_id", id)
-    .in("kind", ["FRAME", "ODOMETER_PHOTO", "CHASSIS_PHOTO", "ENGINE_PHOTO"]);
+    .in("kind", ["FRAME", "ODOMETER_PHOTO", "CHASSIS_PHOTO", "ENGINE_PHOTO", "CRLV_PHOTO", "CRLV_UPLOAD"]);
   if (capsErr) return NextResponse.json({ error: capsErr.message }, { status: 500 });
 
   const frames = (caps ?? []).filter((c) => c.kind === "FRAME");
   const odometer = (caps ?? []).find((c) => c.kind === "ODOMETER_PHOTO");
   const chassis = (caps ?? []).find((c) => c.kind === "CHASSIS_PHOTO");
   const engine = (caps ?? []).find((c) => c.kind === "ENGINE_PHOTO");
+  // CRLV: prefere a FOTO (imagem direta pra Vision). Se só tem UPLOAD, usa ele
+  // mas só se for imagem (PDF a IA não lê direto nesse fluxo).
+  const crlvPhoto = (caps ?? []).find((c) => c.kind === "CRLV_PHOTO");
+  const crlvUpload = (caps ?? []).find((c) => c.kind === "CRLV_UPLOAD");
+  const crlv = crlvPhoto
+    ?? ((crlvUpload && !/pdf/i.test(String(crlvUpload.mime_type ?? ""))) ? crlvUpload : null);
 
   if (frames.length === 0) {
     await admin.from("inspections").update({
@@ -73,6 +79,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const odometerBase64 = odometer ? await downloadAsBase64(admin, odometer.storage_path as string) : undefined;
   const chassisBase64 = chassis ? await downloadAsBase64(admin, chassis.storage_path as string) : undefined;
   const engineBase64 = engine ? await downloadAsBase64(admin, engine.storage_path as string) : undefined;
+  const crlvBase64 = crlv ? await downloadAsBase64(admin, crlv.storage_path as string) : undefined;
 
   // Chama a IA
   let aiResult;
@@ -82,6 +89,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
       odometerBase64,
       chassisBase64,
       engineBase64,
+      crlvBase64,
       placa: insp.placa as string,
       marca: insp.marca as string | null,
       modelo: insp.modelo as string | null,

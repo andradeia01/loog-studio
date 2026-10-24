@@ -18,7 +18,9 @@ export type CaptureKind =
   | "ODOMETER_PHOTO"
   | "CHASSIS_PHOTO"
   | "ENGINE_PHOTO"
-  | "DAMAGE_PHOTO";
+  | "DAMAGE_PHOTO"
+  | "CRLV_PHOTO"     // V2: CRLV físico fotografado
+  | "CRLV_UPLOAD";   // V2: CRLV digital upado (PDF ou imagem)
 
 export interface Inspection {
   id: string;

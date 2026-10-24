@@ -37,7 +37,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const metadataRaw = form.get("metadata") as string | null;
 
   if (!file) return NextResponse.json({ error: "file ausente" }, { status: 400 });
-  if (!["OPERATOR_SELFIE", "VIDEO", "FRAME", "ODOMETER_PHOTO", "CHASSIS_PHOTO", "DAMAGE_PHOTO"].includes(kind)) {
+  // ENGINE_PHOTO + CRLV_PHOTO + CRLV_UPLOAD são do novo fluxo V2.
+  if (!["OPERATOR_SELFIE", "VIDEO", "FRAME", "ODOMETER_PHOTO", "CHASSIS_PHOTO", "ENGINE_PHOTO", "DAMAGE_PHOTO", "CRLV_PHOTO", "CRLV_UPLOAD"].includes(kind)) {
     return NextResponse.json({ error: "kind inválido" }, { status: 400 });
   }
 
