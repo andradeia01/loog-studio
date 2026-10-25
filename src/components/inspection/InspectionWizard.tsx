@@ -248,10 +248,19 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
 }) {
   const [autoFillLoading, setAutoFillLoading] = useState(false);
   const [autoFillMsg, setAutoFillMsg] = useState<string | null>(null);
+  // UX nova: errors por campo + mensagem global no topo. Botão SEMPRE clicável.
+  const [touched, setTouched] = useState<{ [k: string]: boolean }>({});
+  const [globalMsg, setGlobalMsg] = useState<string | null>(null);
+  const placaRef = useRef<HTMLInputElement | null>(null);
+  const nomeRef = useRef<HTMLInputElement | null>(null);
+  const telRef = useRef<HTMLInputElement | null>(null);
+  const migrRef = useRef<HTMLInputElement | null>(null);
 
   const tryAutoFill = async () => {
-    if (!vehicle.placa || vehicle.placa.length < 6) {
+    // FIX: Buscar só precisa de placa, nada de nome/telefone pra pesquisar FIPE
+    if (!vehicle.placa || vehicle.placa.length < 7) {
       setAutoFillMsg("Digita a placa completa (7 caracteres).");
+      placaRef.current?.focus();
       return;
     }
     setAutoFillLoading(true);
@@ -282,36 +291,96 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
   };
 
   const telDigits = vehicle.telefoneAssociado.replace(/\D/g, "");
-  const canProceed =
-    vehicle.placa.length >= 6
-    && vehicle.nomeAssociado.trim().length >= 2
-    && telDigits.length >= 10
-    && (vehicle.tipoVistoria === "NOVA" || vehicle.migracaoOrigem.trim().length >= 2);
+  const errPlaca = vehicle.placa.length !== 7 ? "Placa precisa ter 7 caracteres" : null;
+  const errNome = vehicle.nomeAssociado.trim().length < 2 ? "Nome do associado obrigatório" : null;
+  const errTel = telDigits.length < 10 ? "Telefone com DDD (ex: 24987654321)" : null;
+  const errMigr = vehicle.tipoVistoria === "MIGRACAO" && vehicle.migracaoOrigem.trim().length < 2
+    ? "Informe de onde está migrando" : null;
+
+  // Botão sempre clicável. Ao clicar com erro, rola até o primeiro campo problemático
+  // e marca como touched pra destacar visualmente. Sem mais "trava silenciosa".
+  const handleContinuar = () => {
+    if (errPlaca) {
+      setTouched((t) => ({ ...t, placa: true }));
+      setGlobalMsg(errPlaca);
+      placaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      placaRef.current?.focus();
+      return;
+    }
+    if (errNome) {
+      setTouched((t) => ({ ...t, nome: true }));
+      setGlobalMsg(errNome);
+      nomeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      nomeRef.current?.focus();
+      return;
+    }
+    if (errTel) {
+      setTouched((t) => ({ ...t, tel: true }));
+      setGlobalMsg(errTel);
+      telRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      telRef.current?.focus();
+      return;
+    }
+    if (errMigr) {
+      setTouched((t) => ({ ...t, migr: true }));
+      setGlobalMsg(errMigr);
+      migrRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      migrRef.current?.focus();
+      return;
+    }
+    setGlobalMsg(null);
+    onNext();
+  };
+
+  const inputClass = (hasErr: boolean) => cn(
+    "w-full rounded-xl border bg-loog-panel/60 px-3 py-3 text-base text-white outline-none transition",
+    hasErr
+      ? "border-rose-500/70 focus:border-rose-400"
+      : "border-loog-border focus:border-purple-500/60",
+  );
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-4 pb-40">
+      {/* Mensagem global sticky no topo quando há erro */}
+      {globalMsg && (
+        <div className="sticky top-0 z-10 -mx-4 flex items-center gap-2 border-b border-rose-500/40 bg-rose-500/15 px-4 py-2 text-xs font-semibold text-rose-100 backdrop-blur sm:-mx-5">
+          <span>⚠️</span>
+          <span className="flex-1">{globalMsg}</span>
+        </div>
+      )}
+
+      {/* PLACA — hero */}
       <div>
-        <label className="text-[10px] font-bold uppercase tracking-widest text-loog-muted">
-          Placa do veículo
+        <label className="text-[11px] font-bold uppercase tracking-widest text-loog-muted">
+          Placa <span className="text-rose-400">*</span>
         </label>
-        <div className="mt-1 flex gap-2">
+        <div className="mt-1.5 flex gap-2">
           <input
+            ref={placaRef}
             type="text"
             value={vehicle.placa}
             onChange={(e) => setVehicle({ ...vehicle, placa: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") })}
+            onBlur={() => setTouched((t) => ({ ...t, placa: true }))}
             placeholder="ABC1D23"
             maxLength={7}
-            className="flex-1 rounded-xl border border-loog-border bg-loog-panel/60 px-3 py-2 font-mono text-lg uppercase tracking-wider text-white outline-none focus:border-purple-500/60"
+            inputMode="text"
+            autoCapitalize="characters"
+            autoCorrect="off"
+            spellCheck={false}
+            className={cn(inputClass(touched.placa && !!errPlaca), "flex-1 font-mono text-xl uppercase tracking-wider")}
           />
           <button
             type="button"
             onClick={tryAutoFill}
-            disabled={!canProceed || autoFillLoading}
-            className="rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 px-4 py-2 text-xs font-bold text-white disabled:opacity-40"
+            disabled={autoFillLoading}
+            className="shrink-0 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 px-4 text-xs font-bold text-white disabled:opacity-50 min-h-[48px]"
           >
             {autoFillLoading ? "…" : "🔍 Buscar"}
           </button>
         </div>
+        {touched.placa && errPlaca && (
+          <p className="mt-1 text-[11px] text-rose-300">⚠️ {errPlaca}</p>
+        )}
         {autoFillMsg && (
           <div className={cn(
             "mt-2 rounded-lg border px-3 py-1.5 text-[11px]",
@@ -324,45 +393,99 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Marca" value={vehicle.marca} onChange={(v) => setVehicle({ ...vehicle, marca: v })} />
-        <Field label="Modelo" value={vehicle.modelo} onChange={(v) => setVehicle({ ...vehicle, modelo: v })} />
-        <Field label="Ano" value={vehicle.ano?.toString() ?? ""} onChange={(v) => setVehicle({ ...vehicle, ano: v ? parseInt(v, 10) : null })} type="number" />
-        <Field label="Cor" value={vehicle.cor} onChange={(v) => setVehicle({ ...vehicle, cor: v })} />
-      </div>
+      {/* Dados do veículo — colapsado se autofill rolou */}
+      <details className="rounded-xl border border-loog-border bg-loog-panel/20" open={!vehicle.marca}>
+        <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-bold uppercase tracking-widest text-loog-muted">
+          Dados do veículo {vehicle.marca ? `· ${vehicle.marca} ${vehicle.modelo}` : "(opcional)"}
+        </summary>
+        <div className="grid grid-cols-2 gap-3 p-3 pt-0">
+          <Field label="Marca" value={vehicle.marca} onChange={(v) => setVehicle({ ...vehicle, marca: v })} />
+          <Field label="Modelo" value={vehicle.modelo} onChange={(v) => setVehicle({ ...vehicle, modelo: v })} />
+          <Field label="Ano" value={vehicle.ano?.toString() ?? ""} onChange={(v) => setVehicle({ ...vehicle, ano: v ? parseInt(v, 10) : null })} type="number" />
+          <Field label="Cor" value={vehicle.cor} onChange={(v) => setVehicle({ ...vehicle, cor: v })} />
+        </div>
+      </details>
 
-      <div className="rounded-xl border border-loog-border bg-loog-panel/30 p-3">
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-loog-muted">
+      {/* ASSOCIADO */}
+      <div className="rounded-xl border border-loog-border bg-loog-panel/30 p-3 space-y-3">
+        <div className="text-[11px] font-bold uppercase tracking-widest text-loog-muted">
           Dados do associado <span className="text-rose-400">*</span>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Nome *" value={vehicle.nomeAssociado} onChange={(v) => setVehicle({ ...vehicle, nomeAssociado: v })} />
-          <Field label="Telefone *" value={vehicle.telefoneAssociado} onChange={(v) => setVehicle({ ...vehicle, telefoneAssociado: v })} />
+        <div>
+          <label className="text-[11px] font-semibold text-white/80">Nome completo</label>
+          <input
+            ref={nomeRef}
+            type="text"
+            value={vehicle.nomeAssociado}
+            onChange={(e) => setVehicle({ ...vehicle, nomeAssociado: e.target.value })}
+            onBlur={() => setTouched((t) => ({ ...t, nome: true }))}
+            placeholder="João da Silva"
+            className={cn(inputClass(touched.nome && !!errNome), "mt-1")}
+          />
+          {touched.nome && errNome && <p className="mt-1 text-[11px] text-rose-300">⚠️ {errNome}</p>}
+        </div>
+        <div>
+          <label className="text-[11px] font-semibold text-white/80">Telefone (com DDD)</label>
+          <input
+            ref={telRef}
+            type="tel"
+            value={vehicle.telefoneAssociado}
+            onChange={(e) => setVehicle({ ...vehicle, telefoneAssociado: e.target.value })}
+            onBlur={() => setTouched((t) => ({ ...t, tel: true }))}
+            placeholder="24 99988-7766"
+            inputMode="tel"
+            className={cn(inputClass(touched.tel && !!errTel), "mt-1")}
+          />
+          {touched.tel && errTel && <p className="mt-1 text-[11px] text-rose-300">⚠️ {errTel}</p>}
         </div>
       </div>
 
-      <div className="rounded-xl border border-loog-border bg-loog-panel/30 p-3">
-        <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-loog-muted">
+      {/* TIPO */}
+      <div className="rounded-xl border border-loog-border bg-loog-panel/30 p-3 space-y-3">
+        <div className="text-[11px] font-bold uppercase tracking-widest text-loog-muted">
           Tipo da vistoria <span className="text-rose-400">*</span>
         </div>
-        <select
-          value={vehicle.tipoVistoria}
-          onChange={(e) => setVehicle({ ...vehicle, tipoVistoria: e.target.value as "NOVA" | "MIGRACAO" })}
-          className="w-full rounded-xl border border-loog-border bg-loog-panel/60 px-3 py-2 text-sm text-white outline-none focus:border-purple-500/60"
-        >
-          <option value="NOVA">🆕 Nova vistoria (primeira adesão)</option>
-          <option value="MIGRACAO">🔄 Migração (vem de outra proteção/seguradora)</option>
-        </select>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setVehicle({ ...vehicle, tipoVistoria: "NOVA" })}
+            className={cn(
+              "rounded-xl border-2 p-3 text-left transition min-h-[64px]",
+              vehicle.tipoVistoria === "NOVA"
+                ? "border-purple-500 bg-purple-500/15 text-white"
+                : "border-loog-border bg-loog-panel/40 text-loog-muted",
+            )}
+          >
+            <div className="text-xl">🆕</div>
+            <div className="mt-1 text-xs font-bold leading-tight">Primeira adesão</div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setVehicle({ ...vehicle, tipoVistoria: "MIGRACAO" })}
+            className={cn(
+              "rounded-xl border-2 p-3 text-left transition min-h-[64px]",
+              vehicle.tipoVistoria === "MIGRACAO"
+                ? "border-purple-500 bg-purple-500/15 text-white"
+                : "border-loog-border bg-loog-panel/40 text-loog-muted",
+            )}
+          >
+            <div className="text-xl">🔄</div>
+            <div className="mt-1 text-xs font-bold leading-tight">Migração</div>
+          </button>
+        </div>
         {vehicle.tipoVistoria === "MIGRACAO" && (
-          <div className="mt-3">
-            <Field
-              label="De onde está migrando *"
+          <div>
+            <label className="text-[11px] font-semibold text-white/80">De onde está migrando *</label>
+            <input
+              ref={migrRef}
+              type="text"
               value={vehicle.migracaoOrigem}
-              onChange={(v) => setVehicle({ ...vehicle, migracaoOrigem: v })}
+              onChange={(e) => setVehicle({ ...vehicle, migracaoOrigem: e.target.value })}
+              onBlur={() => setTouched((t) => ({ ...t, migr: true }))}
+              placeholder="Porto Seguro, APVS, Nexus…"
+              className={cn(inputClass(touched.migr && !!errMigr), "mt-1")}
             />
-            <p className="mt-1 text-[10px] text-loog-muted">
-              Nome da seguradora ou associação de origem (ex: Porto Seguro, APVS, Nexus, CMP, Imperium...)
-            </p>
+            {touched.migr && errMigr && <p className="mt-1 text-[11px] text-rose-300">⚠️ {errMigr}</p>}
           </div>
         )}
       </div>
@@ -373,14 +496,23 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={onNext}
-        disabled={!canProceed}
-        className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-3 text-sm font-bold text-white disabled:opacity-40"
+      {/* Bottom nav STICKY — sempre visível, sem precisar rolar */}
+      <div
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-loog-border bg-loog-bg/95 p-3 backdrop-blur sm:absolute sm:rounded-b-3xl"
+        style={{
+          paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))",
+          paddingLeft: "max(0.75rem, env(safe-area-inset-left))",
+          paddingRight: "max(0.75rem, env(safe-area-inset-right))",
+        }}
       >
-        Continuar →
-      </button>
+        <button
+          type="button"
+          onClick={handleContinuar}
+          className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-4 text-base font-bold text-white shadow-lg min-h-[52px] active:scale-[0.98] transition"
+        >
+          Continuar →
+        </button>
+      </div>
     </div>
   );
 }
