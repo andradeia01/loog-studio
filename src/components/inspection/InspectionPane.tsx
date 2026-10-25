@@ -54,16 +54,16 @@ export function InspectionPane() {
   return (
     <div className="space-y-5">
       {/* HERO */}
-      <div className="relative overflow-hidden rounded-3xl border border-purple-500/40 bg-gradient-to-br from-purple-500/20 via-fuchsia-600/10 to-loog-panel p-5 shadow-[0_0_60px_rgba(168,85,247,0.15)] sm:p-6">
-        <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-purple-400/20 blur-3xl" />
+      <div className="relative overflow-hidden rounded-3xl border border-amber-500/40 bg-gradient-to-br from-amber-500/20 via-yellow-600/10 to-loog-panel p-5 shadow-[0_0_60px_rgba(251,191,36,0.15)] sm:p-6">
+        <div className="absolute right-0 top-0 h-32 w-32 rounded-full bg-amber-400/20 blur-3xl" />
         <div className="relative">
-          <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-purple-300">
+          <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-amber-300">
             🎥 Vistoria por vídeo · IA automática
           </div>
           <h2 className="font-display text-2xl font-black text-white sm:text-3xl">
             Grava 1 vídeo. A IA faz o resto.
           </h2>
-          <p className="mt-2 max-w-md text-sm text-purple-200/80">
+          <p className="mt-2 max-w-md text-sm text-amber-200/80">
             Vai no cliente, abre o LOOG Studio, grava 60s do veículo <b>ligado</b> cobrindo todos os ângulos.
             A IA extrai os frames, confere ângulos, placa, odômetro, qualidade e aprova ou reprova na hora.
           </p>
@@ -71,14 +71,14 @@ export function InspectionPane() {
             <button
               type="button"
               onClick={() => setWizardOpen(true)}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-fuchsia-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:scale-105"
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-amber-400 to-yellow-500 px-5 py-2.5 text-sm font-bold text-white shadow-lg transition hover:scale-105"
             >
               ✨ Nova vistoria
             </button>
             <button
               type="button"
               onClick={() => setQrOpen(true)}
-              className="inline-flex items-center gap-2 rounded-full border border-purple-400/40 bg-black/30 px-4 py-2.5 text-sm font-semibold text-purple-100 hover:bg-purple-500/20"
+              className="inline-flex items-center gap-2 rounded-full border border-amber-400/40 bg-black/30 px-4 py-2.5 text-sm font-semibold text-amber-100 hover:bg-amber-500/20"
               title="Escaneie no celular pra abrir a vistoria lá"
             >
               📱 Fazer no celular

@@ -57,7 +57,7 @@ export function QrHandoffModal({ onClose }: { onClose: () => void }) {
       aria-modal="true"
     >
       <div
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-purple-500/40 bg-loog-panel shadow-2xl"
+        className="w-full max-w-md overflow-hidden rounded-2xl border border-amber-500/40 bg-loog-panel shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-loog-border/60 px-5 py-4">

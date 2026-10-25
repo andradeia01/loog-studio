@@ -336,7 +336,7 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
     "w-full rounded-xl border bg-loog-panel/60 px-3 py-3 text-base text-white outline-none transition",
     hasErr
       ? "border-rose-500/70 focus:border-rose-400"
-      : "border-loog-border focus:border-purple-500/60",
+      : "border-loog-border focus:border-amber-500/60",
   );
 
   return (
@@ -373,7 +373,7 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
             type="button"
             onClick={tryAutoFill}
             disabled={autoFillLoading}
-            className="shrink-0 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 px-4 text-xs font-bold text-white disabled:opacity-50 min-h-[48px]"
+            className="shrink-0 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 px-4 text-xs font-bold text-white disabled:opacity-50 min-h-[48px]"
           >
             {autoFillLoading ? "…" : "🔍 Buscar"}
           </button>
@@ -452,7 +452,7 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
             className={cn(
               "rounded-xl border-2 p-3 text-left transition min-h-[64px]",
               vehicle.tipoVistoria === "NOVA"
-                ? "border-purple-500 bg-purple-500/15 text-white"
+                ? "border-amber-400 bg-amber-400/15 text-white"
                 : "border-loog-border bg-loog-panel/40 text-loog-muted",
             )}
           >
@@ -465,7 +465,7 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
             className={cn(
               "rounded-xl border-2 p-3 text-left transition min-h-[64px]",
               vehicle.tipoVistoria === "MIGRACAO"
-                ? "border-purple-500 bg-purple-500/15 text-white"
+                ? "border-amber-400 bg-amber-400/15 text-white"
                 : "border-loog-border bg-loog-panel/40 text-loog-muted",
             )}
           >
@@ -508,7 +508,7 @@ function FormStep({ vehicle, setVehicle, onNext, error }: {
         <button
           type="button"
           onClick={handleContinuar}
-          className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-4 text-base font-bold text-white shadow-lg min-h-[52px] active:scale-[0.98] transition"
+          className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 py-4 text-base font-bold text-white shadow-lg min-h-[52px] active:scale-[0.98] transition"
         >
           Continuar →
         </button>
@@ -532,7 +532,7 @@ function Field({ label, value, onChange, type = "text" }: {
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-xl border border-loog-border bg-loog-panel/60 px-3 py-2 text-sm text-white outline-none focus:border-purple-500/60"
+        className="mt-1 w-full rounded-xl border border-loog-border bg-loog-panel/60 px-3 py-2 text-sm text-white outline-none focus:border-amber-500/60"
       />
     </div>
   );
@@ -589,7 +589,7 @@ function PermissionsStep({ onReady, onError, error }: {
         type="button"
         onClick={request}
         disabled={requesting}
-        className="rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 px-6 py-3 text-sm font-bold text-white disabled:opacity-40"
+        className="rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 px-6 py-3 text-sm font-bold text-white disabled:opacity-40"
       >
         {requesting ? "Aguardando…" : "Permitir acesso"}
       </button>
@@ -684,7 +684,7 @@ function SelfieStep({ inspectionId, onNext, onError, error }: {
             </button>
           </>
         ) : (
-          <button type="button" onClick={capture} className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-3 text-sm font-bold text-white">
+          <button type="button" onClick={capture} className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 py-3 text-sm font-bold text-white">
             📷 Capturar
           </button>
         )}
@@ -1089,7 +1089,7 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
             <button
               type="button"
               onClick={startRecording}
-              className="w-full rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-5 text-base font-black text-white shadow-[0_0_30px_rgba(168,85,247,0.5)] active:scale-95"
+              className="w-full rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 py-5 text-base font-black text-white shadow-[0_0_30px_rgba(251,191,36,0.5)] active:scale-95"
             >🔴 Iniciar gravação ({RECORD_SECONDS}s)</button>
           )}
         </div>
@@ -1220,7 +1220,7 @@ function PhotoCaptureStep({ inspectionId, kind, title, subtitle, ctaLabel, onNex
             </button>
           </>
         ) : (
-          <button type="button" onClick={snap} className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-3 text-sm font-bold text-white">📷 Capturar</button>
+          <button type="button" onClick={snap} className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 py-3 text-sm font-bold text-white">📷 Capturar</button>
         )}
       </div>
     </div>
@@ -1314,7 +1314,7 @@ function CrlvStep({ inspectionId, onNext, onError, error }: {
           <button
             type="button"
             onClick={() => setMode("foto")}
-            className="group rounded-2xl border border-loog-border bg-loog-panel/40 p-5 text-left hover:border-purple-500/60"
+            className="group rounded-2xl border border-loog-border bg-loog-panel/40 p-5 text-left hover:border-amber-500/60"
           >
             <div className="text-4xl">📷</div>
             <div className="mt-2 font-display text-base font-bold text-white">Tirar foto do papel</div>
@@ -1324,7 +1324,7 @@ function CrlvStep({ inspectionId, onNext, onError, error }: {
           <button
             type="button"
             onClick={() => setMode("upload")}
-            className="group rounded-2xl border border-loog-border bg-loog-panel/40 p-5 text-left hover:border-purple-500/60"
+            className="group rounded-2xl border border-loog-border bg-loog-panel/40 p-5 text-left hover:border-amber-500/60"
           >
             <div className="text-4xl">📎</div>
             <div className="mt-2 font-display text-base font-bold text-white">Enviar PDF (CRLV digital)</div>
@@ -1364,7 +1364,7 @@ function CrlvStep({ inspectionId, onNext, onError, error }: {
           ) : (
             <>
               <button type="button" onClick={() => setMode(null)} className="rounded-xl border border-loog-border bg-loog-panel/60 px-4 py-3 text-xs text-white">Voltar</button>
-              <button type="button" onClick={snap} className="flex-1 rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 py-3 text-sm font-bold text-white">📷 Capturar</button>
+              <button type="button" onClick={snap} className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 py-3 text-sm font-bold text-white">📷 Capturar</button>
             </>
           )}
         </div>
@@ -1393,7 +1393,7 @@ function CrlvStep({ inspectionId, onNext, onError, error }: {
         ) : (
           <>
             <div className="text-4xl">📎</div>
-            <label className="mt-3 inline-block cursor-pointer rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 px-5 py-2.5 text-sm font-bold text-white">
+            <label className="mt-3 inline-block cursor-pointer rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 px-5 py-2.5 text-sm font-bold text-white">
               Escolher arquivo
               <input
                 type="file"
@@ -1437,7 +1437,7 @@ function ProcessingStep() {
       </p>
       <div className="mx-auto h-1 w-48 overflow-hidden rounded-full bg-loog-panel/60">
         <motion.div
-          className="h-full bg-gradient-to-r from-purple-500 to-fuchsia-500"
+          className="h-full bg-gradient-to-r from-amber-400 to-yellow-500"
           animate={{ x: ["-100%", "100%"] }}
           transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
           style={{ width: "40%" }}
@@ -1501,7 +1501,7 @@ function DoneStep({ resultado, error, onClose }: { resultado: AiResult | null; e
           </ul>
         </div>
       )}
-      <button type="button" onClick={onClose} className="rounded-xl bg-gradient-to-r from-purple-500 to-fuchsia-500 px-6 py-2 text-sm font-bold text-white">
+      <button type="button" onClick={onClose} className="rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 px-6 py-2 text-sm font-bold text-white">
         OK
       </button>
     </div>
