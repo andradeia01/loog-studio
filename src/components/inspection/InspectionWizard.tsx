@@ -60,7 +60,7 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
       style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
     >
       <div className="flex min-h-full w-full sm:items-center sm:justify-center sm:p-4">
-        <div className="relative flex min-h-[100dvh] w-full flex-col bg-loog-bg shadow-2xl sm:min-h-0 sm:w-auto sm:max-w-xl sm:rounded-3xl sm:border sm:border-loog-border">
+        <div className="relative flex min-h-[100dvh] w-full flex-col bg-loog-bg shadow-2xl sm:min-h-0 sm:w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl sm:rounded-3xl sm:border sm:border-loog-border">
           <div
             className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b border-loog-border bg-loog-bg/95 p-3 backdrop-blur sm:p-4"
             style={{
@@ -928,17 +928,17 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
   // Portrait + sem câmera ativa + sem vídeo pronto: bloqueia a tela
   if (!recordedBlob && !recording && !cameraOn && isLandscape === false) {
     return (
-      <div className="flex flex-col items-center justify-center gap-5 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-10 text-center">
+      <div className="mx-auto flex w-full max-w-xl flex-col items-center justify-center gap-5 rounded-3xl border border-amber-500/40 bg-amber-500/10 p-8 text-center sm:p-10">
         <motion.div
-          className="text-7xl"
+          className="text-7xl sm:text-8xl"
           animate={{ rotate: [0, 90, 90, 0], scale: [1, 0.9, 0.9, 1] }}
           transition={{ duration: 2.2, repeat: Infinity, times: [0, 0.3, 0.7, 1] }}
         >📱</motion.div>
         <div>
-          <h3 className="font-display text-xl font-black text-amber-100">Gire o celular</h3>
-          <p className="mt-2 text-sm text-amber-200/90">A vistoria exige o celular na HORIZONTAL<br />pra captar o veículo inteiro.</p>
+          <h3 className="font-display text-2xl font-black text-amber-100 sm:text-3xl">Gire o celular</h3>
+          <p className="mt-2 text-sm text-amber-200/90 sm:text-base">A vistoria exige o celular na HORIZONTAL<br />pra captar o veículo inteiro.</p>
         </div>
-        <p className="text-xs text-amber-200/70">Assim que girar, aperta pra ativar a câmera</p>
+        <p className="text-xs text-amber-200/70 sm:text-sm">Assim que girar, aperta pra ativar a câmera</p>
       </div>
     );
   }
@@ -1033,16 +1033,17 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
 
           {/* Instrução antes de começar (câmera aberta mas não gravando ainda) */}
           {cameraOn && !recording && !recordedBlob && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-sm p-6 text-center">
-              <div className="rounded-2xl border-2 border-amber-500/60 bg-black/80 p-6">
-                <div className="text-5xl">⚠️</div>
-                <h3 className="mt-3 font-display text-xl font-black text-amber-200">Antes de começar</h3>
-                <ul className="mt-3 space-y-1 text-left text-sm text-white">
-                  <li>✓ Veículo <b className="text-amber-300">LIGADO</b> (painel aceso)</li>
-                  <li>✓ Narre em voz alta o que mostra</li>
-                  <li>✓ 60 segundos no total, 10s por ângulo</li>
-                  <li>✓ Siga as instruções que aparecem na tela</li>
+            <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm p-4 text-center sm:p-8">
+              <div className="w-full max-w-2xl rounded-3xl border-2 border-amber-500/60 bg-black/85 p-6 shadow-2xl sm:p-8 md:p-10">
+                <div className="text-5xl sm:text-6xl md:text-7xl">⚠️</div>
+                <h3 className="mt-3 font-display text-xl font-black text-amber-200 sm:text-2xl md:text-3xl">Antes de começar</h3>
+                <ul className="mt-5 grid grid-cols-1 gap-2 text-left text-sm text-white sm:grid-cols-2 sm:gap-3 sm:text-base md:text-lg">
+                  <li className="flex items-start gap-2 rounded-xl bg-white/5 p-3"><span className="text-emerald-400">✓</span> Veículo <b className="text-amber-300">LIGADO</b> (painel aceso)</li>
+                  <li className="flex items-start gap-2 rounded-xl bg-white/5 p-3"><span className="text-emerald-400">✓</span> Narre em voz alta o que mostra</li>
+                  <li className="flex items-start gap-2 rounded-xl bg-white/5 p-3"><span className="text-emerald-400">✓</span> 60 segundos · 10s por ângulo</li>
+                  <li className="flex items-start gap-2 rounded-xl bg-white/5 p-3"><span className="text-emerald-400">✓</span> Siga as instruções na tela</li>
                 </ul>
+                <p className="mt-5 text-xs text-amber-200/70 sm:text-sm">Aperta o botão vermelho embaixo pra começar.</p>
               </div>
             </div>
           )}
@@ -1100,36 +1101,36 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
   // ─────────────────── MODO INICIAL (antes de ativar câmera) ───────────────────
   return (
     <div
-      className="flex flex-col items-center gap-5 py-8 text-center"
+      className="mx-auto flex w-full max-w-3xl flex-col items-center gap-5 py-6 text-center sm:py-8"
       style={{ paddingBottom: "max(2rem, env(safe-area-inset-bottom))" }}
     >
-      <motion.div className="text-7xl" animate={{ y: [0, -6, 0] }} transition={{ duration: 2, repeat: Infinity }}>🎥</motion.div>
+      <motion.div className="text-6xl sm:text-7xl md:text-8xl" animate={{ y: [0, -6, 0] }} transition={{ duration: 2, repeat: Infinity }}>🎥</motion.div>
       <div>
-        <h3 className="font-display text-2xl font-black text-white">Vídeo da vistoria</h3>
-        <p className="mt-2 text-sm text-loog-muted">
+        <h3 className="font-display text-2xl font-black text-white sm:text-3xl md:text-4xl">Vídeo da vistoria</h3>
+        <p className="mt-2 text-sm text-loog-muted sm:text-base">
           Veículo <b className="text-amber-300">LIGADO</b> · dá uma volta completa<br />
-          <span className="text-[11px]">6 fases guiadas de 10s cada = {RECORD_SECONDS}s total</span>
+          <span className="text-[11px] sm:text-xs">6 fases guiadas de 10s cada = {RECORD_SECONDS}s total</span>
         </p>
       </div>
-      <ul className="w-full max-w-sm space-y-1 rounded-xl border border-loog-border bg-loog-panel/40 p-3 text-left text-xs text-loog-muted">
-        {FASES.map((f, i) => (
-          <li key={f.label} className="flex items-center gap-2">
-            <span className="w-6 text-center">{f.emoji}</span>
-            <span className="font-bold text-white">{f.label}</span>
-            <span className="ml-auto text-[10px]">{f.inicio}-{f.fim}s</span>
+      <ul className="grid w-full grid-cols-1 gap-2 rounded-2xl border border-loog-border bg-loog-panel/40 p-3 text-left text-xs text-loog-muted sm:grid-cols-2 sm:gap-3 sm:p-5 sm:text-sm md:grid-cols-3">
+        {FASES.map((f) => (
+          <li key={f.label} className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2">
+            <span className="w-7 text-center text-lg sm:text-xl">{f.emoji}</span>
+            <span className="flex-1 font-bold text-white">{f.label}</span>
+            <span className="shrink-0 rounded-full bg-black/30 px-2 py-0.5 text-[10px]">{f.inicio}-{f.fim}s</span>
           </li>
         ))}
       </ul>
-      {error && <div className="w-full max-w-sm rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">{error}</div>}
+      {error && <div className="w-full max-w-md rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-200">{error}</div>}
       <button
         type="button"
         onClick={activateCamera}
         disabled={cameraLoading}
-        className="w-full max-w-sm rounded-xl bg-gradient-to-r from-sky-500 to-blue-500 py-5 text-base font-black text-white shadow-glow disabled:opacity-40 active:scale-95"
+        className="w-full max-w-md rounded-xl bg-gradient-to-r from-sky-500 to-blue-500 py-5 text-base font-black text-white shadow-glow disabled:opacity-40 active:scale-95 min-h-[56px] sm:text-lg"
       >
         {cameraLoading ? "Ativando câmera..." : "📷 Ativar câmera e começar"}
       </button>
-      <p className="text-[11px] text-loog-muted">
+      <p className="text-[11px] text-loog-muted sm:text-xs">
         A câmera só liga depois que você tocar no botão (segurança do iOS).
       </p>
     </div>
@@ -1198,12 +1199,12 @@ function PhotoCaptureStep({ inspectionId, kind, title, subtitle, ctaLabel, onNex
   };
 
   return (
-    <div className="space-y-3">
+    <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
       <div className="text-center">
-        <h3 className="font-display text-lg font-black text-white">{title}</h3>
-        <p className="text-xs text-loog-muted">{subtitle}</p>
+        <h3 className="font-display text-xl font-black text-white sm:text-2xl">{title}</h3>
+        <p className="mt-1 text-xs text-loog-muted sm:text-sm">{subtitle}</p>
       </div>
-      <div className="relative mx-auto aspect-video w-full max-w-md overflow-hidden rounded-2xl border border-loog-border bg-black">
+      <div className="relative mx-auto aspect-video w-full overflow-hidden rounded-2xl border border-loog-border bg-black">
         {captured ? (
           <img src={URL.createObjectURL(captured)} alt={title} className="h-full w-full object-cover" />
         ) : (
@@ -1214,13 +1215,13 @@ function PhotoCaptureStep({ inspectionId, kind, title, subtitle, ctaLabel, onNex
       <div className="flex gap-2">
         {captured ? (
           <>
-            <button type="button" onClick={() => setCaptured(null)} className="flex-1 rounded-xl border border-loog-border bg-loog-panel/60 py-3 text-xs text-white">Refazer</button>
-            <button type="button" onClick={confirm} disabled={uploading} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 text-xs font-bold text-black disabled:opacity-40">
+            <button type="button" onClick={() => setCaptured(null)} className="flex-1 rounded-xl border border-loog-border bg-loog-panel/60 py-3 text-sm text-white min-h-[48px]">Refazer</button>
+            <button type="button" onClick={confirm} disabled={uploading} className="flex-1 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 py-3 text-sm font-bold text-black disabled:opacity-40 min-h-[48px]">
               {uploading ? "Enviando…" : `✓ ${ctaLabel}`}
             </button>
           </>
         ) : (
-          <button type="button" onClick={snap} className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 py-3 text-sm font-bold text-white">📷 Capturar</button>
+          <button type="button" onClick={snap} className="flex-1 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 py-4 text-base font-bold text-white min-h-[52px]">📷 Capturar</button>
         )}
       </div>
     </div>
