@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { extractFrames } from "@/lib/inspection/frame-extractor";
@@ -53,10 +54,21 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
   const [transcript, setTranscript] = useState("");
   const [resultado, setResultado] = useState<AiResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
 
-  return (
+  // Portal + lock scroll do body (fecha header/bottom nav + impede scroll por tras)
+  useEffect(() => {
+    setMounted(true);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = originalOverflow; };
+  }, []);
+
+  if (!mounted) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-[9999] overflow-y-auto overscroll-contain bg-black/90 backdrop-blur-sm"
       style={{ WebkitOverflowScrolling: "touch" } as React.CSSProperties}
     >
       <div className="flex min-h-full w-full sm:items-center sm:justify-center sm:p-4">
@@ -218,7 +230,8 @@ export function InspectionWizard({ onClose, onFinished }: Props) {
           </AnimatePresence>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -951,7 +964,7 @@ function RecordStep({ inspectionId, onTranscript, onNext, onError, error }: {
     return (
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-        className="fixed inset-0 z-[70] flex flex-col bg-black"
+        className="fixed inset-0 z-[9999] flex flex-col bg-black"
         style={{ height: "100dvh" }}
       >
         {/* VÍDEO FULLSCREEN (preview da câmera OU preview gravado) */}
