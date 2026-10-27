@@ -22,6 +22,8 @@ import { TweetStudio } from "./TweetStudio";
 import { PlacaStudio } from "./PlacaStudio";
 import { CotacaoCompleta } from "./CotacaoCompleta";
 import { CrmLeads } from "./CrmLeads";
+import { LeadsList } from "./leads/LeadsList";
+import { SivisCredentialsForm } from "./leads/SivisCredentialsForm";
 import { CrmPipeline } from "./CrmPipeline";
 import { TwentyCrmPane } from "./TwentyCrmPane";
 import { useAndroidBack } from "@/lib/hooks/use-android-back";
@@ -137,7 +139,9 @@ export function StudioApp({
       color: "from-blue-500/20 to-cyan-500/5",
       subs: [
         { key: "placa", label: "Cotação Rápida", icon: "⚡" },
-        { key: "completa", label: "Cotação Completa", icon: "📄" },
+        { key: "leads", label: "Cotação Completa", icon: "📄" },
+        { key: "sivis-config", label: "Login SIVIS", icon: "🔐" },
+        { key: "completa-legacy", label: "Cotação (antiga)", icon: "📋" },
         { key: "simulador", label: "Simulador", icon: "🧮", comingSoon: true },
         { key: "funil", label: "Funil", icon: "🔁", comingSoon: true },
         ...(canSeeSdr ? [
@@ -313,7 +317,9 @@ function renderConteudo(opts: RenderOpts) {
 
   if (activeMundo === "vendas") {
     if (activeSub === "placa") return <PlacaStudio />;
-    if (activeSub === "completa") return <CotacaoCompleta />;
+    if (activeSub === "leads") return <LeadsList />;
+    if (activeSub === "sivis-config") return <SivisCredentialsForm />;
+    if (activeSub === "completa-legacy") return <CotacaoCompleta />;
     if (activeSub === "simulador") return <MundoPane
       icon="🧮"
       title="Simulador de cotação"
