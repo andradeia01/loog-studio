@@ -4,10 +4,10 @@ import { getApiKeys } from "../admin-settings";
 let cached: OpenAI | null = null;
 let cachedKey = "";
 
-/** Retorna cliente OpenAI usando a key do admin_settings; null se não configurada. */
+/** Retorna cliente OpenAI. Prefere key do admin_settings, cai pra OPENAI_API_KEY da env. */
 export async function getOpenAI(): Promise<OpenAI | null> {
   const keys = await getApiKeys();
-  const key = keys.openai;
+  const key = keys.openai || process.env.OPENAI_API_KEY || "";
   if (!key) return null;
   if (cached && cachedKey === key) return cached;
   cached = new OpenAI({ apiKey: key });

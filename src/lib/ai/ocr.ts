@@ -79,11 +79,13 @@ function normalizar(tipo: DocumentoTipo, dados: Record<string, unknown>): OCRRes
   return dados as unknown as ResidenciaData;
 }
 
-/** OCR principal com fallback: Claude → OpenAI. */
+/** OCR principal com fallback: Claude (aceita PDF nativo) → OpenAI (só imagens). */
 export async function extrairDocumento(tipo: DocumentoTipo, dataUrl: string): Promise<OCRResult> {
   const erros: string[] = [];
+  const { mediaType } = parseDataUrl(dataUrl);
+  const isPdf = mediaType === "application/pdf";
 
-  // ===== 1) CLAUDE VISION =====
+  // ===== 1) CLAUDE VISION — provider principal, aceita PDF nativo =====
   try {
     const dados = await extrairComClaude(tipo, dataUrl);
     return { tipo, dados, provider: "claude" } as OCRResult;
@@ -93,7 +95,13 @@ export async function extrairDocumento(tipo: DocumentoTipo, dataUrl: string): Pr
     console.warn("[ocr] Claude falhou, tentando OpenAI:", msg);
   }
 
-  // ===== 2) OPENAI VISION fallback =====
+  // ===== 2) OPENAI VISION fallback — só funciona com imagem (PDF é só Claude) =====
+  if (isPdf) {
+    throw new Error(
+      `Claude Vision falhou e OpenAI Vision não aceita PDF. Erros: ${erros.join(" | ")}. ` +
+      `Peça pro cliente mandar a foto em JPG/PNG, ou verifique a chave Anthropic em /admin/config.`
+    );
+  }
   try {
     const dados = await extrairComOpenAI(tipo, dataUrl);
     return { tipo, dados, provider: "openai" } as OCRResult;
@@ -110,29 +118,47 @@ export async function extrairDocumento(tipo: DocumentoTipo, dataUrl: string): Pr
 
 async function extrairComClaude(tipo: DocumentoTipo, dataUrl: string): Promise<OCRResult["dados"]> {
   const client = await getAnthropic();
-  if (!client) throw new Error("Anthropic nao configurado");
+  if (!client) throw new Error("Anthropic nao configurado — configure ANTHROPIC_API_KEY em /admin/config");
 
   const { mediaType, base64 } = parseDataUrl(dataUrl);
   const isPdf = mediaType === "application/pdf";
 
+  // Claude Vision aceita PDF via document block e imagem via image block.
   const docBlock = isPdf
     ? { type: "document" as const, source: { type: "base64" as const, media_type: "application/pdf" as const, data: base64 } }
     : { type: "image" as const, source: { type: "base64" as const, media_type: mediaType as "image/jpeg" | "image/png" | "image/webp" | "image/gif", data: base64 } };
 
-  const res = await client.messages.create({
-    model: CLAUDE_MODEL,
-    max_tokens: 1024,
-    temperature: 0,
-    messages: [{
-      role: "user",
-      content: [docBlock, { type: "text", text: PROMPTS[tipo] }],
-    }],
-  });
+  let res;
+  try {
+    res = await client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 1024,
+      temperature: 0,
+      messages: [{
+        role: "user",
+        content: [docBlock, { type: "text", text: PROMPTS[tipo] }],
+      }],
+    });
+  } catch (err) {
+    // Erros tipicos: 401 (chave invalida), 404 (modelo nao disponivel), 429 (rate limit)
+    const anyErr = err as { status?: number; message?: string };
+    if (anyErr?.status === 401) {
+      throw new Error("chave Anthropic rejeitada (401) — verifique ANTHROPIC_API_KEY em /admin/config, confirme que é válida e não foi rotacionada");
+    }
+    if (anyErr?.status === 404) {
+      throw new Error(`modelo ${CLAUDE_MODEL} não disponível pra sua chave Anthropic (404) — verifique se a conta tem acesso a Claude Haiku 4.5`);
+    }
+    if (anyErr?.status === 429) {
+      throw new Error("rate limit da API Anthropic (429) — aguarde alguns segundos e tente de novo");
+    }
+    throw err;
+  }
 
   const raw = res.content
     .filter((b) => b.type === "text")
     .map((b) => (b as { text: string }).text).join("").trim();
   const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  if (!cleaned) throw new Error("Claude retornou texto vazio");
   const dados = JSON.parse(cleaned);
   return normalizar(tipo, dados);
 }
@@ -141,15 +167,12 @@ async function extrairComClaude(tipo: DocumentoTipo, dataUrl: string): Promise<O
 
 async function extrairComOpenAI(tipo: DocumentoTipo, dataUrl: string): Promise<OCRResult["dados"]> {
   const client = await getOpenAI();
-  if (!client) throw new Error("OpenAI nao configurado");
+  if (!client) throw new Error("OpenAI nao configurado (verifique OPENAI_API_KEY em /admin/config)");
 
   const { mediaType } = parseDataUrl(dataUrl);
-  const isPdf = mediaType === "application/pdf";
-
-  if (isPdf) {
-    // GPT-4o Vision não aceita PDF direto via chat; precisaria converter.
-    // Pulamos pra não gerar falso positivo.
-    throw new Error("OpenAI Vision nao aceita PDF neste endpoint — use JPG/PNG.");
+  // PDFs já foram pré-convertidos pra PNG em extrairDocumento.
+  if (!mediaType.startsWith("image/")) {
+    throw new Error(`OpenAI Vision esperava imagem, recebeu ${mediaType}`);
   }
 
   const res = await client.chat.completions.create({

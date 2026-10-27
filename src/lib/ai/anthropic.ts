@@ -4,15 +4,25 @@ import { getApiKeys } from "../admin-settings";
 let cached: Anthropic | null = null;
 let cachedKey = "";
 
-/** Cliente Anthropic usando a key de admin_settings. null se não configurada. */
+/** Cliente Anthropic. Prefere key de admin_settings (ajustável sem redeploy);
+ *  cai pra ANTHROPIC_API_KEY da env quando o banco não tem nada. Retorna null
+ *  só se ambas as fontes estiverem vazias. */
 export async function getAnthropic(): Promise<Anthropic | null> {
   const keys = await getApiKeys();
-  const key = keys.anthropic;
+  const key = keys.anthropic || process.env.ANTHROPIC_API_KEY || "";
   if (!key) return null;
   if (cached && cachedKey === key) return cached;
   cached = new Anthropic({ apiKey: key });
   cachedKey = key;
   return cached;
+}
+
+/** Fonte da chave atualmente em uso. Útil pro admin diagnosticar 401. */
+export async function getAnthropicKeySource(): Promise<"db" | "env" | "none"> {
+  const keys = await getApiKeys();
+  if (keys.anthropic) return "db";
+  if (process.env.ANTHROPIC_API_KEY) return "env";
+  return "none";
 }
 
 /** Modelo padrão pra OCR estruturado — Haiku 4.5 é rápido, barato e excelente em JSON. */
