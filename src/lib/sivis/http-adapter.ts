@@ -85,15 +85,13 @@ export class SivisHttpAdapter {
     const loginBody = (await loginRes.text()).trim();
 
     if (loginRes.status === 422 || loginRes.status === 401) {
-      // SIVIS devolve algo tipo {"erro":{"password":false}} ou {"erro":{"email":false}}
-      let msg = "credencial inválida";
+      // Email já passou no precheck, então aqui é senha mesmo
+      let msg = "senha SIVIS incorreta";
       try {
         const parsed = JSON.parse(loginBody) as { erro?: Record<string, unknown> };
         const erro = parsed?.erro;
-        if (erro && typeof erro === "object") {
-          if ("password" in erro) msg = "senha SIVIS incorreta";
-          else if ("email" in erro) msg = "e-mail não cadastrado no SIVIS";
-          else msg = `SIVIS recusou: ${Object.keys(erro).join(", ")}`;
+        if (erro && typeof erro === "object" && "email" in erro && !("password" in erro)) {
+          msg = "SIVIS rejeitou o e-mail no login (mas aceitou no precheck — contate o admin)";
         }
       } catch { /* body não é JSON */ }
       throw new SivisAuthError(msg);
@@ -264,15 +262,21 @@ export class SivisHttpAdapter {
 
   /** POST específico pro login: NÃO sobe exception em 4xx porque o SIVIS devolve
    *  422 com body {"erro":{"password":false}} pra credencial inválida, e
-   *  precisamos ler o body pra traduzir a mensagem pro usuário. */
+   *  precisamos ler o body pra traduzir a mensagem pro usuário.
+   *
+   *  OBSCURIDADE DO SIVIS: o portal INVERTE a senha no cliente antes de postar
+   *  (reverseString em App/assets/js/pages/login.js). O backend valida contra a
+   *  senha também invertida. Replicamos aqui pra que o login funcione. */
   private async _postLogin(cookieHeader: string, creds: { email: string; password: string }): Promise<Response> {
+    const reversedPassword = creds.password.split("").reverse().join("");
     return fetch(`${API}portal/usuario`, {
       method: "POST",
       headers: this._headers(cookieHeader, "application/x-www-form-urlencoded; charset=UTF-8"),
-      body: new URLSearchParams({ functionPage: "restrictedArea", email: creds.email, password: creds.password }).toString(),
+      body: new URLSearchParams({ functionPage: "restrictedArea", email: creds.email, password: reversedPassword }).toString(),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   }
+
 
   private async _get(cookieHeader: string, path: string, query: Record<string, string>): Promise<Response> {
     const qs = new URLSearchParams(query).toString();
