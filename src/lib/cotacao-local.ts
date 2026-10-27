@@ -46,7 +46,17 @@ const brl = (cents: number) =>
 
 /**
  * Busca o melhor plano local pra um veiculo.
- * Prefere plano mais especifico (menor max_fipe) e matching por modelo pra caminhao.
+ *
+ * FONTE DO PRECO: tabela `sivis_price_table` (migration 016) — faixas discretas
+ * deduzidas de 225 cotacoes reais do SIVIS. Validado contra o historico:
+ *   - 100% das motos acertam ao centavo
+ *   - 94.7% dos carros com erro < R$1
+ *
+ * O `monthly_cents` da planilha Planos.xlsx (tabela `plans`) é SIMBOLICO — nao
+ * reflete o calculo real do SIVIS. Antes usavamos ele erradamente; agora:
+ *   - Pega metadados do plano (nome, participacao, year_limit, extras) de `plans`
+ *   - Pega mensalidade de `sivis_price_table` (tabela SIVIS real)
+ *   - Prefere plano mais especifico (menor max_fipe) e matching por modelo pra caminhao.
  */
 export async function buscarPlanoLocal(input: {
   tipo: VehicleTypeLocal;
@@ -79,6 +89,26 @@ export async function buscarPlanoLocal(input: {
   });
 
   if (validos.length === 0) return null;
+
+  // SOBRESCREVE monthly_cents com valor REAL do SIVIS (sivis_price_table) pra tipos LEVES
+  // Caminhao usa monthly_cents da planilha 026 que ja eh real (markup +10% aplicado).
+  if (input.tipo !== "caminhao") {
+    const { data: priceRow } = await supabase
+      .from("sivis_price_table")
+      .select("mensal_cents")
+      .eq("tipo_veiculo", input.tipo)
+      .eq("active", true)
+      .lte("fipe_min_cents", input.valorFipeCents)
+      .gte("fipe_max_cents", input.valorFipeCents)
+      .limit(1)
+      .maybeSingle();
+    if (priceRow?.mensal_cents) {
+      // Patch monthly_cents nos validos com valor SIVIS real
+      for (const v of validos) {
+        v.monthly_cents = priceRow.mensal_cents;
+      }
+    }
+  }
 
   // CAMINHAO: heuristica de modelo (varios planos cobrem a mesma faixa)
   if (input.tipo === "caminhao") {

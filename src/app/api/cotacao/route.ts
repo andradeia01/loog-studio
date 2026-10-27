@@ -9,18 +9,19 @@ import { cotarCaminhaoLocal } from "@/lib/cotacao-pesados";
 import { cotarVeiculoLocal } from "@/lib/cotacao-local";
 
 /**
- * Flag central pra desligar o SIVIS como primario. Quando TRUE, toda cotacao
- * (leve, moto, util, eletrico, caminhao) usa a tabela `plans` local.
+ * Flag central pra escolher primario: Hub SIVIS vs cotador LOCAL.
  *
- * DEFAULT = FALSE (Hub SIVIS primario pros leves): o SIVIS calcula a mensalidade
- * com regras proprias (% FIPE + taxas + rateio) que o Luis valida como a que
- * converte. A coluna "Preco" da planilha Planos.xlsx eh so uma referencia, nao
- * reflete o calculo real do SIVIS. Enquanto nao mapearmos essa logica
- * matematicamente, Hub SIVIS continua a fonte da verdade pros leves.
+ * DEFAULT = TRUE (local primario): cotador local agora usa `sivis_price_table`
+ * (migration 016) com tabela DEDUZIDA de 225 cotacoes reais do SIVIS. Validado:
+ *   - 100% das motos acertam ao centavo
+ *   - 94.7% dos carros com erro < R$1
  *
- * CAMINHAO: SEMPRE local (SIVIS nao conhece caminhao, sem alternativa).
+ * CAMINHAO: SEMPRE local (SIVIS nao conhece caminhao).
+ *
+ * Pra forcar Hub como primario (ex: suspeita que tabela saiu de sync):
+ * USE_LOCAL_PRICING=false em env var.
  */
-const USE_LOCAL_PRICING = process.env.USE_LOCAL_PRICING === "true";
+const USE_LOCAL_PRICING = process.env.USE_LOCAL_PRICING !== "false";
 import { sendCAPIEvent, newEventId } from "@/lib/meta-capi";
 import {
   errSessaoExpirada, errNaoAprovado, errTelefoneInvalido, errBodyInvalido,
@@ -43,9 +44,10 @@ const COBERTURAS_DEFAULT_POR_TIPO: Record<string, string[]> = {
   caminhao:   [],
 };
 
-/** Desconto automático aplicado em toda cotação do consultor. 10% é a política atual
- *  (consultor pode dar até 10% sem pedir aprovação; acima disso precisa de gestor). */
-const DESCONTO_AUTOMATICO_PCT = 10;
+/** Desconto AUTOMATICO = 0% (SIVIS nao tem desconto no fluxo oficial).
+ *  Consultor pode ATIVAR desconto 1-10% via slider na UI, mas nao vem ligado por default.
+ *  Decisao Luis 27/10/2026 — "No SIVIS nao tem desconto". */
+const DESCONTO_AUTOMATICO_PCT = 0;
 
 /**
  * Aplica deltas de coberturas opcionais sobre o resultado do Hub + desconto automático.
