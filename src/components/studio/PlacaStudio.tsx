@@ -115,7 +115,7 @@ export function PlacaStudio() {
   const hubStatus = useHubStatus();
   const hubOffline = !hubStatus.ok;
   const [placa, setPlaca] = useState("");
-  const [tipoVeiculo, setTipoVeiculo] = useState<"carro" | "moto" | "utilitario" | "eletrico">("carro");
+  const [tipoVeiculo, setTipoVeiculo] = useState<"carro" | "moto" | "utilitario" | "eletrico" | "caminhao">("carro");
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTel, setClienteTel] = useState("");
   const [loading, setLoading] = useState(false);
@@ -466,13 +466,14 @@ export function PlacaStudio() {
             Fluxo: placa + cliente → cotação criada no sistema LOOG (pasta SDR) → PDF premium + mensagem WhatsApp oficial.
           </p>
 
-          <label className="label">Tipo do veículo</label>
-          <div className="grid grid-cols-2 gap-1 rounded-xl border border-loog-border bg-loog-panel/60 p-1 sm:grid-cols-4">
+          <label className="label">Tipo do veículo <span className="text-[9px] font-normal text-loog-muted/70">(auto-detectado pela FIPE)</span></label>
+          <div className="grid grid-cols-3 gap-1 rounded-xl border border-loog-border bg-loog-panel/60 p-1 sm:grid-cols-5">
             {([
               { v: "carro",      lb: "🚗 Carro" },
               { v: "moto",       lb: "🏍️ Moto" },
-              { v: "utilitario", lb: "🚚 Utilit." },
+              { v: "utilitario", lb: "🛻 Pickup" },
               { v: "eletrico",   lb: "⚡ Elétrico" },
+              { v: "caminhao",   lb: "🚛 Caminhão" },
             ] as const).map((opt) => (
               <button
                 key={opt.v}
@@ -701,7 +702,14 @@ function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, low
         <div className="border-b border-loog-border/60 px-5 py-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Veículo</div>
+              <div className="flex items-center gap-2">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Veículo</div>
+                {(/caminh/i.test(r.vehicle.vehicleCategory ?? "") || String(r.quoteId ?? "").startsWith("local-caminhao")) && (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-300">
+                    🚛 Caminhão · tabela pesados
+                  </span>
+                )}
+              </div>
               <div className="font-display text-base font-bold leading-tight break-words">{r.vehicle.brand}</div>
               <div className="text-sm text-white break-words">{r.vehicle.model}</div>
               <div className="text-xs text-loog-muted break-words">

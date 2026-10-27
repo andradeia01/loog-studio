@@ -151,12 +151,54 @@ const UTILITARIO_MODELS = [
 ];
 const UTILITARIO_RE = new RegExp("\\b(" + UTILITARIO_MODELS.join("|") + ")\\b", "i");
 
+/**
+ * Modelos de CAMINHAO PESADO (cavalo mecanico, truck 23t+, implemento, carreta).
+ * Verificado ANTES de UTILITARIO — se um modelo bate aqui, vai pra tabela de pesados
+ * (plans source='pesados-026'), mesmo que tambem bata em UTILITARIO_MODELS.
+ *
+ * Criterio: modelo que no mercado brasileiro eh usado como truck pesado (>=10t),
+ * cavalo mecanico, ou implemento (semirreboque/carreta). NAO inclui pickup, van,
+ * micro-onibus, caminhao leve 3-7t (esses ficam em utilitario).
+ */
+const CAMINHAO_MODELS = [
+  // Mercedes-Benz
+  "ATEGO", "AXOR", "ACTROS", "ATRON", "AROCS", "ANTOS",
+  "L-?16\\d{2}", "L-?19\\d{2}", "L-?22\\d{2}", "L-?25\\d{2}",
+  // Volvo
+  "FH\\d*", "FM\\d*", "VM\\d*", "NH\\d*", "FMX\\d*",
+  // Scania
+  "R-?\\d{3}", "G-?\\d{3}", "P-?\\d{3}", "S-?\\d{3}",
+  // Iveco pesado
+  "STRALIS", "TRAKKER", "TECTOR", "EUROCARGO", "HI-?ROAD", "HI-?WAY", "VERTIS",
+  // VW/Constellation (pesados; cuidado: VW 5-150, 8-150 sao leves)
+  "CONSTELLATION", "WORKER", "VW\\s*2[0-9][.-]?\\d{3}", "VW\\s*1[5-9][.-]?\\d{3}",
+  // Ford Cargo pesado + F-series pesada
+  "CARGO\\s*\\d{4}", "F-?1[2-9]\\d{3}", "F-?2[0-2]\\d{3}",
+  // MAN
+  "TGX", "TGS", "TGM", "TGL",
+  // DAF
+  "DAF\\s*(XF|CF|LF)", "XF\\s*\\d{3}", "CF\\s*\\d{3}",
+  // Agrale pesado
+  "AGRALE\\s*\\d{4,}",
+  // Hyundai HD pesado (HD120, HD260, HD700)
+  "HD-?1[2-9]\\d", "HD-?[2-9]\\d{2}",
+  // Chineses pesados
+  "SINOTRUK", "HOWO", "SITRAK", "SHACMAN", "FOTON\\s*AUMAN", "FAW\\s*J[5-7]",
+  // JAC truck (nao pickup)
+  "JAC\\s*(SR|T\\s*17|T\\s*21)",
+  // Dongfeng pesado
+  "DONGFENG\\s*Z",
+  // Palavras-chave que marcam o tipo direto
+  "CAVALO\\s*MEC", "SEMIRREBOQUE", "SEMI-?REBOQUE", "CARRETA", "BITREM", "RODOTREM",
+];
+const CAMINHAO_RE = new RegExp("\\b(" + CAMINHAO_MODELS.join("|") + ")\\b", "i");
+
 export function inferirTipoVeiculo(input: {
   segmento?: string | null;
   sub_segmento?: string | null;
   combustivel?: string | null;
   modelo?: string | null;
-}): "carro" | "moto" | "utilitario" | "eletrico" | null {
+}): "carro" | "moto" | "utilitario" | "eletrico" | "caminhao" | null {
   const seg = (input.segmento ?? "").toLowerCase();
   const sub = (input.sub_segmento ?? "").toLowerCase();
   const comb = (input.combustivel ?? "").toLowerCase();
@@ -167,6 +209,14 @@ export function inferirTipoVeiculo(input: {
 
   // Moto
   if (/motoci|motocicleta|moto|triciclo|ciclomoto|scooter/.test(seg + " " + sub)) return "moto";
+
+  // CAMINHAO PESADO — ANTES de utilitario, pra tirar Atego/Axor/Constellation
+  // da tabela leve (hoje caem em "utilitario") e levar pra tabela pesados-026.
+  // Segmento/sub_segmento explicito marca forte.
+  if (/cavalo\s*mec|semirreboque|semi-?reboque|carreta|bitrem|caminh[aã]o\s*(trator|pesad)/.test(seg + " " + sub)) {
+    return "caminhao";
+  }
+  if (modelo && CAMINHAO_RE.test(modelo)) return "caminhao";
 
   // Utilitário por segmento (vai ser raro — PlacaFIPE devolve segmento="AUTOMOVEL" na maioria)
   if (/caminh|utilit[aá]r|van\b|furg[aã]o|pick[-\s]?up|caminhonete/.test(seg + " " + sub)) return "utilitario";

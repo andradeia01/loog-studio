@@ -12,10 +12,12 @@ export type PlanRow = {
   min_fipe_cents: number;
   max_fipe_cents: number | null;
   monthly_cents: number;
+  monthly_cents_original?: number | null;
   participation_type: "fixed_cents" | "percent_bp";
   participation_value: number;
   payment_options: string;
   extras: string;
+  acrescimos?: string | null;
   adhesion_service: string;
   sell_on_site: boolean;
   favorite: boolean;
@@ -24,6 +26,7 @@ export type PlanRow = {
   monthly_includes_adhesion: boolean;
   active: boolean;
   display_order: number;
+  source?: string;
 };
 
 const TYPE_EMOJI: Record<string, string> = {
@@ -45,15 +48,18 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [groupFilter, setGroupFilter] = useState<string>("all");
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
 
   const groups = useMemo(() => Array.from(new Set(initial.map((p) => p.group_name))), [initial]);
   const types = useMemo(() => Array.from(new Set(initial.map((p) => p.vehicle_type))), [initial]);
+  const sources = useMemo(() => Array.from(new Set(initial.map((p) => p.source ?? "leves-oficial"))), [initial]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
     return initial.filter((p) => {
       if (typeFilter !== "all" && p.vehicle_type !== typeFilter) return false;
       if (groupFilter !== "all" && p.group_name !== groupFilter) return false;
+      if (sourceFilter !== "all" && (p.source ?? "leves-oficial") !== sourceFilter) return false;
       if (!s) return true;
       return (
         p.name.toLowerCase().includes(s) ||
@@ -61,7 +67,7 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
         p.group_name.toLowerCase().includes(s)
       );
     });
-  }, [initial, search, typeFilter, groupFilter]);
+  }, [initial, search, typeFilter, groupFilter, sourceFilter]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, PlanRow[]>();
@@ -119,6 +125,19 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
             </option>
           ))}
         </select>
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          className="rounded-lg border border-loog-border bg-loog-bg px-3 py-2 text-sm text-white"
+          title="Origem da tabela: leves-oficial (Planos.xlsx) vs pesados-026 (caminhões, +10%)"
+        >
+          <option value="all">Todas as fontes</option>
+          {sources.map((s) => (
+            <option key={s} value={s}>
+              {s === "pesados-026" ? "🚛 Pesados (026 · +10%)" : s === "leves-oficial" ? "🚗 Leves (Planos.xlsx)" : s}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Grouped list */}
@@ -136,13 +155,26 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-display text-lg font-bold text-white">{p.name}</h3>
                       {p.favorite && <span className="rounded bg-yellow-500/20 px-1.5 py-0.5 text-[10px] font-bold text-yellow-300">⭐ FAV</span>}
                       {!p.active && <span className="rounded bg-red-500/20 px-1.5 py-0.5 text-[10px] font-bold text-red-300">INATIVO</span>}
+                      {p.source === "pesados-026" && (
+                        <span
+                          className="rounded border border-amber-500/40 bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold tracking-wider text-amber-300"
+                          title="Tabela de pesados (026 - Planos.xlsx) com markup +10% aplicado"
+                        >
+                          🚛 PESADOS · +10%
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 text-[11px] text-loog-muted">
                       <code className="text-white/60">{p.slug}</code>
+                      {p.source === "pesados-026" && p.monthly_cents_original != null && (
+                        <span className="ml-2 text-amber-300/70">
+                          original: {brl(p.monthly_cents_original)} → +10% = {brl(p.monthly_cents)}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="text-right">

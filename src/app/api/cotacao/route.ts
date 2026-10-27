@@ -5,6 +5,7 @@ import { supabaseConfigured, createSupabaseServer } from "@/lib/supabase/server"
 import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placafipe";
+import { cotarCaminhaoLocal } from "@/lib/cotacao-pesados";
 import { sendCAPIEvent, newEventId } from "@/lib/meta-capi";
 import {
   errSessaoExpirada, errNaoAprovado, errTelefoneInvalido, errBodyInvalido,
@@ -157,7 +158,7 @@ const TrackingSchema = z.object({
 
 const Body = z.object({
   placa: z.string().min(7).max(10),
-  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico"]).optional(),
+  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico", "caminhao"]).optional(),
   cliente: z.object({
     nome: z.string().min(2).max(120),
     telefone: z.string().min(8).max(20),
@@ -244,7 +245,11 @@ export async function POST(req: NextRequest) {
           combustivel: fipe?.combustivel ?? v.combustivel,
           modelo: modeloFinal,
         });
-        const vehicleTypeFinal = parsed.data.tipo_veiculo ?? tipoInferido ?? "carro";
+        // Caminhao TEM tabela separada (pesados-026) — se a inferencia detectou,
+        // override o que o consultor escolheu. Senao, respeita a escolha dele.
+        const vehicleTypeFinal = tipoInferido === "caminhao"
+          ? "caminhao"
+          : (parsed.data.tipo_veiculo ?? tipoInferido ?? "carro");
 
         // Se o consultor desambiguou manualmente, troca pro FIPE escolhido
         const fipeManual = parsed.data.fipeCode
@@ -255,18 +260,38 @@ export async function POST(req: NextRequest) {
         const anoUsado = Number(fipeManual?.ano_modelo ?? anoModelo);
         const fipeCodeUsado = fipeManual?.codigo_fipe ?? fipe?.codigo_fipe;
 
-        const rawResult = await quoteFromText({
-          brand: marcaUsada,
-          model: modeloUsado,
-          modelYear: anoUsado,
-          fuel: (fipeManual?.combustivel ?? fipe?.combustivel ?? v.combustivel) ?? undefined,
-          fipeCode: fipeCodeUsado ?? undefined,
-          vehicleType: vehicleTypeFinal,
-          plate: placaPraHub,
-          customerName: parsed.data.cliente.nome,
-          customerPhone,
-          leadId: leadIdFinal,
-        });
+        // BRANCH CAMINHAO: Hub externo nao conhece "caminhao" — cotamos localmente
+        // contra a tabela `plans` (source='pesados-026', seed migration 014).
+        // Preco ja vem com +10% markup aplicado no seed; nada aqui calcula markup.
+        let rawResult;
+        if (vehicleTypeFinal === "caminhao") {
+          const fipeValorCents = Math.round(((fipeManual?.valor ?? fipe?.valor ?? 0) as number) * 100);
+          const fipeFmt = fipeManual?.valor_formatado ?? fipe?.valor_formatado ?? "";
+          rawResult = await cotarCaminhaoLocal({
+            placa: placaPraHub,
+            marca: marcaUsada,
+            modelo: modeloUsado,
+            anoModelo: anoUsado,
+            valorFipeCents: fipeValorCents,
+            fipeFormatted: fipeFmt,
+            fipeCode: fipeCodeUsado ?? undefined,
+            customerName: parsed.data.cliente.nome,
+            customerPhone,
+          });
+        } else {
+          rawResult = await quoteFromText({
+            brand: marcaUsada,
+            model: modeloUsado,
+            modelYear: anoUsado,
+            fuel: (fipeManual?.combustivel ?? fipe?.combustivel ?? v.combustivel) ?? undefined,
+            fipeCode: fipeCodeUsado ?? undefined,
+            vehicleType: vehicleTypeFinal,
+            plate: placaPraHub,
+            customerName: parsed.data.cliente.nome,
+            customerPhone,
+            leadId: leadIdFinal,
+          });
+        }
 
         // Aplica deltas + desconto variável (pct vem do consultor; default 10%)
         const { result, breakdown, totalDeltaCents, descontoCents, descontoPct, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
@@ -379,16 +404,24 @@ export async function POST(req: NextRequest) {
 
   for (const placaVariante of placasPraTentar) {
     try {
+      // Hub nao aceita "caminhao" — se o cliente marcou caminhao mas chegamos
+      // ate aqui (PlacaFIPE falhou), mandamos sem tipo e o Hub escolhe default.
+      // O cotador local de pesados so funciona se PlacaFIPE devolver valor FIPE.
+      const vehicleTypeHub = parsed.data.tipo_veiculo === "caminhao" ? undefined : parsed.data.tipo_veiculo;
       const rawResult = await quoteFromPlate({
         plate: placaVariante,
-        vehicleType: parsed.data.tipo_veiculo,
+        vehicleType: vehicleTypeHub,
         customerName: parsed.data.cliente.nome,
         customerPhone,
         leadId: leadIdFinal,
       });
 
-      // Aplica deltas + desconto variável (fallback path)
-      const tipoFallback = parsed.data.tipo_veiculo ?? "carro";
+      // Aplica deltas + desconto variável (fallback path). "caminhao" nao se
+      // beneficia aqui porque o Hub nao calculou plano de caminhao — tratamos como carro
+      // pra nao perder a cotacao bruta que veio.
+      const tipoFallback = parsed.data.tipo_veiculo && parsed.data.tipo_veiculo !== "caminhao"
+        ? parsed.data.tipo_veiculo
+        : "carro";
       const { result, breakdown, totalDeltaCents, descontoCents, descontoPct, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
         rawResult as unknown as Record<string, unknown>,
         parsed.data.coberturas ?? [],

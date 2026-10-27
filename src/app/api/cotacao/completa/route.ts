@@ -5,6 +5,7 @@ import { supabaseConfigured } from "@/lib/supabase/server";
 import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placafipe";
+import { cotarCaminhaoLocal } from "@/lib/cotacao-pesados";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export const maxDuration = 60;
 
 const Body = z.object({
   placa: z.string().min(7).max(10),
-  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico"]).optional(),
+  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico", "caminhao"]).optional(),
   cliente: z.object({
     nome: z.string().min(2).max(120),
     telefone: z.string().min(8).max(20),
@@ -84,20 +85,42 @@ export async function POST(req: NextRequest) {
       if (anoModelo >= 1980 && marcaFinal && modeloFinal) {
         const placaPraHub = placafipe.veiculo.placa_alternativa ?? parsed.data.placa;
         const tipoInferido = inferirTipoVeiculo({
-          segmento: v.segmento, sub_segmento: v.sub_segmento, combustivel: fipe?.combustivel ?? v.combustivel,
+          segmento: v.segmento, sub_segmento: v.sub_segmento,
+          combustivel: fipe?.combustivel ?? v.combustivel,
+          modelo: modeloFinal,
         });
-        const vehicleTypeFinal = parsed.data.tipo_veiculo ?? tipoInferido ?? "carro";
+        // Caminhao override: inferiu pesado → forca tabela pesada mesmo se user clicou outra coisa
+        const vehicleTypeFinal = tipoInferido === "caminhao"
+          ? "caminhao"
+          : (parsed.data.tipo_veiculo ?? tipoInferido ?? "carro");
 
-        const result = await quoteFromText({
-          brand: marcaFinal,
-          model: modeloFinal,
-          modelYear: anoModelo,
-          fuel: fipe?.combustivel ?? v.combustivel ?? undefined,
-          fipeCode: fipe?.codigo_fipe ?? undefined,
-          vehicleType: vehicleTypeFinal,
-          plate: placaPraHub,
-          ...customerExtras,
-        });
+        // Branch caminhao → cotador local (Hub nao conhece pesados)
+        let result;
+        if (vehicleTypeFinal === "caminhao") {
+          const fipeValorCents = Math.round(((fipe?.valor ?? 0) as number) * 100);
+          result = await cotarCaminhaoLocal({
+            placa: placaPraHub,
+            marca: marcaFinal,
+            modelo: modeloFinal,
+            anoModelo: anoModelo,
+            valorFipeCents: fipeValorCents,
+            fipeFormatted: fipe?.valor_formatado ?? "",
+            fipeCode: fipe?.codigo_fipe ?? undefined,
+            customerName: parsed.data.cliente.nome,
+            customerPhone,
+          });
+        } else {
+          result = await quoteFromText({
+            brand: marcaFinal,
+            model: modeloFinal,
+            modelYear: anoModelo,
+            fuel: fipe?.combustivel ?? v.combustivel ?? undefined,
+            fipeCode: fipe?.codigo_fipe ?? undefined,
+            vehicleType: vehicleTypeFinal,
+            plate: placaPraHub,
+            ...customerExtras,
+          });
+        }
 
         if (consultorId) {
           void registrarInteracaoCRM({
@@ -143,9 +166,11 @@ export async function POST(req: NextRequest) {
 
   for (const placaVariante of placasPraTentar) {
     try {
+      // Hub nao aceita "caminhao" — filtra antes
+      const vehicleTypeHub = parsed.data.tipo_veiculo === "caminhao" ? undefined : parsed.data.tipo_veiculo;
       const result = await quoteFromPlate({
         plate: placaVariante,
-        vehicleType: parsed.data.tipo_veiculo,
+        vehicleType: vehicleTypeHub,
         ...customerExtras,
       });
 

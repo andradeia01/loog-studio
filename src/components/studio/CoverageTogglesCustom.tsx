@@ -42,7 +42,7 @@ export function CoverageTogglesCustom({
   onApply,
   applying,
 }: {
-  tipoVeiculo: "carro" | "moto" | "utilitario" | "eletrico";
+  tipoVeiculo: "carro" | "moto" | "utilitario" | "eletrico" | "caminhao";
   baseMensalCents: number;
   initialCodigos?: string[];
   defaultCodes?: string[];

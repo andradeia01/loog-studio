@@ -47,7 +47,10 @@ function Shell({ children }: { children: React.ReactNode }) {
       </header>
       <section className="container-loog pt-8">
         <h1 className="font-display text-3xl font-bold">Planos LOOG</h1>
-        <p className="mt-1 text-loog-muted">Todas as COTAs cadastradas no sistema — do Planos.xlsx oficial.</p>
+        <p className="mt-1 text-loog-muted">
+          Todas as COTAs cadastradas: Planos.xlsx (leves) + 026-Planos.xlsx (pesados · markup +10%).
+          Filtre por fonte pra ver só caminhões.
+        </p>
         <AdminNav active="planos" />
       </section>
       <section className="container-loog mt-6">{children}</section>
