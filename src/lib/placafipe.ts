@@ -161,24 +161,27 @@ const UTILITARIO_RE = new RegExp("\\b(" + UTILITARIO_MODELS.join("|") + ")\\b", 
  * micro-onibus, caminhao leve 3-7t (esses ficam em utilitario).
  */
 const CAMINHAO_MODELS = [
-  // Mercedes-Benz
-  "ATEGO", "AXOR", "ACTROS", "ATRON", "AROCS", "ANTOS",
+  // Mercedes-Benz TRUCK (modelos EXCLUSIVOS de caminhao — nao casam com Classe A/C/G/R-Class)
+  "ATEGO", "AXOR", "ACTROS", "ATRON", "AROCS", "ANTOS", "ACCELO",
   "L-?16\\d{2}", "L-?19\\d{2}", "L-?22\\d{2}", "L-?25\\d{2}",
-  // Volvo
-  "FH\\d*", "FM\\d*", "VM\\d*", "NH\\d*", "FMX\\d*",
-  // Scania
-  "R-?\\d{3}", "G-?\\d{3}", "P-?\\d{3}", "S-?\\d{3}",
-  // Iveco pesado
+  // Volvo TRUCK — EXIGE a marca VOLVO junto, senao S60/XC60 confundem
+  "VOLVO\\s*FH\\d*", "VOLVO\\s*FM\\d*", "VOLVO\\s*VM\\d*", "VOLVO\\s*NH\\d*", "VOLVO\\s*FMX\\d*",
+  // Fallback: nomes puros de serie Volvo quando segmento ja marcou caminhao
+  "\\bFH\\s*(?:4|5|6)\\d{2}\\b", "\\bFM\\s*(?:4|5|6)\\d{2}\\b", "\\bVM\\s*(?:2|3|4)\\d{2}\\b",
+  // Scania TRUCK — EXIGE a marca SCANIA junto, senao Classe R/G/P confundem
+  "SCANIA\\s*[RGPS]\\s*-?\\s*\\d{3}", "SCANIA\\s*(R|G|P|S|L)\\b",
+  // Iveco pesado — modelos exclusivos
   "STRALIS", "TRAKKER", "TECTOR", "EUROCARGO", "HI-?ROAD", "HI-?WAY", "VERTIS",
-  // VW/Constellation (pesados; cuidado: VW 5-150, 8-150 sao leves)
+  // VW TRUCK — Constellation/Worker + VW XX.XXX pesados
   "CONSTELLATION", "WORKER", "VW\\s*2[0-9][.-]?\\d{3}", "VW\\s*1[5-9][.-]?\\d{3}",
-  // Ford Cargo pesado + F-series pesada
+  "VOLKSWAGEN\\s*(CONSTELLATION|WORKER|DELIVERY)",
+  // Ford Cargo + F-series pesada (F-12XXX+)
   "CARGO\\s*\\d{4}", "F-?1[2-9]\\d{3}", "F-?2[0-2]\\d{3}",
-  // MAN
-  "TGX", "TGS", "TGM", "TGL",
-  // DAF
-  "DAF\\s*(XF|CF|LF)", "XF\\s*\\d{3}", "CF\\s*\\d{3}",
-  // Agrale pesado
+  // MAN TRUCK — nomes exclusivos
+  "MAN\\s*(TGX|TGS|TGM|TGL)", "\\bTGX\\s*\\d{2,}", "\\bTGS\\s*\\d{2,}",
+  // DAF TRUCK — exige DAF
+  "DAF\\s*(XF|CF|LF)",
+  // Agrale pesado (A 10000+)
   "AGRALE\\s*\\d{4,}",
   // Hyundai HD pesado (HD120, HD260, HD700)
   "HD-?1[2-9]\\d", "HD-?[2-9]\\d{2}",

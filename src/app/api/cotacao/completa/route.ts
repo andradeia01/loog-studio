@@ -89,10 +89,8 @@ export async function POST(req: NextRequest) {
           combustivel: fipe?.combustivel ?? v.combustivel,
           modelo: modeloFinal,
         });
-        // Caminhao override: inferiu pesado → forca tabela pesada mesmo se user clicou outra coisa
-        const vehicleTypeFinal = tipoInferido === "caminhao"
-          ? "caminhao"
-          : (parsed.data.tipo_veiculo ?? tipoInferido ?? "carro");
+        // RESPEITA a escolha do consultor. Inferencia so entra se chegou undefined.
+        const vehicleTypeFinal = parsed.data.tipo_veiculo ?? tipoInferido ?? "carro";
 
         // Branch caminhao → cotador local (Hub nao conhece pesados)
         let result;

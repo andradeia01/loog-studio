@@ -256,11 +256,11 @@ export async function POST(req: NextRequest) {
           combustivel: fipe?.combustivel ?? v.combustivel,
           modelo: modeloFinal,
         });
-        // Caminhao TEM tabela separada (pesados-026) — se a inferencia detectou,
-        // override o que o consultor escolheu. Senao, respeita a escolha dele.
-        const vehicleTypeFinal = tipoInferido === "caminhao"
-          ? "caminhao"
-          : (parsed.data.tipo_veiculo ?? tipoInferido ?? "carro");
+        // RESPEITA a escolha do consultor sempre que ele mandou — a UI sempre envia
+        // (defaults pra "carro"). Inferencia so entra se chegou undefined (ex: cotacao
+        // via API externa sem UI). Isso evita que FP de regex em modelo (ex: Mercedes
+        // R-Class R350 batendo em padrao de Scania R350) jogue carros em tabela errada.
+        const vehicleTypeFinal = parsed.data.tipo_veiculo ?? tipoInferido ?? "carro";
 
         // Se o consultor desambiguou manualmente, troca pro FIPE escolhido
         const fipeManual = parsed.data.fipeCode
