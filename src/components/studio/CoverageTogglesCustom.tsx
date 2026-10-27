@@ -128,13 +128,20 @@ export function CoverageTogglesCustom({
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Preview mensal</div>
-          <div className={cn("font-display text-xl font-bold", totalDeltaCents > 0 ? "text-emerald-300" : totalDeltaCents < 0 ? "text-amber-300" : "text-loog-muted")}>
-            {totalDeltaCents > 0 ? `+${BRL(totalDeltaCents)}` : totalDeltaCents < 0 ? BRL(totalDeltaCents) : BRL(0)}
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Mensal (com {DESCONTO_PCT}% off)</div>
+          <div className="font-display text-2xl font-bold text-emerald-300">
+            {BRL(novoFinalCents)}
           </div>
-          <div className="text-[10px] text-loog-muted">
-            Novo mensal (com {DESCONTO_PCT}% off): <b className="text-emerald-300">{BRL(novoFinalCents)}</b>
-          </div>
+          {totalDeltaCents !== 0 && (
+            <div className={cn("text-[11px] font-semibold", totalDeltaCents > 0 ? "text-amber-200" : "text-sky-300")}>
+              {totalDeltaCents > 0 ? `+${BRL(totalDeltaCents)}` : BRL(totalDeltaCents)} vs base
+            </div>
+          )}
+          {dirty && (
+            <div className="mt-1 text-[10px] font-bold text-amber-300 animate-pulse">
+              ⚠ clique em Recalcular pra aplicar
+            </div>
+          )}
         </div>
       </div>
 
@@ -225,19 +232,31 @@ export function CoverageTogglesCustom({
         })}
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <span className="text-[11px] text-loog-muted">
-          {dirty ? "⚠ Mudanças pendentes — clique pra recalcular" : "Nenhuma mudança pendente"}
-        </span>
-        <button
-          type="button"
-          onClick={() => onApply(Array.from(selecionados))}
-          disabled={!dirty || applying}
-          className="rounded-md bg-loog-brand px-4 py-2 text-xs font-bold text-white hover:brightness-110 disabled:opacity-50"
-        >
-          {applying ? "Aplicando…" : "Recalcular cotação"}
-        </button>
-      </div>
+      {dirty && (
+        <div className="mt-4 rounded-xl border-2 border-amber-500/60 bg-amber-500/15 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 text-xs text-amber-100">
+              <div className="font-bold">⚠ Você mexeu nas coberturas</div>
+              <div className="text-[11px] text-amber-200/80">
+                Clica no botão pra aplicar na cotação, atualizar o valor e sincronizar a mensagem + PDF.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => onApply(Array.from(selecionados))}
+              disabled={applying}
+              className="shrink-0 rounded-lg bg-emerald-500 px-4 py-3 text-sm font-bold text-white shadow-lg hover:brightness-110 disabled:opacity-50"
+            >
+              {applying ? "Aplicando…" : "✅ Aplicar à cotação"}
+            </button>
+          </div>
+        </div>
+      )}
+      {!dirty && (
+        <div className="mt-4 flex items-center justify-between gap-3 text-[11px] text-emerald-300/80">
+          <span>✓ Cotação sincronizada — valor, mensagem e PDF refletem as coberturas marcadas</span>
+        </div>
+      )}
     </div>
   );
 }
