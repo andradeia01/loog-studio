@@ -27,6 +27,8 @@ import {
   errSessaoExpirada, errNaoAprovado, errTelefoneInvalido, errBodyInvalido,
   errRateLimitStudio, classifyHubError, errHubOffline, errDesconhecido,
   isNetworkError, toApiResponse, type CotacaoError,
+  errPlacafipeTimeout, errPlacafipeTokenInvalido, errPlacafipeSemCredito,
+  errPlacafipeNaoEncontrou, errPlacafipeIndisponivel, errPlacafipeTokenAusente,
 } from "@/lib/errors/cotacao-errors";
 import { checkRateLimit, rateLimitKey } from "@/lib/errors/rate-limit";
 
@@ -467,11 +469,37 @@ export async function POST(req: NextRequest) {
         });
       }
     } else if (!placafipe.ok) {
-      // Log só pra observabilidade — não derruba, cai no fallback
-      console.warn("[cotacao] PlacaFIPE falhou (seguindo pra Hub direto):", placafipe.status, placafipe.message);
+      // CRITICO: se PlacaFIPE deu timeout OU indisponivel, NAO cair no Hub —
+      // o Hub tambem usa PlacaFIPE internamente, encadear so DUPLICA a espera
+      // (consultor via 46s de loading + 504). Preferir "falhou rapido, usa manual".
+      console.warn("[cotacao] PlacaFIPE falhou:", placafipe.status, placafipe.error, placafipe.message);
+      switch (placafipe.error) {
+        case "timeout":
+          return errResponse(errPlacafipeTimeout(parsed.data.placa));
+        case "token_invalido":
+          return errResponse(errPlacafipeTokenInvalido(placafipe.message));
+        case "sem_credito":
+          return errResponse(errPlacafipeSemCredito(placafipe.message));
+        case "token_ausente":
+          return errResponse(errPlacafipeTokenAusente());
+        case "nao_encontrado":
+          // Placa real nao encontrada — AINDA vale tentar Hub (provider interno diferente)
+          break;
+        case "upstream_erro":
+        case "upstream_invalido":
+          return errResponse(errPlacafipeIndisponivel(parsed.data.placa, placafipe.message));
+        default:
+          // "falha" ou qualquer outro — tenta Hub como ultima opcao
+          break;
+      }
     }
   } catch (pfErr) {
-    console.warn("[cotacao] PlacaFIPE erro inesperado:", pfErr instanceof Error ? pfErr.message : pfErr);
+    const msg = pfErr instanceof Error ? pfErr.message : String(pfErr);
+    console.warn("[cotacao] PlacaFIPE erro inesperado:", msg);
+    // Erro de rede ao chamar PlacaFIPE = provavel timeout infra, nao vale ir pro Hub
+    if (/timeout|AbortError|fetch failed|ECONNRESET/i.test(msg)) {
+      return errResponse(errPlacafipeTimeout(parsed.data.placa));
+    }
   }
 
   // ========================================================================

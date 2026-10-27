@@ -120,7 +120,7 @@ export function errPlacafipeTimeout(placa: string): CotacaoError {
     source: "placafipe",
     code: "placafipe_timeout",
     title: "PlacaFIPE lenta demais",
-    message: "A consulta da placa demorou mais de 15s. É problema do servidor da PlacaFIPE — tenta de novo em alguns segundos.",
+    message: "A consulta da placa não respondeu a tempo (API externa instável). Tenta de novo em alguns segundos — se persistir, usa cotação manual.",
     nextAction: "retry",
     httpStatus: 504,
     retryable: true,

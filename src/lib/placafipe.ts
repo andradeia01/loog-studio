@@ -366,14 +366,31 @@ export async function consultarPlaca(placaRaw: string): Promise<PlacaFipeResult 
   const token = await resolvePlacaFipeToken();
   if (!token) return { ok: false, status: 500, error: "token_ausente", message: "Token PlacaFipe não configurado." };
 
-  try {
-    const up = await fetch(UPSTREAM, {
+  // Timeout curto (8s) + 1 retry: PlacaFIPE tem janelas de latência alta,
+  // mas timeouts geralmente sao transientes. Melhor "falhou rapido + 1 retry"
+  // do que esperar 15s unico. Total pior caso: 16s em vez de 30s do antigo.
+  async function tentarUpstream(timeoutMs: number): Promise<Response> {
+    return fetch(UPSTREAM, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ token, placa }),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
       cache: "no-store",
     });
+  }
+
+  try {
+    let up: Response;
+    try {
+      up = await tentarUpstream(8_000);
+    } catch (firstErr) {
+      const msg = firstErr instanceof Error ? firstErr.message : String(firstErr);
+      // So retry em timeout — outros erros (network, DNS) nao se beneficiam
+      if (!/timeout|AbortError/i.test(msg)) throw firstErr;
+      console.warn(`[placafipe] timeout 1a tentativa, retry em 500ms`);
+      await new Promise((r) => setTimeout(r, 500));
+      up = await tentarUpstream(6_000);
+    }
     const payload = await up.json().catch(() => null);
     if (!payload) {
       return { ok: false, status: 502, error: "upstream_invalido", message: "Resposta inválida do upstream." };
