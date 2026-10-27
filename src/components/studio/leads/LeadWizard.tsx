@@ -1,15 +1,19 @@
 "use client";
 
 /**
- * LeadWizard — 6 steps: Contratante → Veículo → Cotação → Documentos → Revisão → Confirmar.
+ * LeadWizard — 6 steps OCR-FIRST: Documentos → Contratante → Veículo → Cotação → Revisão → Confirmar.
  *
- * Fluxo de criação:
- *  Step 1 (Contratante): nome, email, cpf, telefone, cep (busca ViaCEP auto)
- *  Step 2 (Veículo): tipo, placa, FIPE auto, confirma marca/modelo/ano
- *  Step 3 (Cotação): sliders de cobertura/participação/adesão (reaproveita API /api/cotacao)
- *  Step 4 (Documentos): upload CNH, CRLV, comprovante residencia (opcional)
+ * O consultor NUNCA digita dados manualmente. Upa CNH + CRLV + comprovante,
+ * o OCR (Claude Vision com fallback OpenAI) extrai e auto-preenche todos os
+ * campos. Os steps 2 e 3 viram REVISÃO do que o OCR leu, não entrada bruta.
+ *
+ * Fluxo:
+ *  Step 1 (Documentos+OCR): upload CNH→nome/cpf/data_nasc; CRLV→placa/marca/modelo/ano; Residência→cep/endereço
+ *  Step 2 (Contratante — revisa+completa): dados vieram do OCR; preenche telefone/email/procedência manualmente
+ *  Step 3 (Veículo — revisa+FIPE): dados vieram do OCR; enriquece com /api/placa pra FIPE
+ *  Step 4 (Cotação): chama /api/cotacao com placa+tipo
  *  Step 5 (Revisão): preview tudo em cards com link de edição
- *  Step 6 (Confirmar): botao final → POST /api/leads + sync enqueued → redireciona
+ *  Step 6 (Confirmar): POST /api/leads + /vehicles + upload dos docs ao Storage + sync enqueued
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -49,6 +53,14 @@ interface DocUpload {
   file: File | null;
   label: string;
   optional: boolean;
+  /** mapeia tipo do doc pro tipo que /api/ocr/documento aceita */
+  ocrTipo?: "cnh" | "crlv" | "residencia";
+  /** status do OCR: idle = nada; lendo = em curso; ok = dados extraídos; erro = falhou */
+  ocrStatus?: "idle" | "lendo" | "ok" | "erro";
+  /** JSON cru retornado pelo OCR (pra badge "extraído de ...") */
+  ocrDados?: Record<string, unknown> | null;
+  /** mensagem de erro (se ocrStatus = "erro") */
+  ocrErro?: string | null;
 }
 
 const EMPTY_CONTRATANTE: Contratante = {
@@ -64,7 +76,7 @@ const EMPTY_VEICULO: Veiculo = {
 };
 
 const STEP_LABELS: Record<Step, string> = {
-  1: "Contratante", 2: "Veículo", 3: "Cotação", 4: "Documentos", 5: "Revisão", 6: "Confirmar",
+  1: "📸 Documentos", 2: "👤 Contratante", 3: "🚗 Veículo", 4: "💰 Cotação", 5: "✅ Revisão", 6: "🎯 Confirmar",
 };
 
 export function LeadWizard() {
@@ -75,9 +87,9 @@ export function LeadWizard() {
   const [cotacao, setCotacao] = useState<CotacaoResult | null>(null);
   const [cotacaoLoading, setCotacaoLoading] = useState(false);
   const [docs, setDocs] = useState<DocUpload[]>([
-    { tipo: "cnh", file: null, label: "CNH", optional: false },
-    { tipo: "crlv", file: null, label: "CRLV", optional: false },
-    { tipo: "comprovante_residencia", file: null, label: "Comprovante de residência", optional: true },
+    { tipo: "cnh", file: null, label: "CNH (frente)", optional: false, ocrTipo: "cnh", ocrStatus: "idle", ocrDados: null, ocrErro: null },
+    { tipo: "crlv", file: null, label: "CRLV", optional: false, ocrTipo: "crlv", ocrStatus: "idle", ocrDados: null, ocrErro: null },
+    { tipo: "comprovante_residencia", file: null, label: "Comprovante de residência", optional: true, ocrTipo: "residencia", ocrStatus: "idle", ocrDados: null, ocrErro: null },
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,14 +97,16 @@ export function LeadWizard() {
   const canAdvance = useMemo(() => {
     switch (step) {
       case 1:
+        // precisa ter upado CNH + CRLV (obrigatórios); residência é opcional
+        return docs.filter((d) => !d.optional).every((d) => d.file !== null && d.ocrStatus !== "lendo");
+      case 2:
+        // contratante: nome + telefone obrigatórios (OCR já preencheu nome; só precisa adicionar telefone)
         return !!contratante.nome.trim() && !!contratante.telefone && onlyDigits(contratante.telefone).length >= 10
                && (!contratante.cpf || isValidCpf(contratante.cpf));
-      case 2:
-        return !!veiculo.marca && !!veiculo.modelo && !!veiculo.ano_modelo;
       case 3:
-        return !!cotacao;
+        return !!veiculo.marca && !!veiculo.modelo && !!veiculo.ano_modelo;
       case 4:
-        return docs.filter((d) => !d.optional).every((d) => d.file !== null);
+        return !!cotacao;
       case 5:
         return true;
       case 6:
@@ -153,6 +167,74 @@ export function LeadWizard() {
       }));
     } catch { /* silencioso — consultor pode digitar manual */ }
   }, []);
+
+  // ===== Step 1: processa arquivo com OCR + autofill dos estados =====
+  const processarComOcr = useCallback(async (indice: number, file: File) => {
+    const doc = docs[indice];
+    if (!doc?.ocrTipo) return;
+
+    // marca lendo
+    setDocs((prev) => prev.map((d, i) => i === indice ? { ...d, file, ocrStatus: "lendo", ocrErro: null } : d));
+
+    try {
+      // converte pra data URL
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve(String(r.result || ""));
+        r.onerror = () => reject(new Error("falha ao ler arquivo"));
+        r.readAsDataURL(file);
+      });
+
+      const res = await apiFetch("/api/ocr/documento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo: doc.ocrTipo, imageDataUrl: dataUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message ?? `OCR falhou (HTTP ${res.status})`);
+
+      const dados = data.dados as Record<string, unknown>;
+
+      // AUTOFILL baseado no tipo
+      if (doc.ocrTipo === "cnh") {
+        setContratante((c) => ({
+          ...c,
+          nome: (dados.nome as string) || c.nome,
+          cpf: (dados.cpf as string) || c.cpf,
+          data_nasc: (dados.data_nascimento as string) || c.data_nasc,
+        }));
+      } else if (doc.ocrTipo === "crlv") {
+        const placa = ((dados.placa as string) || "").replace(/[^A-Z0-9]/gi, "").toUpperCase();
+        setVeiculo((v) => ({
+          ...v,
+          placa: placa || v.placa,
+          marca: (dados.marca as string) || v.marca,
+          modelo: (dados.modelo as string) || v.modelo,
+          ano_modelo: Number(dados.ano_modelo || dados.ano_fabricacao || v.ano_modelo) || v.ano_modelo,
+          combustivel: (dados.combustivel as string) || v.combustivel,
+        }));
+        // dispara FIPE em segundo plano se tem placa válida
+        if (placa.length === 7) {
+          void buscarPlaca(placa);
+        }
+      } else if (doc.ocrTipo === "residencia") {
+        const cep = ((dados.cep as string) || "").replace(/\D/g, "");
+        setContratante((c) => ({
+          ...c,
+          cep: cep || c.cep,
+          endereco: (dados.endereco as string) || c.endereco,
+          bairro: (dados.bairro as string) || c.bairro,
+          cidade: (dados.cidade as string) || c.cidade,
+          uf: (dados.uf as string) || c.uf,
+        }));
+      }
+
+      setDocs((prev) => prev.map((d, i) => i === indice ? { ...d, ocrStatus: "ok", ocrDados: dados, ocrErro: null } : d));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "OCR falhou";
+      setDocs((prev) => prev.map((d, i) => i === indice ? { ...d, ocrStatus: "erro", ocrErro: msg } : d));
+    }
+  }, [docs, buscarPlaca]);
 
   // ===== Step 3: dispara cotação =====
   const cotar = useCallback(async () => {
@@ -267,24 +349,27 @@ export function LeadWizard() {
 
       <div className="rounded-2xl border border-loog-border bg-loog-panel p-6">
         {step === 1 && (
-          <Step1Contratante
+          <Step1Documentos docs={docs} onFileSelect={processarComOcr} />
+        )}
+        {step === 2 && (
+          <Step2Contratante
             contratante={contratante}
             setContratante={setContratante}
             onCepBlur={buscarCep}
-          />
-        )}
-        {step === 2 && (
-          <Step2Veiculo
-            veiculo={veiculo}
-            setVeiculo={setVeiculo}
-            onPlacaBlur={buscarPlaca}
+            cnhOk={docs.find((d) => d.ocrTipo === "cnh")?.ocrStatus === "ok"}
+            residenciaOk={docs.find((d) => d.ocrTipo === "residencia")?.ocrStatus === "ok"}
           />
         )}
         {step === 3 && (
-          <Step3Cotacao cotacao={cotacao} loading={cotacaoLoading} onCotar={cotar} />
+          <Step3Veiculo
+            veiculo={veiculo}
+            setVeiculo={setVeiculo}
+            onPlacaBlur={buscarPlaca}
+            crlvOk={docs.find((d) => d.ocrTipo === "crlv")?.ocrStatus === "ok"}
+          />
         )}
         {step === 4 && (
-          <Step4Documentos docs={docs} setDocs={setDocs} />
+          <Step4Cotacao cotacao={cotacao} loading={cotacaoLoading} onCotar={cotar} />
         )}
         {step === 5 && (
           <Step5Revisao
@@ -359,7 +444,7 @@ function ProgressBar({ current }: { current: Step }) {
 
 function Field({
   label, children, hint, required,
-}: { label: string; children: React.ReactNode; hint?: string; required?: boolean }) {
+}: { label: React.ReactNode; children: React.ReactNode; hint?: string; required?: boolean }) {
   return (
     <label className="block space-y-1.5">
       <span className="block text-sm font-medium text-white">
@@ -373,40 +458,50 @@ function Field({
 
 const inputCls = "w-full rounded-xl border border-loog-border bg-loog-bg px-3 py-2 text-sm text-white placeholder:text-loog-muted outline-none focus:border-loog-brand";
 
-function Step1Contratante({
-  contratante, setContratante, onCepBlur,
+function Step2Contratante({
+  contratante, setContratante, onCepBlur, cnhOk, residenciaOk,
 }: {
   contratante: Contratante;
   setContratante: (fn: (c: Contratante) => Contratante) => void;
   onCepBlur: (cep: string) => void;
+  cnhOk?: boolean;
+  residenciaOk?: boolean;
 }) {
   const set = (k: keyof Contratante) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setContratante((c) => ({ ...c, [k]: e.target.value }));
 
+  const badgeCnh = cnhOk ? <span className="ml-1 text-[10px] font-normal text-emerald-300">📷 CNH</span> : null;
+  const badgeRes = residenciaOk ? <span className="ml-1 text-[10px] font-normal text-emerald-300">📷 Residência</span> : null;
+
   return (
     <div className="space-y-4">
-      <h3 className="font-display text-lg font-bold text-white">1. Dados do Contratante</h3>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="font-display text-lg font-bold text-white">👤 Dados do Contratante</h3>
+        {(cnhOk || residenciaOk) && (
+          <span className="text-xs text-emerald-300">✨ Pré-preenchido pelo OCR — revise e complete</span>
+        )}
+      </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Field label="Nome completo" required>
+        <Field label={<>Nome completo{badgeCnh}</>} required>
           <input type="text" value={contratante.nome} onChange={set("nome")} className={inputCls} />
         </Field>
-        <Field label="Telefone (com DDD)" required>
+        <Field label="Telefone (com DDD)" required hint="Preencha manualmente (não vem do OCR)">
           <input type="tel" value={contratante.telefone} onChange={set("telefone")} placeholder="(24) 99999-9999" className={inputCls} />
         </Field>
-        <Field label="E-mail">
+        <Field label="E-mail" hint="Preencha manualmente">
           <input type="email" value={contratante.email} onChange={set("email")} placeholder="cliente@email.com" className={inputCls} />
         </Field>
-        <Field label="CPF" hint={contratante.cpf && !isValidCpf(contratante.cpf) ? "CPF inválido" : undefined}>
+        <Field label={<>CPF{badgeCnh}</>} hint={contratante.cpf && !isValidCpf(contratante.cpf) ? "CPF inválido" : undefined}>
           <input type="text" value={contratante.cpf} onChange={set("cpf")} placeholder="000.000.000-00" className={inputCls} />
         </Field>
-        <Field label="Data de nascimento">
+        <Field label={<>Data de nascimento{badgeCnh}</>}>
           <input type="date" value={contratante.data_nasc} onChange={set("data_nasc")} className={inputCls} />
         </Field>
         <Field label="Procedência" hint="De onde veio o lead?">
           <input type="text" value={contratante.procedencia} onChange={set("procedencia")} placeholder="indicação, instagram, consultor…" className={inputCls} />
         </Field>
       </div>
-      <h4 className="font-display text-sm font-semibold text-white pt-2">Endereço</h4>
+      <h4 className="font-display text-sm font-semibold text-white pt-2">Endereço {badgeRes}</h4>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <Field label="CEP">
           <input
@@ -443,19 +538,25 @@ function Step1Contratante({
   );
 }
 
-function Step2Veiculo({
-  veiculo, setVeiculo, onPlacaBlur,
+function Step3Veiculo({
+  veiculo, setVeiculo, onPlacaBlur, crlvOk,
 }: {
   veiculo: Veiculo;
   setVeiculo: (fn: (v: Veiculo) => Veiculo) => void;
   onPlacaBlur: (p: string) => void;
+  crlvOk?: boolean;
 }) {
   const set = <K extends keyof Veiculo>(k: K) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setVeiculo((v) => ({ ...v, [k]: e.target.value as Veiculo[K] }));
 
+  const badgeCrlv = crlvOk ? <span className="ml-1 text-[10px] font-normal text-emerald-300">📷 CRLV</span> : null;
+
   return (
     <div className="space-y-4">
-      <h3 className="font-display text-lg font-bold text-white">2. Dados do Veículo</h3>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="font-display text-lg font-bold text-white">🚗 Dados do Veículo</h3>
+        {crlvOk && <span className="text-xs text-emerald-300">✨ Pré-preenchido pelo CRLV — revise</span>}
+      </div>
       <Field label="Tipo" required>
         <select value={veiculo.tipo} onChange={set("tipo")} className={inputCls}>
           <option value="carro">Carro</option>
@@ -465,7 +566,7 @@ function Step2Veiculo({
           <option value="caminhao">Caminhão</option>
         </select>
       </Field>
-      <Field label="Placa" hint="Digite a placa pra puxar FIPE automático (opcional pra zero km)">
+      <Field label={<>Placa{badgeCrlv}</>} hint="Veio do CRLV; se vazia, digite pra puxar FIPE">
         <input
           type="text"
           value={veiculo.placa}
@@ -476,13 +577,13 @@ function Step2Veiculo({
         />
       </Field>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Field label="Marca" required>
+        <Field label={<>Marca{badgeCrlv}</>} required>
           <input type="text" value={veiculo.marca} onChange={set("marca")} className={inputCls} />
         </Field>
-        <Field label="Modelo" required>
+        <Field label={<>Modelo{badgeCrlv}</>} required>
           <input type="text" value={veiculo.modelo} onChange={set("modelo")} className={inputCls} />
         </Field>
-        <Field label="Ano modelo" required>
+        <Field label={<>Ano modelo{badgeCrlv}</>} required>
           <input
             type="number"
             value={veiculo.ano_modelo ?? ""}
@@ -501,12 +602,12 @@ function Step2Veiculo({
   );
 }
 
-function Step3Cotacao({
+function Step4Cotacao({
   cotacao, loading, onCotar,
 }: { cotacao: CotacaoResult | null; loading: boolean; onCotar: () => void }) {
   return (
     <div className="space-y-4">
-      <h3 className="font-display text-lg font-bold text-white">3. Cotação</h3>
+      <h3 className="font-display text-lg font-bold text-white">💰 Cotação</h3>
       {!cotacao && (
         <div className="text-center py-6">
           <p className="text-sm text-loog-muted mb-4">
@@ -550,48 +651,104 @@ function Step3Cotacao({
   );
 }
 
-function Step4Documentos({
-  docs, setDocs,
-}: { docs: DocUpload[]; setDocs: (fn: (d: DocUpload[]) => DocUpload[]) => void }) {
-  function setFile(idx: number, file: File | null) {
-    setDocs((old) => old.map((d, i) => (i === idx ? { ...d, file } : d)));
-  }
-
+function Step1Documentos({
+  docs, onFileSelect,
+}: { docs: DocUpload[]; onFileSelect: (idx: number, file: File) => void | Promise<void> }) {
   return (
     <div className="space-y-4">
-      <h3 className="font-display text-lg font-bold text-white">4. Documentos</h3>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h3 className="font-display text-lg font-bold text-white">📸 Documentos (OCR automático)</h3>
+      </div>
       <p className="text-sm text-loog-muted">
-        Aceita JPG, PNG, WebP, HEIC ou PDF. Máximo 10MB por arquivo.
+        Fotografa ou upa <strong>CNH + CRLV</strong> (obrigatórios) e <strong>comprovante de residência</strong> (opcional).
+        Nossa IA extrai os dados automaticamente — nos próximos steps você só revisa.
+        Aceita JPG, PNG, WebP, HEIC ou PDF (até 10MB).
       </p>
-      {docs.map((d, i) => (
-        <div key={d.tipo} className="rounded-xl border border-loog-border bg-loog-bg p-4">
-          <div className="flex items-center justify-between gap-3 mb-2">
-            <div>
-              <div className="font-semibold text-white">
-                {d.label} {d.optional && <span className="text-xs font-normal text-loog-muted">(opcional)</span>}
+
+      <div className="grid grid-cols-1 gap-3">
+        {docs.map((d, i) => (
+          <div
+            key={d.tipo}
+            className={
+              "rounded-xl border p-4 transition " +
+              (d.ocrStatus === "ok" ? "border-emerald-500/40 bg-emerald-500/5"
+               : d.ocrStatus === "erro" ? "border-rose-500/40 bg-rose-500/5"
+               : d.ocrStatus === "lendo" ? "border-sky-500/40 bg-sky-500/5"
+               : "border-loog-border bg-loog-bg")
+            }
+          >
+            <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-white flex items-center gap-2">
+                  {d.ocrTipo === "cnh" && "🪪"}
+                  {d.ocrTipo === "crlv" && "📄"}
+                  {d.ocrTipo === "residencia" && "🏠"}
+                  {d.label}
+                  {d.optional && <span className="text-xs font-normal text-loog-muted">(opcional)</span>}
+                </div>
+                {d.file && (
+                  <div className="text-xs text-loog-muted mt-1 truncate">
+                    {d.file.name} · {(d.file.size / 1024).toFixed(0)}KB
+                  </div>
+                )}
               </div>
-              {d.file && <div className="text-xs text-emerald-300 mt-1">✓ {d.file.name} · {(d.file.size / 1024).toFixed(0)}KB</div>}
+              <StatusBadge status={d.ocrStatus} />
             </div>
-            {d.file && (
-              <button
-                type="button"
-                onClick={() => setFile(i, null)}
-                className="text-xs text-rose-300 hover:text-rose-200"
-              >
-                remover
-              </button>
+
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onFileSelect(i, f);
+              }}
+              disabled={d.ocrStatus === "lendo"}
+              className="block w-full text-sm text-white file:mr-3 file:rounded-lg file:border-0 file:bg-loog-brand/20 file:px-3 file:py-1.5 file:text-white file:font-medium file:cursor-pointer hover:file:bg-loog-brand/30 disabled:opacity-50"
+            />
+
+            {d.ocrStatus === "lendo" && (
+              <div className="text-xs text-sky-300 mt-2 flex items-center gap-2">
+                <span className="inline-block h-2 w-2 rounded-full bg-sky-400 animate-pulse" />
+                Lendo documento com IA… (até 20s)
+              </div>
+            )}
+            {d.ocrStatus === "ok" && d.ocrDados && (
+              <div className="mt-3 rounded-lg bg-loog-bg/60 p-2.5 text-xs">
+                <div className="text-emerald-300 font-medium mb-1">✓ Extraído:</div>
+                <div className="text-loog-muted space-y-0.5">
+                  {Object.entries(d.ocrDados)
+                    .filter(([, v]) => v != null && v !== "")
+                    .slice(0, 5)
+                    .map(([k, v]) => (
+                      <div key={k}><span className="text-white/80">{k}:</span> {String(v)}</div>
+                    ))}
+                  {Object.keys(d.ocrDados).length > 5 && (
+                    <div className="text-loog-muted">… +{Object.keys(d.ocrDados).length - 5} campos</div>
+                  )}
+                </div>
+              </div>
+            )}
+            {d.ocrStatus === "erro" && (
+              <div className="text-xs text-rose-300 mt-2">
+                ❌ {d.ocrErro ?? "OCR falhou"}. Tenta uma foto mais nítida ou upa outro arquivo.
+              </div>
             )}
           </div>
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/heic,application/pdf"
-            onChange={(e) => setFile(i, e.target.files?.[0] ?? null)}
-            className="block w-full text-sm text-white file:mr-3 file:rounded-lg file:border-0 file:bg-loog-brand/20 file:px-3 file:py-1.5 file:text-white file:font-medium file:cursor-pointer hover:file:bg-loog-brand/30"
-          />
-        </div>
-      ))}
+        ))}
+      </div>
+
+      <div className="text-xs text-loog-muted">
+        💡 Dica: tira a foto com boa luz, documento inteiro visível, sem flash direto no plástico.
+      </div>
     </div>
   );
+}
+
+function StatusBadge({ status }: { status?: "idle" | "lendo" | "ok" | "erro" }) {
+  if (status === "ok") return <span className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">🟢 OK</span>;
+  if (status === "lendo") return <span className="rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-200">🔵 Lendo…</span>;
+  if (status === "erro") return <span className="rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 text-[10px] font-semibold text-rose-200">🔴 Erro</span>;
+  return <span className="rounded-full border border-loog-border bg-loog-bg px-2 py-0.5 text-[10px] font-semibold text-loog-muted">Aguardando</span>;
 }
 
 function Step5Revisao({
@@ -602,8 +759,8 @@ function Step5Revisao({
 }) {
   return (
     <div className="space-y-4">
-      <h3 className="font-display text-lg font-bold text-white">5. Revisão</h3>
-      <ReviewCard title="Contratante" onEdit={() => goto(1)}>
+      <h3 className="font-display text-lg font-bold text-white">✅ Revisão</h3>
+      <ReviewCard title="Contratante" onEdit={() => goto(2)}>
         <div className="text-sm text-white">{contratante.nome}</div>
         <div className="text-xs text-loog-muted mt-1 space-y-0.5">
           <div>📞 {contratante.telefone}</div>
@@ -613,7 +770,7 @@ function Step5Revisao({
         </div>
       </ReviewCard>
 
-      <ReviewCard title="Veículo" onEdit={() => goto(2)}>
+      <ReviewCard title="Veículo" onEdit={() => goto(3)}>
         <div className="text-sm text-white">{veiculo.marca} {veiculo.modelo} {veiculo.ano_modelo}</div>
         <div className="text-xs text-loog-muted mt-1 space-y-0.5">
           {veiculo.placa && <div>Placa {veiculo.placa}</div>}
@@ -622,7 +779,7 @@ function Step5Revisao({
         </div>
       </ReviewCard>
 
-      <ReviewCard title="Cotação" onEdit={() => goto(3)}>
+      <ReviewCard title="Cotação" onEdit={() => goto(4)}>
         {cotacao ? (
           <div className="text-sm text-white">
             {cotacao.plan?.monthlyValueFormatted ?? "—"}
@@ -636,12 +793,14 @@ function Step5Revisao({
         )}
       </ReviewCard>
 
-      <ReviewCard title="Documentos" onEdit={() => goto(4)}>
+      <ReviewCard title="Documentos (OCR)" onEdit={() => goto(1)}>
         <div className="text-xs text-loog-muted space-y-0.5">
           {docs.map((d) => (
-            <div key={d.tipo}>
-              {d.file ? "✓" : "·"} {d.label}
-              {d.file && <span className="ml-1 text-emerald-300">{d.file.name}</span>}
+            <div key={d.tipo} className="flex items-center gap-2">
+              <span>
+                {d.ocrStatus === "ok" ? "🟢" : d.file ? "⚪" : "·"} {d.label}
+              </span>
+              {d.file && <span className="truncate text-emerald-300/70">{d.file.name}</span>}
             </div>
           ))}
         </div>
