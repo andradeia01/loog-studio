@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { apiFetch } from "@/lib/errors/api-fetch";
 
 export type PlanRow = {
   id: string;
@@ -45,18 +46,47 @@ function participation(p: PlanRow): string {
 }
 
 export function PlansManager({ initial }: { initial: PlanRow[] }) {
+  const [plans, setPlans] = useState<PlanRow[]>(initial);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [editing, setEditing] = useState<PlanRow | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const groups = useMemo(() => Array.from(new Set(initial.map((p) => p.group_name))), [initial]);
-  const types = useMemo(() => Array.from(new Set(initial.map((p) => p.vehicle_type))), [initial]);
-  const sources = useMemo(() => Array.from(new Set(initial.map((p) => p.source ?? "leves-oficial"))), [initial]);
+  const applyUpdate = (updated: PlanRow) => {
+    setPlans((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  };
+
+  const handleSave = async (patch: Partial<PlanRow>) => {
+    if (!editing) return;
+    setSaving(true);
+    setErrorMsg(null);
+    try {
+      const res = await apiFetch(`/api/admin/plans/${editing.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.message ?? json?.error ?? "Falha ao salvar");
+      applyUpdate(json.plan as PlanRow);
+      setEditing(null);
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Erro inesperado");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const groups = useMemo(() => Array.from(new Set(plans.map((p) => p.group_name))), [plans]);
+  const types = useMemo(() => Array.from(new Set(plans.map((p) => p.vehicle_type))), [plans]);
+  const sources = useMemo(() => Array.from(new Set(plans.map((p) => p.source ?? "leves-oficial"))), [plans]);
 
   const filtered = useMemo(() => {
     const s = search.trim().toLowerCase();
-    return initial.filter((p) => {
+    return plans.filter((p) => {
       if (typeFilter !== "all" && p.vehicle_type !== typeFilter) return false;
       if (groupFilter !== "all" && p.group_name !== groupFilter) return false;
       if (sourceFilter !== "all" && (p.source ?? "leves-oficial") !== sourceFilter) return false;
@@ -67,7 +97,7 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
         p.group_name.toLowerCase().includes(s)
       );
     });
-  }, [initial, search, typeFilter, groupFilter, sourceFilter]);
+  }, [plans, search, typeFilter, groupFilter, sourceFilter]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, PlanRow[]>();
@@ -80,13 +110,13 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
     return Array.from(map.entries());
   }, [filtered]);
 
-  const totalActive = initial.filter((p) => p.active).length;
+  const totalActive = plans.filter((p) => p.active).length;
 
   return (
     <div className="space-y-6">
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Total planos" value={initial.length} />
+        <Stat label="Total planos" value={plans.length} />
         <Stat label="Ativos" value={totalActive} highlight />
         <Stat label="Grupos" value={groups.length} />
         <Stat label="Tipos de veículo" value={types.length} />
@@ -180,6 +210,13 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
                   <div className="text-right">
                     <div className="font-display text-xl font-bold text-loog-brand">{brl(p.monthly_cents)}</div>
                     <div className="text-[10px] uppercase tracking-wider text-loog-muted">mensal</div>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(p)}
+                      className="mt-1 text-[10px] text-loog-muted hover:text-loog-brand underline underline-offset-2"
+                    >
+                      ✏️ editar
+                    </button>
                   </div>
                 </div>
 
@@ -212,7 +249,175 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
           <p className="text-loog-muted">Nenhum plano encontrado com esses filtros.</p>
         </div>
       )}
+
+      {editing && (
+        <PlanEditor
+          plan={editing}
+          saving={saving}
+          errorMsg={errorMsg}
+          onClose={() => { setEditing(null); setErrorMsg(null); }}
+          onSave={handleSave}
+        />
+      )}
     </div>
+  );
+}
+
+function PlanEditor({
+  plan, saving, errorMsg, onClose, onSave,
+}: {
+  plan: PlanRow;
+  saving: boolean;
+  errorMsg: string | null;
+  onClose: () => void;
+  onSave: (patch: Partial<PlanRow>) => Promise<void>;
+}) {
+  const [form, setForm] = useState<Partial<PlanRow>>({
+    name: plan.name,
+    group_name: plan.group_name,
+    min_fipe_cents: plan.min_fipe_cents,
+    max_fipe_cents: plan.max_fipe_cents,
+    monthly_cents: plan.monthly_cents,
+    participation_type: plan.participation_type,
+    participation_value: plan.participation_value,
+    year_limit: plan.year_limit,
+    active: plan.active,
+    favorite: plan.favorite,
+    sell_on_site: plan.sell_on_site,
+    installments: plan.installments,
+    monthly_includes_adhesion: plan.monthly_includes_adhesion,
+    extras: plan.extras,
+    acrescimos: plan.acrescimos,
+  });
+
+  const update = <K extends keyof PlanRow>(k: K, v: PlanRow[K] | undefined) =>
+    setForm((f) => ({ ...f, [k]: v }));
+
+  // Converters UI (R$ 34.90) ↔ storage (cents)
+  const brlInputToCents = (v: string): number => {
+    const digits = v.replace(/[^\d,]/g, "").replace(",", ".");
+    const n = Number(digits);
+    return Number.isFinite(n) ? Math.round(n * 100) : 0;
+  };
+  const centsToStr = (c: number | null | undefined): string => c == null ? "" : (c / 100).toFixed(2);
+
+  // Participation value show as pct (if percent_bp) or R$ (if fixed_cents)
+  const partValueDisplay = form.participation_type === "percent_bp"
+    ? ((form.participation_value ?? 0) / 100).toFixed(2)
+    : centsToStr(form.participation_value as number);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] overflow-y-auto bg-black/80 backdrop-blur-sm p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="mx-auto mt-10 max-w-2xl rounded-2xl border border-loog-border bg-loog-bg p-5 shadow-2xl">
+        <header className="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <h3 className="font-display text-xl font-bold text-white">Editar plano</h3>
+            <p className="text-xs text-loog-muted">
+              {plan.vehicle_type_label} · <code className="text-white/60">{plan.slug}</code>
+            </p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded px-2 py-1 text-sm text-loog-muted hover:text-white">✕</button>
+        </header>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Nome do plano">
+            <input className="input" value={form.name ?? ""} onChange={(e) => update("name", e.target.value)} />
+          </Field>
+          <Field label="Grupo">
+            <input className="input" value={form.group_name ?? ""} onChange={(e) => update("group_name", e.target.value)} />
+          </Field>
+
+          <Field label="Faixa FIPE mínima (R$)">
+            <input className="input" value={centsToStr(form.min_fipe_cents as number)} onChange={(e) => update("min_fipe_cents", brlInputToCents(e.target.value))} inputMode="decimal" />
+          </Field>
+          <Field label="Faixa FIPE máxima (R$)">
+            <input
+              className="input"
+              value={centsToStr(form.max_fipe_cents as number | null)}
+              onChange={(e) => update("max_fipe_cents", e.target.value ? brlInputToCents(e.target.value) : null)}
+              inputMode="decimal"
+              placeholder="(vazio = sem teto)"
+            />
+          </Field>
+
+          <Field label="Mensalidade (R$)">
+            <input className="input" value={centsToStr(form.monthly_cents as number)} onChange={(e) => update("monthly_cents", brlInputToCents(e.target.value))} inputMode="decimal" />
+          </Field>
+          <Field label="Limite idade do veículo (anos)">
+            <input className="input" type="number" min={0} max={150}
+              value={(form.year_limit ?? "") as number | ""}
+              onChange={(e) => update("year_limit", e.target.value ? Number(e.target.value) : null)}
+            />
+          </Field>
+
+          <Field label="Tipo de participação">
+            <select className="input" value={form.participation_type} onChange={(e) => update("participation_type", e.target.value as PlanRow["participation_type"])}>
+              <option value="percent_bp">Percentual (% do teto)</option>
+              <option value="fixed_cents">Valor fixo (R$)</option>
+            </select>
+          </Field>
+          <Field label={form.participation_type === "percent_bp" ? "Participação (%)" : "Participação (R$)"}>
+            <input className="input" value={partValueDisplay}
+              onChange={(e) => {
+                const n = Number(e.target.value.replace(",", "."));
+                if (!Number.isFinite(n)) return;
+                update("participation_value", form.participation_type === "percent_bp" ? Math.round(n * 100) : Math.round(n * 100));
+              }}
+              inputMode="decimal"
+            />
+          </Field>
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-3">
+          <Toggle label="Ativo" checked={!!form.active} onChange={(v) => update("active", v)} />
+          <Toggle label="Favorito" checked={!!form.favorite} onChange={(v) => update("favorite", v)} />
+          <Toggle label="Vende no site" checked={!!form.sell_on_site} onChange={(v) => update("sell_on_site", v)} />
+          <Toggle label="Parcelado" checked={!!form.installments} onChange={(v) => update("installments", v)} />
+          <Toggle label="Mensal inclui adesão" checked={!!form.monthly_includes_adhesion} onChange={(v) => update("monthly_includes_adhesion", v)} />
+        </div>
+
+        <Field label="Benefícios (extras)">
+          <textarea className="input min-h-[80px]" value={form.extras ?? ""} onChange={(e) => update("extras", e.target.value)} />
+        </Field>
+
+        {errorMsg && <p className="mt-3 rounded bg-red-500/15 px-3 py-2 text-sm text-red-200">{errorMsg}</p>}
+
+        <footer className="mt-4 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-lg border border-loog-border px-4 py-2 text-sm text-loog-muted hover:text-white">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={() => onSave(form)}
+            className="rounded-lg bg-loog-brand px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+          >
+            {saving ? "Salvando..." : "💾 Salvar alterações"}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-loog-muted">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-loog-border bg-loog-panel px-3 py-1.5 text-xs text-white">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="h-3.5 w-3.5" />
+      {label}
+    </label>
   );
 }
 

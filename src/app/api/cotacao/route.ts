@@ -6,6 +6,16 @@ import { quoteFromPlate, quoteFromText, HubError } from "@/lib/loog-hub";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 import { consultarPlaca, variantesPlaca, inferirTipoVeiculo } from "@/lib/placafipe";
 import { cotarCaminhaoLocal } from "@/lib/cotacao-pesados";
+import { cotarVeiculoLocal } from "@/lib/cotacao-local";
+
+/**
+ * Flag central pra sair do SIVIS. Quando ligada:
+ *   - Toda cotacao (carro/moto/utilitario/eletrico/caminhao) usa a tabela `plans` local.
+ *   - Hub SIVIS so eh usado como FALLBACK caso o cotador local nao encontre plano.
+ * Default: true (Luis quer sair do SIVIS). Pra reativar SIVIS como primario, basta
+ * mudar pra false (ou setar env var USE_LOCAL_PRICING=false).
+ */
+const USE_LOCAL_PRICING = process.env.USE_LOCAL_PRICING !== "false";
 import { sendCAPIEvent, newEventId } from "@/lib/meta-capi";
 import {
   errSessaoExpirada, errNaoAprovado, errTelefoneInvalido, errBodyInvalido,
@@ -260,14 +270,19 @@ export async function POST(req: NextRequest) {
         const anoUsado = Number(fipeManual?.ano_modelo ?? anoModelo);
         const fipeCodeUsado = fipeManual?.codigo_fipe ?? fipe?.codigo_fipe;
 
-        // BRANCH CAMINHAO: Hub externo nao conhece "caminhao" — cotamos localmente
-        // contra a tabela `plans` (source='pesados-026', seed migration 014).
-        // Preco ja vem com +10% markup aplicado no seed; nada aqui calcula markup.
+        // ROTEAMENTO:
+        //   USE_LOCAL_PRICING=true (default) → cotador local pra TODOS os tipos
+        //     (saindo do SIVIS, usa a tabela `plans` com os seeds leves-oficial + pesados-026)
+        //   caminhao sempre vai local (SIVIS nao conhece caminhao)
+        //   fallback: se local nao encontrar plano, cai no Hub pra tipos que nao sao caminhao
+        const fipeValorCents = Math.round(((fipeManual?.valor ?? fipe?.valor ?? 0) as number) * 100);
+        const fipeFmt = fipeManual?.valor_formatado ?? fipe?.valor_formatado ?? "";
+
         let rawResult;
-        if (vehicleTypeFinal === "caminhao") {
-          const fipeValorCents = Math.round(((fipeManual?.valor ?? fipe?.valor ?? 0) as number) * 100);
-          const fipeFmt = fipeManual?.valor_formatado ?? fipe?.valor_formatado ?? "";
-          rawResult = await cotarCaminhaoLocal({
+        if (USE_LOCAL_PRICING || vehicleTypeFinal === "caminhao") {
+          // Caminho novo: 100% local, sem SIVIS
+          rawResult = await cotarVeiculoLocal({
+            tipo: vehicleTypeFinal,
             placa: placaPraHub,
             marca: marcaUsada,
             modelo: modeloUsado,
@@ -278,7 +293,26 @@ export async function POST(req: NextRequest) {
             customerName: parsed.data.cliente.nome,
             customerPhone,
           });
+          // Fallback: se local nao achou plano E nao eh caminhao, tenta o Hub
+          const planoAchado = rawResult.plan?.productId && rawResult.plan.productId !== "sem-plano";
+          if (!planoAchado && vehicleTypeFinal !== "caminhao") {
+            console.warn("[cotacao] Local nao achou plano, tentando Hub como fallback:", vehicleTypeFinal);
+            try {
+              rawResult = await quoteFromText({
+                brand: marcaUsada, model: modeloUsado, modelYear: anoUsado,
+                fuel: (fipeManual?.combustivel ?? fipe?.combustivel ?? v.combustivel) ?? undefined,
+                fipeCode: fipeCodeUsado ?? undefined,
+                vehicleType: vehicleTypeFinal,
+                plate: placaPraHub,
+                customerName: parsed.data.cliente.nome,
+                customerPhone, leadId: leadIdFinal,
+              });
+            } catch (hubErr) {
+              console.warn("[cotacao] Hub fallback tambem falhou — devolvendo resultado local sem plano");
+            }
+          }
         } else {
+          // Modo legado: Hub como primario (SIVIS)
           rawResult = await quoteFromText({
             brand: marcaUsada,
             model: modeloUsado,
