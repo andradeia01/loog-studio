@@ -74,17 +74,35 @@ export class SivisHttpAdapter {
 
   async login(email: string, password: string): Promise<SivisSession> {
     // 1. GET /loja/028/login — recebe cookie anônimo (seed da sessão)
+    //    Nota: cookie real é PHPSESSID (SIVIS roda sobre PHP, não ASP.NET como
+    //    o mapeamento inicial sugeriu — não muda o fluxo, só o nome).
     const seedCookies = await this._seedSession();
 
-    // 2. POST login
-    const loginRes = await this._post(seedCookies, "portal/usuario", {
-      functionPage: "restrictedArea",
-      email,
-      password,
-    });
+    // 2. POST login — _postLogin não sobe exception em 4xx, pq o próprio SIVIS
+    //    devolve {"erro":{"password":false}} com HTTP 422 quando a credencial é
+    //    inválida. Precisamos ler o body pra traduzir pro usuário.
+    const loginRes = await this._postLogin(seedCookies, { email, password });
     const loginBody = (await loginRes.text()).trim();
+
+    if (loginRes.status === 422 || loginRes.status === 401) {
+      // SIVIS devolve algo tipo {"erro":{"password":false}} ou {"erro":{"email":false}}
+      let msg = "credencial inválida";
+      try {
+        const parsed = JSON.parse(loginBody) as { erro?: Record<string, unknown> };
+        const erro = parsed?.erro;
+        if (erro && typeof erro === "object") {
+          if ("password" in erro) msg = "senha SIVIS incorreta";
+          else if ("email" in erro) msg = "e-mail não cadastrado no SIVIS";
+          else msg = `SIVIS recusou: ${Object.keys(erro).join(", ")}`;
+        }
+      } catch { /* body não é JSON */ }
+      throw new SivisAuthError(msg);
+    }
+    if (!loginRes.ok) {
+      throw new SivisApiError(loginRes.status, `SIVIS login HTTP ${loginRes.status}: ${loginBody.slice(0, 120)}`);
+    }
     if (loginBody !== "true") {
-      throw new SivisAuthError(`Login SIVIS recusou: "${loginBody.slice(0, 100)}"`);
+      throw new SivisAuthError(`SIVIS retornou "${loginBody.slice(0, 100)}" ao invés de "true"`);
     }
     // O cookie pode ter sido atualizado após login (ASP.NET pode promover)
     const afterLoginCookies = this._mergeSetCookie(seedCookies, loginRes.headers);
@@ -242,6 +260,18 @@ export class SivisHttpAdapter {
       throw new SivisApiError(res.status, `SIVIS ${path} → ${res.status}`, await res.text().catch(() => null));
     }
     return res;
+  }
+
+  /** POST específico pro login: NÃO sobe exception em 4xx porque o SIVIS devolve
+   *  422 com body {"erro":{"password":false}} pra credencial inválida, e
+   *  precisamos ler o body pra traduzir a mensagem pro usuário. */
+  private async _postLogin(cookieHeader: string, creds: { email: string; password: string }): Promise<Response> {
+    return fetch(`${API}portal/usuario`, {
+      method: "POST",
+      headers: this._headers(cookieHeader, "application/x-www-form-urlencoded; charset=UTF-8"),
+      body: new URLSearchParams({ functionPage: "restrictedArea", email: creds.email, password: creds.password }).toString(),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
   }
 
   private async _get(cookieHeader: string, path: string, query: Record<string, string>): Promise<Response> {
