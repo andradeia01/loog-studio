@@ -41,7 +41,8 @@ const COBERTURAS_DEFAULT_POR_TIPO: Record<string, string[]> = {
   moto:       ["reboque_moto_300",       "terceiros_moto_30k"],
   utilitario: ["reboque_util_300",       "terceiros_util_30k",       "reserva_util_10d",       "vidros_util_completa"],
   eletrico:   ["reboque_eletrico_300",   "terceiros_eletrico_30k",   "reserva_eletrico_10d",   "vidros_eletrico_completa"],
-  caminhao:   [],
+  // Caminhão (migration 018): guincho 300km, terceiros 50k (padrão setor), sem carga (consultor decide), vidros para-brisa
+  caminhao:   ["reboque_caminhao_300",   "terceiros_caminhao_50k",   "carga_caminhao_nenhuma", "vidros_caminhao_parabrisa"],
 };
 
 /** Desconto AUTOMATICO = 0% (SIVIS nao tem desconto no fluxo oficial).
