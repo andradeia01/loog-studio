@@ -11,6 +11,9 @@ type RouteParams = { params: Promise<{ id: string }> };
 const PatchSchema = z.object({
   ativo: z.boolean().optional(),
   motivo: z.string().max(500).nullable().optional(),
+  /** Códigos FIPE de modelos liberados mesmo com marca bloqueada (migration 019). */
+  allowed_model_codes: z.array(z.string().max(20)).max(50).optional(),
+  allowed_model_names: z.array(z.string().max(200)).max(50).optional(),
 });
 
 export async function PATCH(req: Request, ctx: RouteParams) {

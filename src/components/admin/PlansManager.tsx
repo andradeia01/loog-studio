@@ -114,6 +114,37 @@ export function PlansManager({ initial }: { initial: PlanRow[] }) {
 
   return (
     <div className="space-y-6">
+      {/* HERO — explica o modelo mental pro admin */}
+      <section className="rounded-xl border border-loog-brand/40 bg-loog-brand/5 p-4">
+        <h3 className="text-sm font-bold text-white">📖 Como ler esta tela</h3>
+        <p className="mt-1 text-xs text-loog-muted">
+          Cada <b className="text-white">PLANO</b> é uma linha da tabela de preços LOOG. Quando o consultor cota uma placa,
+          o sistema escolhe o plano certo baseado em 4 critérios:
+        </p>
+        <ol className="mt-2 grid gap-2 text-[11px] sm:grid-cols-4">
+          <li className="rounded-lg border border-loog-border bg-loog-panel/60 p-2">
+            <div className="font-bold text-emerald-300">1 · TIPO</div>
+            <div className="text-loog-muted">🚗 Carro, 🏍️ Moto, 🛻 Pickup, ⚡ Elétrico, 🚛 Caminhão</div>
+          </li>
+          <li className="rounded-lg border border-loog-border bg-loog-panel/60 p-2">
+            <div className="font-bold text-emerald-300">2 · FONTE</div>
+            <div className="text-loog-muted"><code>leves-oficial</code> = Planos.xlsx · <code>pesados-026</code> = caminhões (+10%)</div>
+          </li>
+          <li className="rounded-lg border border-loog-border bg-loog-panel/60 p-2">
+            <div className="font-bold text-emerald-300">3 · FAIXA FIPE</div>
+            <div className="text-loog-muted">Qual intervalo de preço FIPE o plano cobre (ex: R$ 300k - R$ 900k)</div>
+          </li>
+          <li className="rounded-lg border border-loog-border bg-loog-panel/60 p-2">
+            <div className="font-bold text-emerald-300">4 · PARTICIPAÇÃO</div>
+            <div className="text-loog-muted">% ou valor fixo que o cliente paga em caso de perda</div>
+          </li>
+        </ol>
+        <p className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+          ⚠ <b>Mexer no valor mensal muda a cotação em TEMPO REAL</b> no Studio. Toda cotação feita depois usa o novo valor.
+          Use o filtro de fonte pra ver só caminhões ou só leves.
+        </p>
+      </section>
+
       {/* Stats */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Total planos" value={plans.length} />
@@ -306,6 +337,12 @@ function PlanEditor({
     ? ((form.participation_value ?? 0) / 100).toFixed(2)
     : centsToStr(form.participation_value as number);
 
+  // Diff helpers — mostra em VERMELHO/VERDE quando valor mudou
+  const changed = <K extends keyof PlanRow>(k: K): boolean => form[k] !== plan[k];
+  const mensalDeltaPct = form.monthly_cents != null && plan.monthly_cents > 0
+    ? ((form.monthly_cents - plan.monthly_cents) / plan.monthly_cents) * 100
+    : 0;
+
   return (
     <div
       className="fixed inset-0 z-[9999] overflow-y-auto bg-black/80 backdrop-blur-sm p-4"
@@ -313,11 +350,40 @@ function PlanEditor({
     >
       <div className="mx-auto mt-10 max-w-2xl rounded-2xl border border-loog-border bg-loog-bg p-5 shadow-2xl">
         <header className="mb-4 flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0 flex-1">
             <h3 className="font-display text-xl font-bold text-white">Editar plano</h3>
-            <p className="text-xs text-loog-muted">
-              {plan.vehicle_type_label} · <code className="text-white/60">{plan.slug}</code>
+            <p className="mt-1 text-xs text-loog-muted">
+              <code className="rounded bg-loog-panel px-1.5 py-0.5 text-white/80">{plan.slug}</code>
             </p>
+            {/* Contexto do plano — categoria/fonte/grupo/faixa */}
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded border border-loog-border bg-loog-panel/60 px-2 py-1">
+                <div className="text-[9px] uppercase tracking-wider text-loog-muted">tipo</div>
+                <div className="text-xs font-semibold text-white">{TYPE_EMOJI[plan.vehicle_type]} {plan.vehicle_type_label}</div>
+              </div>
+              <div className="rounded border border-loog-border bg-loog-panel/60 px-2 py-1">
+                <div className="text-[9px] uppercase tracking-wider text-loog-muted">fonte</div>
+                <div className="text-xs font-semibold text-white">{plan.source === "pesados-026" ? "🚛 pesados-026" : "🚗 leves-oficial"}</div>
+              </div>
+              <div className="rounded border border-loog-border bg-loog-panel/60 px-2 py-1">
+                <div className="text-[9px] uppercase tracking-wider text-loog-muted">grupo</div>
+                <div className="truncate text-xs font-semibold text-white" title={plan.group_name}>{plan.group_name}</div>
+              </div>
+              <div className="rounded border border-loog-border bg-loog-panel/60 px-2 py-1">
+                <div className="text-[9px] uppercase tracking-wider text-loog-muted">mensal atual</div>
+                <div className="text-xs font-semibold text-loog-brand">{brl(plan.monthly_cents)}</div>
+              </div>
+            </div>
+            {/* Diff visual quando mensal mudou */}
+            {changed("monthly_cents") && (
+              <div className={`mt-2 rounded-lg border px-3 py-2 text-[11px] ${mensalDeltaPct > 0 ? "border-amber-500/40 bg-amber-500/10 text-amber-200" : "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"}`}>
+                <b>Mensal mudará:</b> <s>{brl(plan.monthly_cents)}</s> → <b>{brl(form.monthly_cents as number)}</b>
+                <span className="ml-2">({mensalDeltaPct >= 0 ? "+" : ""}{mensalDeltaPct.toFixed(1)}%)</span>
+                <div className="mt-0.5 text-[10px] text-loog-muted">
+                  Impacto: toda cotação de {plan.vehicle_type_label} na faixa {brl(plan.min_fipe_cents)}–{plan.max_fipe_cents ? brl(plan.max_fipe_cents) : "∞"} vai usar o novo valor imediatamente.
+                </div>
+              </div>
+            )}
           </div>
           <button type="button" onClick={onClose} className="rounded px-2 py-1 text-sm text-loog-muted hover:text-white">✕</button>
         </header>

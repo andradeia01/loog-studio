@@ -59,7 +59,7 @@ export async function verificarBloqueio(input: {
   const supabase = await createSupabaseServer();
   const { data } = await supabase
     .from("vehicle_blocks")
-    .select("marca_codigo, marca_nome, modelo_codigo, modelo_nome, motivo")
+    .select("marca_codigo, marca_nome, modelo_codigo, modelo_nome, motivo, allowed_model_codes, allowed_model_names")
     .eq("tipo", input.tipo)
     .eq("ativo", true);
 
@@ -74,8 +74,16 @@ export async function verificarBloqueio(input: {
     const marcaBate = marcaIn && marcaB && (marcaIn.includes(marcaB) || marcaB.includes(marcaIn));
     if (!marcaBate) continue;
 
-    // Bloqueio de marca inteira
+    // Bloqueio de marca inteira — mas verifica EXCEÇÕES (allowed_model_names)
     if (!b.modelo_codigo) {
+      const liberados = (b.allowed_model_names ?? []) as string[];
+      if (liberados.length > 0 && modeloIn) {
+        const estaLiberado = liberados.some((nome) => {
+          const n = normalizar(nome);
+          return n && (modeloIn.includes(n) || n.includes(modeloIn));
+        });
+        if (estaLiberado) continue; // modelo e excecao — pula pro proximo bloqueio
+      }
       return {
         bloqueado: true, tipo: "marca",
         marca_nome: b.marca_nome as string,

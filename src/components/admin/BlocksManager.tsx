@@ -13,6 +13,9 @@ export type BlockRow = {
   motivo: string | null;
   ativo: boolean;
   created_at: string;
+  /** Exceções: modelos liberados mesmo com marca bloqueada (migration 019). */
+  allowed_model_codes?: string[];
+  allowed_model_names?: string[];
 };
 
 interface FipeMarca { codigo: string; nome: string }
@@ -128,6 +131,39 @@ export function BlocksManager({ initial }: { initial: BlockRow[] }) {
       if (!r.ok) return;
       setBlocks((prev) => prev.filter((x) => x.id !== b.id));
     } catch {}
+  };
+
+  // Atualiza arrays de exceção (allowed_model_codes/names) de um bloqueio de MARCA
+  const atualizarExcecoes = async (b: BlockRow, novasCodes: string[], novasNames: string[]) => {
+    try {
+      const r = await apiFetch(`/api/admin/blocks/${b.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          allowed_model_codes: novasCodes,
+          allowed_model_names: novasNames,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.message ?? j?.error ?? "Erro");
+      setBlocks((prev) => prev.map((x) => (x.id === b.id ? (j.block as BlockRow) : x)));
+    } catch (e) {
+      setMsg(`❌ ${e instanceof Error ? e.message : "Erro"}`);
+    }
+  };
+
+  const liberarModelo = async (b: BlockRow, modelo: FipeModelo) => {
+    const codes = [...(b.allowed_model_codes ?? []), modelo.codigo];
+    const names = [...(b.allowed_model_names ?? []), modelo.nome];
+    await atualizarExcecoes(b, codes, names);
+  };
+
+  const removerExcecao = async (b: BlockRow, idx: number) => {
+    const codes = [...(b.allowed_model_codes ?? [])];
+    const names = [...(b.allowed_model_names ?? [])];
+    codes.splice(idx, 1);
+    names.splice(idx, 1);
+    await atualizarExcecoes(b, codes, names);
   };
 
   const grupos = useMemo(() => {
@@ -253,31 +289,61 @@ export function BlocksManager({ initial }: { initial: BlockRow[] }) {
               {TIPO_LABEL[t]} <span className="ml-1 rounded bg-loog-panel px-2 py-0.5 text-[10px]">{items.length}</span>
             </h3>
             <ul className="space-y-2">
-              {items.map((b) => (
-                <li
-                  key={b.id}
-                  className={`flex items-center justify-between rounded-xl border p-3 ${b.ativo ? "border-red-500/40 bg-red-500/10" : "border-loog-border/60 bg-loog-panel/40 opacity-60"}`}
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-display text-base font-bold text-white">
-                        {b.marca_nome}
-                      </span>
-                      {b.modelo_nome && <span className="text-sm text-white/70">· {b.modelo_nome}</span>}
-                      {!b.modelo_nome && <span className="rounded bg-red-600/60 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">MARCA INTEIRA</span>}
+              {items.map((b) => {
+                const isMarcaInteira = !b.modelo_nome;
+                const temExcecoes = (b.allowed_model_names?.length ?? 0) > 0;
+                return (
+                  <li
+                    key={b.id}
+                    className={`rounded-xl border p-3 ${b.ativo ? "border-red-500/40 bg-red-500/10" : "border-loog-border/60 bg-loog-panel/40 opacity-60"}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-display text-base font-bold text-white">{b.marca_nome}</span>
+                          {b.modelo_nome && <span className="text-sm text-white/70">· {b.modelo_nome}</span>}
+                          {isMarcaInteira && <span className="rounded bg-red-600/60 px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">MARCA INTEIRA</span>}
+                          {temExcecoes && <span className="rounded bg-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold uppercase text-emerald-200">{b.allowed_model_names!.length} exceção{b.allowed_model_names!.length > 1 ? "ões" : ""}</span>}
+                        </div>
+                        {b.motivo && <div className="mt-1 text-[11px] italic text-loog-muted">💬 {b.motivo}</div>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button type="button" onClick={() => toggleAtivo(b)} className="text-[10px] text-loog-muted hover:text-white">
+                          {b.ativo ? "pausar" : "ativar"}
+                        </button>
+                        <button type="button" onClick={() => deletar(b)} className="rounded px-2 py-1 text-[11px] text-red-300 hover:bg-red-500/20">
+                          remover
+                        </button>
+                      </div>
                     </div>
-                    {b.motivo && <div className="mt-1 text-[11px] italic text-loog-muted">💬 {b.motivo}</div>}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button type="button" onClick={() => toggleAtivo(b)} className="text-[10px] text-loog-muted hover:text-white">
-                      {b.ativo ? "pausar" : "ativar"}
-                    </button>
-                    <button type="button" onClick={() => deletar(b)} className="rounded px-2 py-1 text-[11px] text-red-300 hover:bg-red-500/20">
-                      remover
-                    </button>
-                  </div>
-                </li>
-              ))}
+
+                    {/* EXCEÇÕES — só pra bloqueios de MARCA INTEIRA */}
+                    {isMarcaInteira && (
+                      <div className="mt-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-2">
+                        <div className="mb-1 flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+                            ✅ Modelos liberados (exceções)
+                          </span>
+                          <span className="text-[10px] text-loog-muted">clique num modelo abaixo pra adicionar</span>
+                        </div>
+                        {temExcecoes ? (
+                          <ul className="mb-2 flex flex-wrap gap-1.5">
+                            {(b.allowed_model_names ?? []).map((nome, idx) => (
+                              <li key={`${b.id}-exc-${idx}`} className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] text-emerald-100">
+                                <span>✅ {nome}</span>
+                                <button type="button" onClick={() => removerExcecao(b, idx)} className="text-emerald-300/60 hover:text-red-300" title="Remover exceção">✕</button>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="mb-2 text-[11px] italic text-loog-muted">Nenhuma exceção — toda a marca está bloqueada.</p>
+                        )}
+                        <ExceptionAdder block={b} tipoFipe={b.tipo} onPick={(m) => liberarModelo(b, m)} />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         ))}
@@ -300,12 +366,87 @@ export function BlocksManager({ initial }: { initial: BlockRow[] }) {
           <ul className="space-y-1.5">
             <li>• Catálogo FIPE pré-carregado (108 marcas carro + 103 moto + 29 caminhão + 11.4k modelos)</li>
             <li>• Bloqueio de <b>marca inteira</b> rejeita toda cotação da marca</li>
+            <li>• <b className="text-emerald-300">Exceções</b> em marca bloqueada: liberar modelo X específico (ex: Chevrolet bloqueada EXCETO Onix Plus)</li>
             <li>• Bloqueio de <b>modelo</b> rejeita só aquele modelo específico</li>
             <li>• O cotador consulta esta tabela antes de calcular — se bate, devolve erro ao consultor</li>
             <li>• <i>Pausar</i> desativa temporariamente sem apagar o histórico</li>
           </ul>
         </div>
       </aside>
+    </div>
+  );
+}
+
+/**
+ * Picker inline pra adicionar modelo liberado em um bloqueio de marca.
+ * Busca modelos da marca via FIPE catalog e devolve o escolhido pro onPick.
+ */
+function ExceptionAdder({ block, tipoFipe, onPick }: {
+  block: BlockRow;
+  tipoFipe: "carros" | "motos" | "caminhoes";
+  onPick: (modelo: FipeModelo) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [modelos, setModelos] = useState<FipeModelo[]>([]);
+  const [open, setOpen] = useState(false);
+  const jaLiberados = new Set(block.allowed_model_codes ?? []);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(async () => {
+      const url = `/api/admin/fipe-catalog?tipo=${tipoFipe}&marca=${block.marca_codigo}` + (q ? `&q=${encodeURIComponent(q)}` : "");
+      try {
+        const r = await apiFetch(url);
+        const j = await r.json();
+        setModelos((j.modelos ?? []).filter((m: FipeModelo) => !jaLiberados.has(m.codigo)).slice(0, 20));
+      } catch {}
+    }, 200);
+    return () => clearTimeout(t);
+  }, [open, q, tipoFipe, block.marca_codigo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20"
+      >
+        + liberar modelo específico
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-emerald-500/30 bg-loog-bg p-2">
+      <div className="flex gap-1">
+        <input
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={`buscar modelo de ${block.marca_nome}...`}
+          className="flex-1 rounded border border-loog-border bg-loog-panel px-2 py-1 text-xs text-white"
+          autoFocus
+        />
+        <button type="button" onClick={() => { setOpen(false); setQ(""); }} className="rounded px-2 text-[11px] text-loog-muted hover:text-white">✕</button>
+      </div>
+      {modelos.length > 0 && (
+        <ul className="mt-1 max-h-40 overflow-auto rounded border border-loog-border">
+          {modelos.map((m) => (
+            <li key={m.codigo}>
+              <button
+                type="button"
+                onClick={() => { onPick(m); setQ(""); setOpen(false); }}
+                className="block w-full px-2 py-1 text-left text-[11px] text-white hover:bg-emerald-500/20"
+              >
+                ✅ {m.nome}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {modelos.length === 0 && q && (
+        <p className="mt-1 text-[10px] italic text-loog-muted">Nenhum modelo encontrado.</p>
+      )}
     </div>
   );
 }
