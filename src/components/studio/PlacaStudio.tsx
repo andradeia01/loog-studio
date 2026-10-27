@@ -762,12 +762,13 @@ export function PlacaStudio() {
               initialCodigos={result.coberturasAplicadas ?? []}
               defaultCodes={result.coberturasDefault ?? []}
               descontoCents={result.descontoCents ?? result.coverageBreakdown?.desconto_cents ?? 0}
+              descontoPct={result.descontoPct ?? result.coverageBreakdown?.desconto_pct ?? 0}
               onApply={aplicarCoberturas}
               applying={recotando}
             />
             <DiscountControl
               brutoCents={result.coverageBreakdown?.bruto_cents ?? ((result.coverageBreakdown?.base_cents ?? 0) + 0)}
-              descontoPctAplicado={result.descontoPct ?? result.coverageBreakdown?.desconto_pct ?? 10}
+              descontoPctAplicado={result.descontoPct ?? result.coverageBreakdown?.desconto_pct ?? 0}
               onApply={aplicarDesconto}
               applying={recotando}
             />
@@ -870,7 +871,7 @@ function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, low
 
       {/* Badge de desconto aplicado (ou sem desconto, se consultor desligou) */}
       {(() => {
-        const pct = r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 10;
+        const pct = r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 0;
         const descontoCents = r.coverageBreakdown?.desconto_cents ?? r.descontoCents ?? 0;
         const brutoCents = r.coverageBreakdown?.bruto_cents ?? 0;
         if (pct <= 0) {
@@ -907,8 +908,8 @@ function ResultHeader({ r, valores, onNova, fipeEscolhido, fipeAlternatives, low
           <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-brand">Valor Mensal do Plano</div>
           <div className="mt-1 font-display text-3xl font-extrabold text-loog-brand">{valores.mensalidadeFormatted}</div>
           <div className="mt-1 text-[11px] text-loog-muted">
-            pelos próximos 12 meses · {(r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 10) > 0
-              ? `com ${r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 10}% de desconto`
+            pelos próximos 12 meses · {(r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 0) > 0
+              ? `com ${r.coverageBreakdown?.desconto_pct ?? r.descontoPct ?? 0}% de desconto`
               : "sem desconto aplicado"}
           </div>
         </div>

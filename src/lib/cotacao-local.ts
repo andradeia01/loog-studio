@@ -113,8 +113,14 @@ export async function buscarPlanoLocal(input: {
   // CAMINHAO: heuristica de modelo (varios planos cobrem a mesma faixa)
   if (input.tipo === "caminhao") {
     const modeloUp = (input.modelo ?? "").toUpperCase();
+    // SO procura no NAME (nao no label), e EXCLUI variantes "Participacao de 8%"
+    // porque sao a opcao mais cara — a base padrao e "Participacao de 4%" (nome: TRUCK 3.0, CAVALO 2.0, etc)
     const preferir = (kw: string) =>
-      validos.find((p) => (p.name + " " + p.vehicle_type_label).toUpperCase().includes(kw));
+      validos.find((p) => {
+        const nameUp = (p.name ?? "").toUpperCase();
+        if (nameUp.includes("PARTICIP")) return false;
+        return nameUp.includes(kw);
+      });
 
     if (/CAVALO|MECAN|SCANIA\s*R|VOLVO\s*FH|VOLVO\s*FM|AXOR|ACTROS|AROCS|TGX|TGS|CONSTELL|DAF\s*XF|DAF\s*CF/.test(modeloUp)) {
       const p = preferir("CAVALO MEC");
@@ -136,7 +142,9 @@ export async function buscarPlanoLocal(input: {
       const p = preferir("TRUCK");
       if (p) return p as PlanoLocal;
     }
-    // Fallback caminhao: prefere plano com MAIOR min_fipe (mais especifico pra faixa alta)
+    // Fallback caminhao: EXCLUI variantes Participacao 8% e pega o de maior min_fipe (mais especifico)
+    const basicos = validos.filter((p) => !(p.name ?? "").toUpperCase().includes("PARTICIP"));
+    if (basicos.length > 0) return basicos[0] as PlanoLocal;
     return validos[0] as PlanoLocal;
   }
 
@@ -300,13 +308,15 @@ export async function cotarVeiculoLocal(input: {
     };
   }
 
+  // ADESÃO FIXA R$ 100,00 (padrão SIVIS — todos os planos)
+  const ADESAO_CENTS = 10000;
   const planHub: HubPlan = {
     productId: plano.slug,
     name: plano.name,
     monthlyValueCents: plano.monthly_cents,
     monthlyValueFormatted: brl(plano.monthly_cents),
-    joinFeeValueCents: 0,
-    joinFeeFormatted: brl(0),
+    joinFeeValueCents: ADESAO_CENTS,
+    joinFeeFormatted: brl(ADESAO_CENTS),
     defaultServices: plano.extras
       ? plano.extras.split("|").slice(0, 6).map((s, i) => ({
           id: `svc-${i}`, name: s.trim(), valueFormatted: "incluso",

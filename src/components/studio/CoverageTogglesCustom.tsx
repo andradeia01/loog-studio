@@ -39,6 +39,7 @@ export function CoverageTogglesCustom({
   initialCodigos,
   defaultCodes,
   descontoCents,
+  descontoPct,
   onApply,
   applying,
 }: {
@@ -47,6 +48,8 @@ export function CoverageTogglesCustom({
   initialCodigos?: string[];
   defaultCodes?: string[];
   descontoCents?: number;
+  /** % de desconto que o consultor aplicou (0-10). Default 0 = padrão SIVIS. */
+  descontoPct?: number;
   onApply: (codigos: string[]) => void | Promise<void>;
   applying: boolean;
 }) {
@@ -79,9 +82,9 @@ export function CoverageTogglesCustom({
     return total;
   }, [selecionados, grupos]);
 
-  // Preview do novo mensal — recalcula desconto sobre o novo bruto (base = Hub bruto antes do desconto)
-  // Política LOOG atual: 10% automático. Mantém sincronizado com DESCONTO_AUTOMATICO_PCT do backend.
-  const DESCONTO_PCT = 10;
+  // Preview do novo mensal — reflete o % de desconto que o consultor realmente aplicou
+  // Default 0% (padrao SIVIS). Se consultor ligou 5%, preview mostra "com 5% off".
+  const DESCONTO_PCT = Math.max(0, Math.min(10, descontoPct ?? 0));
   const novoBrutoCents = baseMensalCents + totalDeltaCents;
   const novoDescontoCents = Math.round(novoBrutoCents * (DESCONTO_PCT / 100));
   const novoFinalCents = Math.max(0, novoBrutoCents - novoDescontoCents);
@@ -128,7 +131,9 @@ export function CoverageTogglesCustom({
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">Mensal (com {DESCONTO_PCT}% off)</div>
+          <div className="text-[10px] font-semibold uppercase tracking-widest text-loog-muted">
+            {DESCONTO_PCT > 0 ? `Mensal (com ${DESCONTO_PCT}% off)` : "Mensal (sem desconto)"}
+          </div>
           <div className="font-display text-2xl font-bold text-emerald-300">
             {BRL(novoFinalCents)}
           </div>
