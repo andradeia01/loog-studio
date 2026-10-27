@@ -308,8 +308,9 @@ export async function cotarVeiculoLocal(input: {
     };
   }
 
-  // ADESÃO FIXA R$ 100,00 (padrão SIVIS — todos os planos)
-  const ADESAO_CENTS = 10000;
+  // ADESÃO: R$ 100,00 pros leves (padrão SIVIS) · R$ 1.500,00 mínimo pros pesados (caminhão)
+  // Decisão Luís 27/10/2026: operação de pesado tem custo administrativo bem maior.
+  const ADESAO_CENTS = input.tipo === "caminhao" ? 150000 : 10000;
   const planHub: HubPlan = {
     productId: plano.slug,
     name: plano.name,

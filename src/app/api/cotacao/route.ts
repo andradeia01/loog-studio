@@ -68,12 +68,14 @@ async function aplicarDeltasCoberturas(
   coberturasCodigos: string[],
   tipoVeiculo: string,
   descontoPctRequerido?: number,
+  adesaoCentsRequerido?: number,
 ): Promise<{
   result: Record<string, unknown>;
   breakdown: { codigo: string; descricao: string; delta_cents: number; grupo_label?: string }[];
   totalDeltaCents: number;
   descontoCents: number;
   descontoPct: number;
+  adesaoCents: number;
   defaultCodes: string[];
   coberturasAplicadas: string[];
 }> {
@@ -120,6 +122,11 @@ async function aplicarDeltasCoberturas(
   const descontoCents = Math.round(totalBrutoCents * (descontoPct / 100));
   const totalFinalCents = Math.max(0, totalBrutoCents - descontoCents);
 
+  // ADESÃO: respeita piso por tipo (R$ 100 leve, R$ 1.500 pesado).
+  // Consultor pode SUBIR via UI, mas nunca descer do piso.
+  const piso = pisoAdesao(tipoVeiculo);
+  const adesaoCents = Math.max(piso, Math.round(adesaoCentsRequerido ?? piso));
+
   // CRÍTICO: atualizar BOTH monthlyValueCents (número) E monthlyValueFormatted (string).
   // O frontend prefere a string quando ela existe — se não atualizarmos, UI mostra valor stale.
   if (baseMensalPlan != null) {
@@ -130,6 +137,8 @@ async function aplicarDeltasCoberturas(
       monthlyValueCentsBase: base,
       monthlyValueCentsBruto: totalBrutoCents,
       monthlyValueFormattedBruto: brl(totalBrutoCents),
+      joinFeeValueCents: adesaoCents,
+      joinFeeFormatted: brl(adesaoCents),
     };
   }
   if (baseMensalRoot != null) r.monthlyValueCents = totalFinalCents;
@@ -141,10 +150,12 @@ async function aplicarDeltasCoberturas(
     desconto_pct: descontoPct,
     desconto_cents: descontoCents,
     total_cents: totalFinalCents,
+    adesao_cents: adesaoCents,
+    adesao_piso_cents: piso,
     defaults_aplicados: defaultCodes,
   };
 
-  return { result: r, breakdown, totalDeltaCents, descontoCents, descontoPct, defaultCodes, coberturasAplicadas: codigosFinais };
+  return { result: r, breakdown, totalDeltaCents, descontoCents, descontoPct, adesaoCents, defaultCodes, coberturasAplicadas: codigosFinais };
 }
 
 export const runtime = "nodejs";
@@ -190,7 +201,15 @@ const Body = z.object({
   /** % de desconto a aplicar (0 a 20). Default = 10 (política padrão LOOG).
    *  Validações de role: consultor até 10% livre, gestor até 15%, admin até 20%. */
   descontoPct: z.number().min(0).max(10).optional(),
+  /** Adesão customizada em centavos. Piso por tipo: 10000 (R$ 100) leves ou 150000 (R$ 1.500) caminhão.
+   *  Consultor pode subir, nunca descer do piso. Default = piso do tipo. */
+  adesaoCents: z.number().int().min(0).max(10_000_000).optional(),
 });
+
+/** Piso de adesão por tipo (Luís 27/10/2026). Caminhão tem custo operacional bem maior. */
+function pisoAdesao(tipo: string): number {
+  return tipo === "caminhao" ? 150000 : 10000;
+}
 
 /**
  * Rota única: recebe placa + cliente, chama Hub `/v1/quote/from-plate`,
@@ -335,12 +354,13 @@ export async function POST(req: NextRequest) {
           });
         }
 
-        // Aplica deltas + desconto variável (pct vem do consultor; default 10%)
-        const { result, breakdown, totalDeltaCents, descontoCents, descontoPct, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
+        // Aplica deltas + desconto variável (pct vem do consultor; default 10%) + adesão (default piso por tipo)
+        const { result, breakdown, totalDeltaCents, descontoCents, descontoPct, adesaoCents, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
           rawResult as unknown as Record<string, unknown>,
           parsed.data.coberturas ?? [],
           vehicleTypeFinal,
           parsed.data.descontoPct,
+          parsed.data.adesaoCents,
         );
 
         if (consultorId) {
@@ -438,6 +458,8 @@ export async function POST(req: NextRequest) {
           coberturasDefault: defaultCodes,
           descontoCents,
           descontoPct,
+          adesaoCents,
+          adesaoPisoCents: pisoAdesao(vehicleTypeFinal),
           idade: rawExtra.idade ?? null,
           blocked: rawExtra.blocked ?? null,
           ...result,
@@ -479,11 +501,12 @@ export async function POST(req: NextRequest) {
       const tipoFallback = parsed.data.tipo_veiculo && parsed.data.tipo_veiculo !== "caminhao"
         ? parsed.data.tipo_veiculo
         : "carro";
-      const { result, breakdown, totalDeltaCents, descontoCents, descontoPct, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
+      const { result, breakdown, totalDeltaCents, descontoCents, descontoPct, adesaoCents, defaultCodes, coberturasAplicadas } = await aplicarDeltasCoberturas(
         rawResult as unknown as Record<string, unknown>,
         parsed.data.coberturas ?? [],
         tipoFallback,
         parsed.data.descontoPct,
+        parsed.data.adesaoCents,
       );
 
       if (consultorId) {
@@ -544,6 +567,8 @@ export async function POST(req: NextRequest) {
         coberturasDefault: defaultCodes,
         descontoCents,
         descontoPct,
+        adesaoCents,
+        adesaoPisoCents: pisoAdesao(tipoFallback),
         ...result,
       });
     } catch (err) {

@@ -166,13 +166,15 @@ export async function cotarCaminhaoLocal(input: {
     };
   }
 
+  // ADESÃO PESADOS: R$ 1.500,00 mínimo (Luís 27/10/2026 — custo operacional caminhão)
+  const ADESAO_PESADOS_CENTS = 150000;
   const planHub: HubPlan = {
     productId: plano.slug,
     name: plano.name,
     monthlyValueCents: plano.monthly_cents,
     monthlyValueFormatted: brl(plano.monthly_cents),
-    joinFeeValueCents: 0,
-    joinFeeFormatted: brl(0),
+    joinFeeValueCents: ADESAO_PESADOS_CENTS,
+    joinFeeFormatted: brl(ADESAO_PESADOS_CENTS),
     defaultServices: plano.extras
       ? plano.extras.split("|").slice(0, 6).map((s, i) => ({
           id: `svc-${i}`,

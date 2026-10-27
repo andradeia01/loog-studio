@@ -8,6 +8,7 @@ import { trackingForBackend } from "@/lib/tracking";
 import { trackMetaEvent } from "@/components/MetaPixel";
 import { CoverageTogglesCustom } from "./CoverageTogglesCustom";
 import { DiscountControl } from "./DiscountControl";
+import { AdhesionControl } from "./AdhesionControl";
 import { ZeroKmForm } from "./ZeroKmForm";
 import { useHubStatus } from "./HubStatusBanner";
 import { ErrorBadge, type ErrorSource, type NextAction } from "./ErrorBadge";
@@ -83,6 +84,8 @@ interface HubResult {
   coberturasDefault?: string[];
   descontoCents?: number;
   descontoPct?: number;
+  adesaoCents?: number;
+  adesaoPisoCents?: number;
   coverageBreakdown?: {
     base_cents: number;
     deltas: { codigo: string; descricao: string; delta_cents: number; grupo_label?: string }[];
@@ -142,6 +145,7 @@ export function PlacaStudio() {
   const [coberturasCodigos, setCoberturasCodigos] = useState<string[]>([]);
   const [fipeManualCode, setFipeManualCode] = useState<string | null>(null);
   const [descontoPct, setDescontoPct] = useState<number | null>(null); // null = default 10% do backend
+  const [adesaoCents, setAdesaoCents] = useState<number | null>(null); // null = usa piso por tipo do backend
   const [recotando, setRecotando] = useState(false);
 
   // Fallback manual quando a placa não resolve no Hub (401/403/404):
@@ -220,7 +224,7 @@ export function PlacaStudio() {
     });
   }, [result, valores, coberturas, clienteNome]);
 
-  const consultar = useCallback(async (ev?: React.FormEvent, overrides?: { coberturas?: string[]; fipeCode?: string | null; descontoPct?: number | null; keepResult?: boolean }) => {
+  const consultar = useCallback(async (ev?: React.FormEvent, overrides?: { coberturas?: string[]; fipeCode?: string | null; descontoPct?: number | null; adesaoCents?: number | null; keepResult?: boolean }) => {
     ev?.preventDefault();
     const raw = placa.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
     if (raw.length !== 7) {
@@ -242,6 +246,7 @@ export function PlacaStudio() {
       const coberturasFinal = overrides?.coberturas ?? coberturasCodigos;
       const fipeFinal = overrides?.fipeCode === null ? null : (overrides?.fipeCode ?? fipeManualCode);
       const descontoFinal = overrides?.descontoPct === null ? null : (overrides?.descontoPct ?? descontoPct);
+      const adesaoFinal = overrides?.adesaoCents === null ? null : (overrides?.adesaoCents ?? adesaoCents);
       // apiFetch: faz retry automático em 401 (refreshSession) e dispara modal se falhar
       const res = await apiFetch("/api/cotacao", {
         method: "POST",
@@ -254,6 +259,7 @@ export function PlacaStudio() {
           coberturas: coberturasFinal.length ? coberturasFinal : undefined,
           fipeCode: fipeFinal ?? undefined,
           descontoPct: descontoFinal ?? undefined,
+          adesaoCents: adesaoFinal ?? undefined,
         }),
       });
       const data = await res.json().catch(() => ({} as Record<string, unknown>));
@@ -270,6 +276,7 @@ export function PlacaStudio() {
       setCoberturasCodigos(r.coberturasAplicadas ?? []);
       if (r.fipeEscolhido) setFipeManualCode(r.fipeEscolhido);
       if (typeof r.descontoPct === "number") setDescontoPct(r.descontoPct);
+      if (typeof r.adesaoCents === "number") setAdesaoCents(r.adesaoCents);
       // Meta Pixel browser — dedup com CAPI pelo mesmo eventId
       try {
         const monthly = r.plan?.monthlyValueCents;
@@ -303,7 +310,7 @@ export function PlacaStudio() {
       setLoading(false);
       setRecotando(false);
     }
-  }, [placa, tipoVeiculo, clienteNome, clienteTel, hist, coberturasCodigos, fipeManualCode, descontoPct]);
+  }, [placa, tipoVeiculo, clienteNome, clienteTel, hist, coberturasCodigos, fipeManualCode, descontoPct, adesaoCents]);
 
   // Chamado pelo CoverageTogglesCustom quando o consultor clica em "Aplicar à cotação"
   const aplicarCoberturas = useCallback(async (codigos: string[]) => {
@@ -321,6 +328,12 @@ export function PlacaStudio() {
   const aplicarDesconto = useCallback(async (pct: number) => {
     setDescontoPct(pct);
     await consultar(undefined, { descontoPct: pct });
+  }, [consultar]);
+
+  // Chamado pelo AdhesionControl ao mudar o valor da adesão
+  const aplicarAdesao = useCallback(async (cents: number) => {
+    setAdesaoCents(cents);
+    await consultar(undefined, { adesaoCents: cents });
   }, [consultar]);
 
   async function baixarPdfPremium(comCenarios = false) {
@@ -770,6 +783,13 @@ export function PlacaStudio() {
               brutoCents={result.coverageBreakdown?.bruto_cents ?? ((result.coverageBreakdown?.base_cents ?? 0) + 0)}
               descontoPctAplicado={result.descontoPct ?? result.coverageBreakdown?.desconto_pct ?? 0}
               onApply={aplicarDesconto}
+              applying={recotando}
+            />
+            <AdhesionControl
+              tipoVeiculo={tipoVeiculo}
+              adesaoCentsAplicado={result.adesaoCents ?? result.plan?.joinFeeValueCents ?? (tipoVeiculo === "caminhao" ? 150000 : 10000)}
+              pisoCents={result.adesaoPisoCents ?? (tipoVeiculo === "caminhao" ? 150000 : 10000)}
+              onApply={aplicarAdesao}
               applying={recotando}
             />
             <AcoesCard
