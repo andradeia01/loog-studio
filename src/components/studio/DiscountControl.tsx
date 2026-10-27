@@ -22,11 +22,12 @@ import { cn } from "@/lib/utils";
 const BRL = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 interface Faixa { min: number; max: number; cor: string; cor_hex: string; label: string; descr: string }
+// Politica LOOG: desconto maximo 10% — faixas abaixo refletem apenas o impacto na margem
 const FAIXAS: Faixa[] = [
-  { min: 0,  max: 5,  cor: "text-emerald-400", cor_hex: "#10b981", label: "Saudável",    descr: "Margem preservada — ideal pro negócio" },
-  { min: 5,  max: 10, cor: "text-emerald-300", cor_hex: "#34d399", label: "Padrão",      descr: "Desconto autorizado · consultor livre" },
-  { min: 10, max: 15, cor: "text-amber-300",   cor_hex: "#fbbf24", label: "Alto",        descr: "Precisa aprovação do gestor" },
-  { min: 15, max: 20, cor: "text-red-400",     cor_hex: "#f87171", label: "Crítico",     descr: "Só com liberação da direção" },
+  { min: 0,  max: 3,  cor: "text-emerald-400", cor_hex: "#10b981", label: "Saudável", descr: "Margem preservada — ideal pro negócio" },
+  { min: 3,  max: 6,  cor: "text-emerald-300", cor_hex: "#34d399", label: "Padrão",   descr: "Desconto confortável" },
+  { min: 6,  max: 9,  cor: "text-amber-300",   cor_hex: "#fbbf24", label: "Alto",     descr: "Margem apertada — use com critério" },
+  { min: 9,  max: 10, cor: "text-red-400",     cor_hex: "#f87171", label: "Teto",     descr: "Teto autorizado pelo consultor" },
 ];
 
 function getFaixa(pct: number): Faixa {
@@ -54,19 +55,20 @@ export function DiscountControl({
   const finalCents = Math.max(0, brutoCents - descontoCents);
   const ligado = pct > 0;
 
-  // Posição do marcador no slider (0-100%)
-  const sliderPct = (pct / 20) * 100;
+  // Posição do marcador no slider (0-100% visual), teto 10%
+  const sliderPct = (pct / 10) * 100;
 
   const faixasBg = useMemo(() => {
     // Gradient suave entre as faixas pro background da trilha
+    // Faixas 0-3-6-9-10 em slider 0-10 = 30% / 60% / 90% / 100%
     return `linear-gradient(to right,
       ${FAIXAS[0].cor_hex} 0%,
-      ${FAIXAS[0].cor_hex} 25%,
-      ${FAIXAS[1].cor_hex} 25%,
-      ${FAIXAS[1].cor_hex} 50%,
-      ${FAIXAS[2].cor_hex} 50%,
-      ${FAIXAS[2].cor_hex} 75%,
-      ${FAIXAS[3].cor_hex} 75%,
+      ${FAIXAS[0].cor_hex} 30%,
+      ${FAIXAS[1].cor_hex} 30%,
+      ${FAIXAS[1].cor_hex} 60%,
+      ${FAIXAS[2].cor_hex} 60%,
+      ${FAIXAS[2].cor_hex} 90%,
+      ${FAIXAS[3].cor_hex} 90%,
       ${FAIXAS[3].cor_hex} 100%)`;
   }, []);
 
@@ -158,8 +160,8 @@ export function DiscountControl({
           <input
             type="range"
             min={0}
-            max={20}
-            step={1}
+            max={10}
+            step={0.5}
             value={pct}
             onChange={(e) => { setPct(Number(e.target.value)); setDirty(true); }}
             className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
@@ -170,7 +172,7 @@ export function DiscountControl({
           <span>5%</span>
           <span>10%</span>
           <span>15%</span>
-          <span>20%</span>
+          <span>10%</span>
         </div>
       </div>
 

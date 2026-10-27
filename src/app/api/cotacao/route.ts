@@ -108,7 +108,8 @@ async function aplicarDeltasCoberturas(
   const totalBrutoCents = base + totalDeltaCents;
   // pct vem do consultor (0 = sem desconto) ou usa o default (10%)
   // Clampa em 0-20 por segurança (role check vem depois)
-  const descontoPct = Math.max(0, Math.min(20, descontoPctRequerido ?? DESCONTO_AUTOMATICO_PCT));
+  // Politica LOOG: desconto maximo 10% (consultor nao pode dar mais sem aprovacao fora do sistema)
+  const descontoPct = Math.max(0, Math.min(10, descontoPctRequerido ?? DESCONTO_AUTOMATICO_PCT));
   const descontoCents = Math.round(totalBrutoCents * (descontoPct / 100));
   const totalFinalCents = Math.max(0, totalBrutoCents - descontoCents);
 
@@ -181,7 +182,7 @@ const Body = z.object({
   fipeCode: z.string().max(20).optional(),
   /** % de desconto a aplicar (0 a 20). Default = 10 (política padrão LOOG).
    *  Validações de role: consultor até 10% livre, gestor até 15%, admin até 20%. */
-  descontoPct: z.number().min(0).max(20).optional(),
+  descontoPct: z.number().min(0).max(10).optional(),
 });
 
 /**
@@ -336,6 +337,9 @@ export async function POST(req: NextRequest) {
         );
 
         if (consultorId) {
+          const planObj = (result as { plan?: Record<string, unknown> }).plan ?? {};
+          const providerUsed = (rawResult as { provider?: string }).provider ?? "unknown";
+          const isLocal = providerUsed.includes("local");
           void registrarInteracaoCRM({
             ownerId: consultorId,
             groupId,
@@ -344,7 +348,9 @@ export async function POST(req: NextRequest) {
             telefone: parsed.data.cliente.telefone,
             tracking: parsed.data.tracking ?? null,
             payload: {
-              via: "placafipe+from-text",
+              // Fonte de verdade: provider real que calculou (loog-studio-local vs sivis via Hub)
+              via: isLocal ? "local-plans" : "hub-from-text",
+              provider: providerUsed,
               placa: parsed.data.placa,
               marcaCurta: v.marca, modeloCurto: v.modelo,
               marca: marcaFinal, modelo: modeloFinal, ano: anoModelo,
@@ -352,10 +358,16 @@ export async function POST(req: NextRequest) {
               fipeCodigo: fipe?.codigo_fipe ?? null,
               fipeValor: fipe?.valor_formatado ?? null,
               fipeSimilaridade: fipe?.similaridade ?? null,
+              tipoVeiculo: vehicleTypeFinal,
               vehicle: (result as { vehicle?: unknown }).vehicle ?? null,
               valorFipe: (result as { vehicle?: { fipeFormatted?: string } }).vehicle?.fipeFormatted ?? fipe?.valor_formatado ?? null,
               quoteId: (result as { quoteId?: string }).quoteId ?? null,
-              monthlyValueCents: (result as { monthlyValueCents?: number }).monthlyValueCents ?? null,
+              // Snapshot completo do plano aplicado — fica no CRM pra auditoria historica
+              planoNome: planObj.name ?? null,
+              planoSlug: planObj.productId ?? null,
+              planoMensalCents: planObj.monthlyValueCents ?? null,
+              planoMensalFormatted: planObj.monthlyValueFormatted ?? null,
+              monthlyValueCents: (result as { monthlyValueCents?: number }).monthlyValueCents ?? planObj.monthlyValueCents ?? null,
               whatsappMessage: (result as { whatsappMessage?: string }).whatsappMessage ?? null,
               coberturasCustomizadas: (parsed.data.coberturas ?? []).length ? breakdown : null,
               deltaCustomizacaoCents: totalDeltaCents || null,
@@ -404,6 +416,8 @@ export async function POST(req: NextRequest) {
         }));
         const fipeEscolhido = fipeManual ? parsed.data.fipeCode : fipe?.codigo_fipe;
 
+        // Propaga idade e blocked do cotador local pra UI alertar o consultor
+        const rawExtra = rawResult as { idade?: unknown; blocked?: unknown };
         return NextResponse.json({
           ok: true,
           via: "placafipe",
@@ -417,6 +431,8 @@ export async function POST(req: NextRequest) {
           coberturasDefault: defaultCodes,
           descontoCents,
           descontoPct,
+          idade: rawExtra.idade ?? null,
+          blocked: rawExtra.blocked ?? null,
           ...result,
         });
       }

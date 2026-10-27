@@ -91,6 +91,18 @@ interface HubResult {
     total_cents: number;
     defaults_aplicados?: string[];
   };
+  idade?: {
+    status: "ok" | "panela-velha" | "fora-regulamento";
+    idade: number;
+    mensagem?: string;
+    requerVistoriaEAprovacao: boolean;
+  } | null;
+  blocked?: {
+    tipo: "marca" | "modelo";
+    marca_nome?: string;
+    modelo_nome?: string;
+    motivo?: string;
+  } | null;
 }
 
 interface HistItem { placa: string; marca: string; modelo: string; ano: string; at: number }
@@ -610,6 +622,51 @@ export function PlacaStudio() {
         {loading && <LoadingCard />}
         {result && valores && (
           <>
+            {/* Banner BLOQUEADO — marca/modelo bloqueado pelo admin */}
+            {result.blocked && (
+              <div className="rounded-2xl border-2 border-red-500/60 bg-red-500/15 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-3xl">🚫</span>
+                  <div className="flex-1">
+                    <h3 className="font-display text-lg font-bold text-red-200">
+                      Cotação bloqueada — {result.blocked.tipo === "marca" ? "marca inteira" : "modelo específico"}
+                    </h3>
+                    <p className="mt-1 text-sm text-red-100">
+                      {result.blocked.tipo === "marca"
+                        ? <>A marca <b>{result.blocked.marca_nome}</b> está bloqueada pela LOOG.</>
+                        : <>O modelo <b>{result.blocked.marca_nome} {result.blocked.modelo_nome}</b> está bloqueado pela LOOG.</>}
+                    </p>
+                    {result.blocked.motivo && (
+                      <p className="mt-2 text-xs italic text-red-200/80">💬 Motivo: {result.blocked.motivo}</p>
+                    )}
+                    <p className="mt-3 text-xs text-red-200/80">
+                      Entre em contato com a diretoria se precisar de exceção pra esse caso.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Banner PANELA VELHA — veículo 21-25 anos */}
+            {result.idade?.status === "panela-velha" && (
+              <div className="rounded-2xl border-2 border-amber-500/60 bg-amber-500/10 p-4">
+                <div className="flex items-start gap-3">
+                  <span className="text-3xl">🍲</span>
+                  <div className="flex-1">
+                    <p className="font-display text-base font-bold text-amber-200">{result.idade.mensagem}</p>
+                    <div className="mt-3 space-y-1 text-xs text-amber-100">
+                      <div className="font-bold">Pra FECHAR esse contrato é obrigatório:</div>
+                      <div>✅ Realizar vistoria presencial do veículo</div>
+                      <div>✅ Obter aprovação da diretoria / gerência</div>
+                    </div>
+                    <p className="mt-2 text-[11px] text-amber-200/70">
+                      Veículo com <b>{result.idade.idade} anos</b>. Cotação permitida — fechamento sob aprovação.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <ResultHeader
               r={result}
               valores={valores}

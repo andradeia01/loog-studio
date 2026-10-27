@@ -15,6 +15,7 @@
  */
 import { createSupabaseServer } from "@/lib/supabase/server";
 import type { HubQuoteResult, HubPlan, HubVehicle } from "@/lib/loog-hub";
+import { classificarIdade, verificarBloqueio, tipoParaFipe } from "@/lib/cotacao-rules";
 
 export type VehicleTypeLocal = "carro" | "moto" | "utilitario" | "eletrico" | "caminhao";
 
@@ -179,14 +180,10 @@ export async function cotarVeiculoLocal(input: {
   fipeCode?: string;
   customerName: string;
   customerPhone: string;
-}): Promise<HubQuoteResult> {
-  const plano = await buscarPlanoLocal({
-    tipo: input.tipo,
-    valorFipeCents: input.valorFipeCents,
-    anoModelo: input.anoModelo,
-    modelo: input.modelo,
-  });
-
+}): Promise<HubQuoteResult & {
+  blocked?: { tipo: "marca" | "modelo"; marca_nome?: string; modelo_nome?: string; motivo?: string };
+  idade?: { status: string; idade: number; mensagem?: string; requerVistoriaEAprovacao: boolean };
+}> {
   const vehicleTypeNum =
     input.tipo === "moto" ? 2 :
     input.tipo === "caminhao" ? 3 : 1;
@@ -205,6 +202,53 @@ export async function cotarVeiculoLocal(input: {
     vehicleCategory,
   };
 
+  // 1. CHECK IDADE — rejeita se >25 anos
+  const idadeInfo = classificarIdade(input.anoModelo);
+  if (idadeInfo.status === "fora-regulamento") {
+    return {
+      quoteId: `local-rejeitado-idade-${Date.now()}`,
+      provider: "loog-studio-local",
+      vehicle,
+      plan: { productId: "sem-plano", name: "Rejeitado — fora do regulamento (>25 anos)", monthlyValueCents: 0, monthlyValueFormatted: brl(0) },
+      whatsappMessage: `❌ Veículo com ${idadeInfo.idade} anos — fora do regulamento LOOG (máximo 25 anos).`,
+      idade: idadeInfo,
+    };
+  }
+
+  // 2. CHECK BLOQUEIO — marca/modelo bloqueado
+  const bloqueio = await verificarBloqueio({
+    tipo: tipoParaFipe(input.tipo),
+    marca: input.marca,
+    modelo: input.modelo,
+  });
+  if (bloqueio.bloqueado) {
+    const motivoTxt = bloqueio.motivo ? ` Motivo: ${bloqueio.motivo}.` : "";
+    const alvoTxt = bloqueio.tipo === "marca"
+      ? `A marca ${bloqueio.marca_nome} está bloqueada pela LOOG.`
+      : `O modelo ${bloqueio.marca_nome} ${bloqueio.modelo_nome} está bloqueado pela LOOG.`;
+    return {
+      quoteId: `local-bloqueado-${Date.now()}`,
+      provider: "loog-studio-local",
+      vehicle,
+      plan: { productId: "sem-plano", name: `🚫 Bloqueado — ${bloqueio.tipo === "marca" ? "marca" : "modelo"}`, monthlyValueCents: 0, monthlyValueFormatted: brl(0) },
+      whatsappMessage: `🚫 Cotação não autorizada.\n\n${alvoTxt}${motivoTxt}\n\nEntre em contato com a diretoria se precisar de exceção.`,
+      blocked: {
+        tipo: bloqueio.tipo!,
+        marca_nome: bloqueio.marca_nome,
+        modelo_nome: bloqueio.modelo_nome,
+        motivo: bloqueio.motivo,
+      },
+    };
+  }
+
+  // 3. Busca plano
+  const plano = await buscarPlanoLocal({
+    tipo: input.tipo,
+    valorFipeCents: input.valorFipeCents,
+    anoModelo: input.anoModelo,
+    modelo: input.modelo,
+  });
+
   if (!plano) {
     return {
       quoteId: `local-${input.tipo}-${Date.now()}`,
@@ -222,6 +266,7 @@ export async function cotarVeiculoLocal(input: {
         placa: input.placa, valorFipe: input.fipeFormatted,
         tipo: input.tipo, plano: null,
       }),
+      idade: idadeInfo,
     };
   }
 
@@ -240,16 +285,23 @@ export async function cotarVeiculoLocal(input: {
     defaultCoverages: [],
   };
 
+  // Mensagem WhatsApp inclui aviso humorado + fluxo pra 21-25 anos
+  const whatsBase = montarMensagemWhats({
+    cliente: input.customerName,
+    marca: input.marca, modelo: input.modelo, ano: input.anoModelo,
+    placa: input.placa, valorFipe: input.fipeFormatted,
+    tipo: input.tipo, plano,
+  });
+  const whats = idadeInfo.status === "panela-velha"
+    ? `${whatsBase}\n\n---\n⚠️ *Veículo com ${idadeInfo.idade} anos:*\nPermitido cotar. Para fechar o contrato é obrigatório:\n1️⃣ Vistoria presencial do veículo\n2️⃣ Aprovação da diretoria/gerência`
+    : whatsBase;
+
   return {
     quoteId: `local-${input.tipo}-${plano.slug}-${Date.now()}`,
     provider: "loog-studio-local",
     vehicle,
     plan: planHub,
-    whatsappMessage: montarMensagemWhats({
-      cliente: input.customerName,
-      marca: input.marca, modelo: input.modelo, ano: input.anoModelo,
-      placa: input.placa, valorFipe: input.fipeFormatted,
-      tipo: input.tipo, plano,
-    }),
+    whatsappMessage: whats,
+    idade: idadeInfo,
   };
 }
