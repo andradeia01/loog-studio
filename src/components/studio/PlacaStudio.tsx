@@ -8,6 +8,7 @@ import { trackingForBackend } from "@/lib/tracking";
 import { trackMetaEvent } from "@/components/MetaPixel";
 import { CoverageTogglesCustom } from "./CoverageTogglesCustom";
 import { DiscountControl } from "./DiscountControl";
+import { ZeroKmForm } from "./ZeroKmForm";
 import { useHubStatus } from "./HubStatusBanner";
 import { ErrorBadge, type ErrorSource, type NextAction } from "./ErrorBadge";
 import { apiFetch } from "@/lib/errors/api-fetch";
@@ -128,6 +129,7 @@ export function PlacaStudio() {
   const hubOffline = !hubStatus.ok;
   const [placa, setPlaca] = useState("");
   const [tipoVeiculo, setTipoVeiculo] = useState<"carro" | "moto" | "utilitario" | "eletrico" | "caminhao">("carro");
+  const [modoZeroKm, setModoZeroKm] = useState<boolean>(false);
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTel, setClienteTel] = useState("");
   const [loading, setLoading] = useState(false);
@@ -465,6 +467,43 @@ export function PlacaStudio() {
     } finally { setLoading(false); }
   }
 
+  async function cotarZeroKm(dados: {
+    tipo: "carro" | "moto" | "utilitario" | "eletrico" | "caminhao";
+    marca: string; modelo: string; ano: number;
+    combustivel?: string; fipeValor: number; fipeCode?: string;
+  }) {
+    if (!clienteNome.trim() || !clienteTel.trim()) {
+      setError({ source: "studio", title: "Dados do cliente", message: "Preenche nome e telefone do cliente.", nextAction: "fix_input", retryable: false });
+      return;
+    }
+    setLoading(true); setError(null); setResult(null);
+    try {
+      const res = await apiFetch("/api/cotacao/manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          marca: dados.marca,
+          modelo: dados.modelo,
+          ano: dados.ano,
+          combustivel: dados.combustivel,
+          tipo_veiculo: dados.tipo,
+          fipeValor: dados.fipeValor,
+          fipeCode: dados.fipeCode,
+          cliente: { nome: clienteNome.trim(), telefone: clienteTel.trim() },
+        }),
+      });
+      const data = await res.json().catch(() => ({} as Record<string, unknown>));
+      if (!res.ok) {
+        setError(parseApiError(res.status, data as Record<string, unknown>));
+        return;
+      }
+      setResult(data as HubResult);
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : "Falha ao cotar 0 km.";
+      setError({ source: "studio", title: "Cotação 0 km falhou", message: raw, nextAction: "retry", retryable: true });
+    } finally { setLoading(false); }
+  }
+
   function limparHist() {
     setHist([]); try { window.localStorage.removeItem(HIST_KEY); } catch {}
   }
@@ -472,6 +511,45 @@ export function PlacaStudio() {
   return (
     <div className="grid min-w-0 gap-6 lg:grid-cols-[380px_1fr]">
       <aside className="min-w-0 space-y-4">
+        {/* Toggle Com Placa / 0km Sem Placa */}
+        <div className="grid grid-cols-2 gap-1 rounded-xl border border-loog-border bg-loog-panel/60 p-1">
+          <button
+            type="button"
+            onClick={() => setModoZeroKm(false)}
+            className={cn(
+              "rounded-lg px-3 py-2 text-xs font-semibold transition",
+              !modoZeroKm ? "bg-loog-brand text-white shadow-glow" : "text-loog-muted hover:text-white",
+            )}
+          >
+            🚗 Com placa
+          </button>
+          <button
+            type="button"
+            onClick={() => setModoZeroKm(true)}
+            className={cn(
+              "rounded-lg px-3 py-2 text-xs font-semibold transition",
+              modoZeroKm ? "bg-emerald-500 text-white shadow-glow" : "text-loog-muted hover:text-white",
+            )}
+          >
+            🆕 0 km (sem placa)
+          </button>
+        </div>
+
+        {modoZeroKm ? (
+          // Modo 0km — cliente em cima + ZeroKmForm
+          <>
+            <div className="card space-y-3 p-4 sm:p-5">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Cliente</h2>
+              <label className="label">Nome do cliente</label>
+              <input type="text" className="input" value={clienteNome}
+                onChange={(e) => setClienteNome(e.target.value)} required placeholder="Nome completo" />
+              <label className="label">Telefone com DDD</label>
+              <input type="tel" className="input" value={clienteTel}
+                onChange={(e) => setClienteTel(e.target.value)} required placeholder="(11) 99999-9999" />
+            </div>
+            <ZeroKmForm cliente={{ nome: clienteNome, telefone: clienteTel }} onCotar={cotarZeroKm} loading={loading} />
+          </>
+        ) : (
         <form onSubmit={consultar} className="card space-y-3 p-4 sm:p-5">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-loog-muted">Cotação LOOG</h2>
           <p className="text-xs text-loog-muted/90">
@@ -548,9 +626,10 @@ export function PlacaStudio() {
             />
           )}
         </form>
+        )}
 
         {/* Form de fallback manual (quoteFromText) — abre quando placa falha */}
-        {showManual && (
+        {!modoZeroKm && showManual && (
           <form onSubmit={cotarManual} className="card space-y-3 border-amber-500/30 bg-amber-500/5 p-4 sm:p-5">
             <div>
               <h2 className="text-sm font-semibold uppercase tracking-wider text-amber-200">🛠️ Cotação manual</h2>

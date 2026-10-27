@@ -3,10 +3,13 @@ import { z } from "zod";
 import { requireApproved } from "@/lib/auth";
 import { supabaseConfigured } from "@/lib/supabase/server";
 import { quoteFromText, HubError } from "@/lib/loog-hub";
+import { cotarVeiculoLocal } from "@/lib/cotacao-local";
 import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const USE_LOCAL_PRICING = process.env.USE_LOCAL_PRICING !== "false";
 
 const HITS = new Map<string, { count: number; resetAt: number }>();
 function rateLimited(ip: string, limit = 10, windowMs = 60_000) {
@@ -23,7 +26,11 @@ const Body = z.object({
   ano: z.number().int().min(1980).max(new Date().getFullYear() + 1),
   combustivel: z.string().trim().max(30).optional(),
   placa: z.string().trim().max(10).optional(), // placa opcional (pra constar na proposta)
-  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico"]).optional(),
+  tipo_veiculo: z.enum(["carro", "moto", "utilitario", "eletrico", "caminhao"]).optional(),
+  /** Valor FIPE em REAIS (ex: 150000). Obrigatorio pro cotador local saber qual faixa aplicar.
+   *  No fluxo 0km, UI busca via /api/admin/fipe-catalog/valor antes de enviar. */
+  fipeValor: z.number().min(0).max(10_000_000).optional(),
+  fipeCode: z.string().max(30).optional(),
   cliente: z.object({
     nome: z.string().min(2).max(120),
     telefone: z.string().min(8).max(20),
@@ -62,17 +69,41 @@ export async function POST(req: NextRequest) {
   const customerPhone = telDig.startsWith("55") ? telDig : `55${telDig}`;
 
   try {
-    const result = await quoteFromText({
-      brand: parsed.data.marca,
-      model: parsed.data.modelo,
-      modelYear: parsed.data.ano,
-      fuel: parsed.data.combustivel,
-      vehicleType: parsed.data.tipo_veiculo ?? "carro",
-      plate: parsed.data.placa,
-      customerName: parsed.data.cliente.nome,
-      customerPhone,
-      leadId: parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined),
-    });
+    const tipo = parsed.data.tipo_veiculo ?? "carro";
+    const fipeValorCents = Math.round((parsed.data.fipeValor ?? 0) * 100);
+
+    // Rota 100% local quando a flag estiver ligada e tiver valor FIPE.
+    // Hub nao conhece "caminhao" nem valor FIPE custom — sempre vai local pra esses casos.
+    let result;
+    if ((USE_LOCAL_PRICING || tipo === "caminhao") && fipeValorCents > 0) {
+      const brl = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      result = await cotarVeiculoLocal({
+        tipo,
+        placa: parsed.data.placa ?? "0KM-SEMPLACA",
+        marca: parsed.data.marca,
+        modelo: parsed.data.modelo,
+        anoModelo: parsed.data.ano,
+        valorFipeCents: fipeValorCents,
+        fipeFormatted: brl(fipeValorCents),
+        fipeCode: parsed.data.fipeCode,
+        customerName: parsed.data.cliente.nome,
+        customerPhone,
+      });
+    } else {
+      // Fallback Hub quando flag desligada OU sem FIPE value
+      const vehicleTypeHub = tipo === "caminhao" ? undefined : tipo;
+      result = await quoteFromText({
+        brand: parsed.data.marca,
+        model: parsed.data.modelo,
+        modelYear: parsed.data.ano,
+        fuel: parsed.data.combustivel,
+        vehicleType: vehicleTypeHub,
+        plate: parsed.data.placa,
+        customerName: parsed.data.cliente.nome,
+        customerPhone,
+        leadId: parsed.data.leadId ?? (consultorId ? `loogstudio:${consultorId}` : undefined),
+      });
+    }
 
     if (consultorId) {
       void registrarInteracaoCRM({
