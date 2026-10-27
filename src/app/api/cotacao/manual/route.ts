@@ -9,7 +9,9 @@ import { registrarInteracaoCRM } from "@/lib/crm/registrar";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const USE_LOCAL_PRICING = process.env.USE_LOCAL_PRICING !== "false";
+// DEFAULT FALSE: Hub SIVIS eh fonte da verdade pros leves/moto/util/eletrico.
+// Caminhao sempre vai local porque Hub nao conhece. Ver docstring em /api/cotacao/route.ts.
+const USE_LOCAL_PRICING = process.env.USE_LOCAL_PRICING === "true";
 
 const HITS = new Map<string, { count: number; resetAt: number }>();
 function rateLimited(ip: string, limit = 10, windowMs = 60_000) {

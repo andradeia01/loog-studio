@@ -9,13 +9,18 @@ import { cotarCaminhaoLocal } from "@/lib/cotacao-pesados";
 import { cotarVeiculoLocal } from "@/lib/cotacao-local";
 
 /**
- * Flag central pra sair do SIVIS. Quando ligada:
- *   - Toda cotacao (carro/moto/utilitario/eletrico/caminhao) usa a tabela `plans` local.
- *   - Hub SIVIS so eh usado como FALLBACK caso o cotador local nao encontre plano.
- * Default: true (Luis quer sair do SIVIS). Pra reativar SIVIS como primario, basta
- * mudar pra false (ou setar env var USE_LOCAL_PRICING=false).
+ * Flag central pra desligar o SIVIS como primario. Quando TRUE, toda cotacao
+ * (leve, moto, util, eletrico, caminhao) usa a tabela `plans` local.
+ *
+ * DEFAULT = FALSE (Hub SIVIS primario pros leves): o SIVIS calcula a mensalidade
+ * com regras proprias (% FIPE + taxas + rateio) que o Luis valida como a que
+ * converte. A coluna "Preco" da planilha Planos.xlsx eh so uma referencia, nao
+ * reflete o calculo real do SIVIS. Enquanto nao mapearmos essa logica
+ * matematicamente, Hub SIVIS continua a fonte da verdade pros leves.
+ *
+ * CAMINHAO: SEMPRE local (SIVIS nao conhece caminhao, sem alternativa).
  */
-const USE_LOCAL_PRICING = process.env.USE_LOCAL_PRICING !== "false";
+const USE_LOCAL_PRICING = process.env.USE_LOCAL_PRICING === "true";
 import { sendCAPIEvent, newEventId } from "@/lib/meta-capi";
 import {
   errSessaoExpirada, errNaoAprovado, errTelefoneInvalido, errBodyInvalido,
